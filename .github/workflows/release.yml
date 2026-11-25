@@ -1,38 +1,18 @@
 name: Release
 
-# A version tag (v0.1.0, or v0.1.0-rc.1 for a release candidate) builds the executable for each
-# platform with the dashboard inside, tests it there, and publishes the archives, SHA256SUMS and
-# install.sh. The release stays a draft until every platform has passed.
+# A person publishes a release, its tag and notes together. This then builds the executable for
+# each platform with the dashboard inside, tests it there, and attaches the archives, SHA256SUMS
+# and install.sh, all at once and only after every platform has passed.
 on:
-  push:
-    tags: ["v[0-9]+.[0-9]+.[0-9]+*"]
+  release:
+    types: [published]
 
 permissions:
   contents: read
 
 jobs:
-  draft:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Open a draft release for the tag
-        env:
-          GH_TOKEN: ${{ github.token }}
-          TAG: ${{ github.ref_name }}
-        run: |
-          prerelease=""
-          case "$TAG" in *-*) prerelease="--prerelease" ;; esac
-          gh release create "$TAG" --draft --verify-tag --title "$TAG" $prerelease
-
   build:
-    needs: draft
     runs-on: ${{ matrix.os }}
-    permissions:
-      contents: write
     strategy:
       matrix:
         include:
@@ -86,14 +66,15 @@ jobs:
       - name: Build the executable
         run: cargo build --release --locked --target ${{ matrix.target }}
 
-      - name: Attach the archive to the draft
-        env:
-          GH_TOKEN: ${{ github.token }}
-          TAG: ${{ github.ref_name }}
-          ARCHIVE: ovenspring-${{ matrix.target }}.tar.gz
-        run: |
-          tar -czf "$ARCHIVE" -C "target/${{ matrix.target }}/release" ovenspring
-          gh release upload "$TAG" "$ARCHIVE"
+      - name: Pack the executable
+        run: tar -czf "ovenspring-${{ matrix.target }}.tar.gz" -C "target/${{ matrix.target }}/release" ovenspring
+
+      - name: Keep the archive for the release
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: archive-${{ matrix.target }}
+          path: ovenspring-${{ matrix.target }}.tar.gz
+          if-no-files-found: error
 
   publish:
     needs: build
@@ -104,13 +85,29 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Publish the checksums, the install script and the release
+      # The executable reports the crate's version, and the dashboard compares it with the latest
+      # release's tag.
+      - name: Check the tag names the crate's version
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          version="$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml)"
+          if [ "$TAG" != "v$version" ]; then
+            echo "release tag $TAG does not match the crate's version $version" >&2
+            exit 1
+          fi
+
+      - name: Collect the archives
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: archive-*
+          path: archives
+          merge-multiple: true
+
+      - name: Attach the archives, the checksums and the install script
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.ref_name }}
         run: |
-          mkdir archives
-          gh release download "$TAG" --pattern 'ovenspring-*.tar.gz' --dir archives
           (cd archives && sha256sum ovenspring-*.tar.gz > ../SHA256SUMS)
-          gh release upload "$TAG" SHA256SUMS install.sh
-          gh release edit "$TAG" --draft=false
+          gh release upload "$TAG" archives/ovenspring-*.tar.gz SHA256SUMS install.sh

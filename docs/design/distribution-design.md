@@ -38,7 +38,7 @@ None.
 
 #### Quality Assurance Mechanisms
 
-- [x] Release workflow builds and tests on every target before publishing — Covers: `.github/workflows/release.yml` — Status: `adopted`
+- [x] Release workflow builds and tests on every target before attaching the release's files — Covers: `.github/workflows/release.yml` — Status: `adopted`
 - [x] Configuration tests: a minimal configuration takes the defaults, each validation rule rejects its case by key, and serialization round-trips — Covers: `crates/core/src/config.rs` — Status: `adopted`
 
 ### Problem to Solve
@@ -269,7 +269,7 @@ The dashboard tells the owner which version the repository runs and when there i
 #### Release pipeline
 
 - `ci.yml` on every push and pull request: Rust format, clippy, tests, release build, `cargo deny` and `cargo machete` on Linux and macOS; the dashboard's lint, format, unused-code check, build, unit and Storybook accessibility tests, and end-to-end tests.
-- `release.yml` on a version tag: builds `aarch64-apple-darwin`, `x86_64-apple-darwin`, `x86_64-unknown-linux-musl` and `aarch64-unknown-linux-musl` (statically linked on Linux; on macOS linking only system libraries); runs the tests on each; publishes the archives, `SHA256SUMS` and `install.sh`.
+- `release.yml` on a release a person publishes, its tag and notes together: builds `aarch64-apple-darwin`, `x86_64-apple-darwin`, `x86_64-unknown-linux-musl` and `aarch64-unknown-linux-musl` (statically linked on Linux; on macOS linking only system libraries); runs the tests on each; once every platform has passed and the tag names the crate's version, attaches the archives, `SHA256SUMS` and `install.sh` to the release.
 - `install.sh`: detects the platform, downloads the archive and `SHA256SUMS`, verifies, installs to `~/.local/bin`, and prints how to add it to PATH when needed.
 
 ### Data Representation Decision
