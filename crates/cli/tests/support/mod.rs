@@ -15,6 +15,14 @@ pub mod recording;
 pub mod scripts;
 pub mod slack_stub;
 
+/// The tests' HTTP server: `python3 serve <port> <directory>`.
+pub const SERVE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/support/serve");
+
+/// The command that serves `dir`, a shell word such as `"$OVENSPRING_DATA_DIR"`, on `$PORT`.
+pub fn serve(dir: &str) -> String {
+    format!("exec python3 \"{SERVE}\" \"$PORT\" {dir}")
+}
+
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 use std::sync::Arc;

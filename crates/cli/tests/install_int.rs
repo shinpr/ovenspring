@@ -54,14 +54,8 @@ impl Release {
             .unwrap()
             .port();
         let server = Command::new("python3")
-            .args([
-                "-m",
-                "http.server",
-                &port.to_string(),
-                "--bind",
-                "127.0.0.1",
-            ])
-            .arg("--directory")
+            .arg(support::SERVE)
+            .arg(port.to_string())
             .arg(&dir)
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())

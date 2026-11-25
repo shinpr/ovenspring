@@ -549,12 +549,15 @@ fn an_answered_command_is_recorded_so_a_restart_does_not_answer_it_again() {
 #[test]
 fn preview_press_starts_the_issue_app_and_replies_with_its_local_address() {
     let env = Env::new();
-    let app = r#"
-[app]
-start = 'printf "%s %s %s" "$PWD" "$PORT" "$OVENSPRING_DATA_DIR" > "$OVENSPRING_DATA_DIR/started"; exec python3 -m http.server "$PORT" --bind 127.0.0.1 --directory "$OVENSPRING_DATA_DIR"'
-ready = "http://127.0.0.1:$PORT/started"
-"#;
-    let (mut d, gh, stub, slack) = held_merge(&env, app, Map::new());
+    let start = format!(
+        r#"printf "%s %s %s" "$PWD" "$PORT" "$OVENSPRING_DATA_DIR" > "$OVENSPRING_DATA_DIR/started"; {}"#,
+        support::serve("\"$OVENSPRING_DATA_DIR\"")
+    );
+    let app = format!(
+        "\n[app]\nstart = {}\nready = \"http://127.0.0.1:$PORT/started\"\n",
+        serde_json::to_string(&start).unwrap()
+    );
+    let (mut d, gh, stub, slack) = held_merge(&env, &app, Map::new());
     let request = stub.message_of(&pending_merge_request(&d).unwrap().id);
     let ts = request["ts"].as_str().unwrap().to_owned();
     let replies = || {

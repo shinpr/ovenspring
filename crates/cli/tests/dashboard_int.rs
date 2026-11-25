@@ -703,7 +703,7 @@ fn serving() -> Value {
     json!({
         "runs": "commands",
         "setup": "mkdir -p \"$OVENSPRING_DATA_DIR/www\" && touch \"$OVENSPRING_DATA_DIR/www/ready\"",
-        "start": "exec python3 -m http.server \"$PORT\" --bind 127.0.0.1 --directory \"$OVENSPRING_DATA_DIR/www\"",
+        "start": support::serve("\"$OVENSPRING_DATA_DIR/www\""),
         "ready": "http://127.0.0.1:$PORT/ready"
     })
 }
@@ -1505,6 +1505,7 @@ fn app_guard_and_review_settings_are_saved_to_the_configuration() {
     assert!(broken.json()["errors"]["check"].is_string());
     let mut serving = serving();
     serving["ready"] = json!("");
+    let start = serving["start"].clone();
     for (section, body) in [
         ("app", serving),
         ("guard", json!({"deny": ["terraform apply *", " "]})),
@@ -1516,13 +1517,7 @@ fn app_guard_and_review_settings_are_saved_to_the_configuration() {
 
     let config = Config::load(&env.repo).unwrap();
     assert!(config.app.setup.is_some() && !config.app.nothing_to_run);
-    assert!(
-        config
-            .app
-            .start
-            .as_deref()
-            .is_some_and(|s| s.contains("http.server"))
-    );
+    assert_eq!(config.app.start.as_deref(), start.as_str());
     assert_eq!(config.app.ready, None);
     assert_eq!(config.guard.deny, ["terraform apply *"]);
     assert_eq!(config.review.bots, ["ai-reviewer[bot]"]);

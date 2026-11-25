@@ -21,15 +21,17 @@ use ovenspring_daemon::app::{App, AppError};
 
 const WAIT: Duration = Duration::from_secs(20);
 
+/// The CLI tests' HTTP server, which listens without first looking up its host's name.
+const SERVE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../cli/tests/support/serve");
+
 /// A server that answers `/health` with 200 and writes the data directory it was given to a file
 /// there, so the test sees which environment each app received.
 fn server_config() -> AppConfig {
     AppConfig {
         setup: Some("echo setup >> \"$OVENSPRING_DATA_DIR/setup.log\"".into()),
-        start: Some(
-            r#"echo "$OVENSPRING_DATA_DIR" > "$OVENSPRING_DATA_DIR/started"; exec python3 -m http.server "$PORT" --bind 127.0.0.1 --directory "$OVENSPRING_DATA_DIR""#
-                .into(),
-        ),
+        start: Some(format!(
+            r#"echo "$OVENSPRING_DATA_DIR" > "$OVENSPRING_DATA_DIR/started"; exec python3 "{SERVE}" "$PORT" "$OVENSPRING_DATA_DIR""#
+        )),
         ready: Some("http://127.0.0.1:$PORT/started".into()),
         nothing_to_run: false,
     }
