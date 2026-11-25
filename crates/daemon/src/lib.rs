@@ -527,15 +527,7 @@ impl Daemon {
     }
 
     pub(crate) fn active_items(&self) -> Result<Vec<PathBuf>, DaemonError> {
-        let dir = self.store.active_dir();
-        let mut items: Vec<PathBuf> = fs::read_dir(&dir)
-            .map_err(StoreError::io(&dir))?
-            .filter_map(Result::ok)
-            .map(|e| e.path())
-            .filter(|p| p.extension().is_some_and(|x| x == "md"))
-            .collect();
-        items.sort();
-        Ok(items)
+        Ok(self.store.active_items()?)
     }
 
     /// Where work runs: the issue's worktree, or for work outside an issue (sprints,

@@ -966,9 +966,12 @@ fn a_reply_to_a_design_approval_goes_back_to_the_lead_as_the_answer() {
     assert_eq!(answered.status, DecisionStatus::Answered);
     assert_eq!(answered.answer.unwrap().text.as_deref(), Some(reply));
     assert_eq!(approvals(&env), [] as [ApprovalRecord; 0]);
-    let item = std::fs::read_dir(env.state().join("board/active"))
+    let item = d
+        .store()
+        .active_items()
         .unwrap()
-        .map(|e| std::fs::read_to_string(e.unwrap().path()).unwrap())
+        .into_iter()
+        .map(|p| std::fs::read_to_string(p).unwrap())
         .find(|t| t.contains("step: design\n"))
         .expect("the design runs again");
     let answer = env

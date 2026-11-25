@@ -164,18 +164,18 @@ fn items_of(
     launches: &[Launch],
 ) -> Result<Vec<(String, Item)>, DaemonError> {
     let mut out = Vec::new();
-    for dir in [store.archive_dir(), store.active_dir()] {
-        let entries = fs::read_dir(&dir).map_err(StoreError::io(&dir))?;
-        for entry in entries {
-            let path = entry.map_err(StoreError::io(&dir))?.path();
-            let name = ovenspring_store::item_name(&path);
-            if !name.contains(key) {
-                continue;
-            }
-            let item = store.read_item(&path)?;
-            if item.front.issue.as_deref() == Some(key) {
-                out.push((name, item));
-            }
+    for path in store
+        .archived_items()?
+        .into_iter()
+        .chain(store.active_items()?)
+    {
+        let name = ovenspring_store::item_name(&path);
+        if !name.contains(key) {
+            continue;
+        }
+        let item = store.read_item(&path)?;
+        if item.front.issue.as_deref() == Some(key) {
+            out.push((name, item));
         }
     }
     let first = |name: &str| {
@@ -918,5 +918,41 @@ mod tests {
 
         let comments = with_findings(Origin::PrComments, &[("comments", 3), ("code-review/1", 1)]);
         assert_eq!(judging(&comments), Some(3));
+    }
+
+    #[test]
+    fn an_item_an_agent_is_rewriting_counts_once_in_its_issue() {
+        use ovenspring_core::item::{Front, Status};
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::open(dir.path().join("state")).unwrap();
+        let item = Item {
+            front: Front {
+                step: Step::Requirements,
+                to: Step::Requirements.role(),
+                status: Status::Doing,
+                issue: Some("ACME-1".to_owned()),
+                sprint: None,
+                round: None,
+                unit: None,
+                refs: vec![],
+                out: store.output_path("req-ACME-1").display().to_string(),
+                prepare: false,
+                resume: None,
+            },
+            body: "Work on requirements.\n".to_owned(),
+        };
+        let path = store.file_item("req-ACME-1", &item).unwrap();
+        // `ovenspring item set` writes the new text beside the item, then moves it in.
+        fs::copy(&path, path.with_extension("tmp")).unwrap();
+
+        let items = items_of(&store, "ACME-1", &[]).unwrap();
+
+        assert_eq!(
+            items
+                .iter()
+                .map(|(name, _)| name.as_str())
+                .collect::<Vec<_>>(),
+            ["req-ACME-1"]
+        );
     }
 }

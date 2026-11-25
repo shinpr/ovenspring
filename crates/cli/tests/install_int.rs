@@ -16,12 +16,12 @@
 mod support;
 
 use std::fs;
-use std::net::TcpListener;
+use std::io::{BufRead as _, BufReader};
 use std::os::unix::fs::PermissionsExt as _;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
-use support::{Running, wait_until};
+use support::Running;
 
 /// The archive name the release publishes for the machine running the test.
 fn archive() -> String {
@@ -48,25 +48,21 @@ impl Release {
     fn serve(root: &Path) -> Release {
         let dir = root.join("release");
         fs::create_dir_all(&dir).unwrap();
-        let port = TcpListener::bind("127.0.0.1:0")
-            .unwrap()
-            .local_addr()
-            .unwrap()
-            .port();
-        let server = Command::new("python3")
-            .arg(support::SERVE)
-            .arg(port.to_string())
-            .arg(&dir)
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .spawn()
+        let mut server = Running(
+            Command::new("python3")
+                .arg(support::SERVE)
+                .arg("0")
+                .arg(&dir)
+                .stdout(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::null())
+                .spawn()
+                .unwrap(),
+        );
+        let mut port = String::new();
+        BufReader::new(server.0.stdout.take().unwrap())
+            .read_line(&mut port)
             .unwrap();
-        let server = Running(server);
-        assert!(wait_until(10, || std::net::TcpStream::connect((
-            "127.0.0.1",
-            port
-        ))
-        .is_ok()));
+        let port = port.trim();
         Release {
             url: format!("http://127.0.0.1:{port}"),
             dir,

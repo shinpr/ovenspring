@@ -568,12 +568,13 @@ fn restart_relaunches_doing_items_repairs_missing_items_and_keeps_open_pull_requ
         60,
         |d| {
             for issue in ["ACME-123", "ACME-124", "ACME-125"] {
-                let n = std::fs::read_dir(d.store().active_dir())
+                let n = d
+                    .store()
+                    .active_items()
                     .unwrap()
-                    .filter(|e| {
-                        std::fs::read_to_string(e.as_ref().unwrap().path())
-                            .unwrap_or_default()
-                            .contains(&format!("issue: {issue}\n"))
+                    .iter()
+                    .filter(|p| {
+                        d.store().read_item(p).unwrap().front.issue.as_deref() == Some(issue)
                     })
                     .count();
                 assert!(n <= 1, "{issue} has {n} items");
