@@ -9,7 +9,7 @@ Load and read `ovenspring-writing-for-agents` completely before acting on your i
 ## Inputs
 
 - the review's proposed `agreements`, `knowledge` and its message (under `review` in `sprint.json`, which your item names)
-- the current files under `.ovenspring/agreements/` and the knowledge folder (under Context), and the sprint's facts
+- the current files in the working agreements and knowledge folders (under Context), and the sprint's facts
 - the factory's rules, and the role, step, and skill files the agreements bear on
 - on a recheck, your earlier findings (your item names them)
 

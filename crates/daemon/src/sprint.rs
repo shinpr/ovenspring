@@ -460,7 +460,7 @@ impl Daemon {
         let key = format!("agreements-{}", state.id);
         let base = self.config.repo.base_branch.clone();
         let worktree = crate::worktree::ensure(&self.paths.repo, &self.store, &key, &base)?;
-        let agreements = worktree.join(".ovenspring/agreements");
+        let agreements = worktree.join(&self.config.agreements.path);
         for a in &review.agreements {
             write_whole(&agreements.join(a.file.as_str()), &a.content)?;
         }
@@ -470,7 +470,7 @@ impl Daemon {
         }
         // A folder the review never wrote to is not there for git to add.
         let written: Vec<&str> = [
-            ".ovenspring/agreements",
+            self.config.agreements.path.as_str(),
             self.config.knowledge.path.as_str(),
         ]
         .into_iter()

@@ -87,8 +87,8 @@ pub enum Approval {
     Infrastructure,
     Ci,
     ExternalContract,
-    /// The factory's configuration, working agreements or the repository's agent instructions:
-    /// held by path whatever a design declares.
+    /// The factory's configuration, working agreements, knowledge or the repository's agent
+    /// instructions: held by path whatever a design declares.
     FactoryConfiguration,
     /// A kind of change the owner named in `[person_reviews]`, with the words that describe it: a
     /// person reviews it before it merges.
@@ -696,7 +696,7 @@ impl AgreementName {
         }
     }
 
-    /// The file's name under `.ovenspring/agreements/`.
+    /// The file's name in the working agreements folder (`[agreements] path`).
     pub fn as_str(self) -> &'static str {
         match self {
             AgreementName::Common => "common.md",
@@ -708,8 +708,8 @@ impl AgreementName {
     }
 }
 
-/// A working-agreements file as it should read after the review, `.ovenspring/agreements/<file>`;
-/// a file left with nothing (empty `content`) is deleted.
+/// A working-agreements file as it should read after the review, `<agreements folder>/<file>`; a
+/// file left with nothing (empty `content`) is deleted.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct AgreementFile {

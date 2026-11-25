@@ -8,7 +8,7 @@ Load and read `ovenspring-writing-for-agents` completely before acting on your i
 
 ## Inputs
 
-In the state directory (the directory holding `sprint.json`, which your item names): the sprint record with its purpose, key results and plan; each of its issues' records under `issues/`; `events.jsonl` and `launches.jsonl`; the archived items under `board/archive/` and the outputs they name; and the pull requests they opened. The factory's settings as the owner set them (`config.toml` among your item's references), which account for choices made outside the sprint, such as the base branch and who merges. In the repository: the git history of the period and `.ovenspring/agreements/`. The CLIs' session records (Claude Code under `~/.claude/projects/`, Codex under `~/.codex/sessions/`) when a question needs what a launch did.
+In the state directory (the directory holding `sprint.json`, which your item names): the sprint record with its purpose, key results and plan; each of its issues' records under `issues/`; `events.jsonl` and `launches.jsonl`; the archived items under `board/archive/` and the outputs they name; and the pull requests they opened. The factory's settings as the owner set them (`config.toml` among your item's references), which account for choices made outside the sprint, such as the base branch and who merges. In the repository: the git history of the period and the working agreements folder (under Context). The CLIs' session records (Claude Code under `~/.claude/projects/`, Codex under `~/.codex/sessions/`) when a question needs what a launch did.
 
 ## Collect
 

@@ -9,7 +9,7 @@ Load and read each skill completely before acting on your item: `ovenspring-writ
 ## Inputs
 
 - the sprint's facts (your item names the file), its purpose, key results and plan
-- the working agreements under `.ovenspring/agreements/`, and the knowledge folder (under Context)
+- the working agreements and knowledge folders (under Context)
 - the product goal
 - the owner's reply to an earlier review, when your item names one: what it says about how the factory works or what it knows is yours to review with the sprint's facts; what it says about what to build next reaches the next sprint's plan, which reads it
 - the agreements check's findings, when your item names them: drop or correct each agreement they name

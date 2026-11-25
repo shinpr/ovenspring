@@ -42,6 +42,7 @@ function general(config: Config, change: Partial<GeneralSection>): GeneralSectio
     mergeBy: config.merge.by,
     held: Object.fromEntries(Object.entries(config.held).map(([c, h]) => [c, h?.paths ?? []])),
     personReviews: config.person_reviews,
+    agreementsPath: config.agreements.path,
     knowledgePath: config.knowledge.path,
     githubToken: null,
     ...change,
@@ -353,28 +354,62 @@ export function Agents({ settings, skills, save }: SectionProps) {
         available={settings.mcp}
         onSave={(agents) => save('agents', agents)}
       />
-      <KnowledgeRow settings={settings} save={save} />
+      <FolderRow
+        settings={settings}
+        save={save}
+        name="Working agreements folder"
+        what="Where the factory keeps what it learned about its own work."
+        saved={settings.config.agreements.path}
+        field="agreements.path"
+        change={(path) => ({ agreementsPath: path })}
+        example="docs/factory/agreements"
+      />
+      <FolderRow
+        settings={settings}
+        save={save}
+        name="Knowledge folder"
+        what="Where the factory keeps what it learns about this product."
+        saved={settings.config.knowledge.path}
+        field="knowledge.path"
+        change={(path) => ({ knowledgePath: path })}
+        example="docs/knowledge"
+      />
     </>
   )
 }
 
-function KnowledgeRow({ settings, save }: Pick<SectionProps, 'settings' | 'save'>) {
-  const config = settings.config
-  const [path, setPath] = useState(config.knowledge.path)
+function FolderRow({
+  settings,
+  save,
+  name,
+  what,
+  saved,
+  field,
+  change,
+  example,
+}: Pick<SectionProps, 'settings' | 'save'> & {
+  name: string
+  what: string
+  saved: string
+  field: string
+  change: (path: string) => Partial<GeneralSection>
+  example: string
+}) {
+  const [path, setPath] = useState(saved)
   return (
     <SettingRow
-      name="Knowledge folder"
-      what="Where the factory keeps what it learns about this product."
-      summary={<code>{config.knowledge.path}</code>}
-      onOpen={() => setPath(config.knowledge.path)}
-      onSave={() => save('general', general(config, { knowledgePath: path }))}
-      fields={['knowledge.path']}
+      name={name}
+      what={what}
+      summary={<code>{saved}</code>}
+      onOpen={() => setPath(saved)}
+      onSave={() => save('general', general(settings.config, change(path)))}
+      fields={[field]}
     >
       {(reasons) => (
         <Field
           label="Folder in the repository"
-          hint="Where this repository keeps such notes, such as docs/knowledge."
-          error={reasons['knowledge.path']}
+          hint={`A folder git tracks, such as ${example}.`}
+          error={reasons[field]}
         >
           {(control) => (
             <input
@@ -535,8 +570,8 @@ export function Merging(props: SectionProps) {
         summary={
           <>
             <div className={styles['line']}>
-              Changes to <code>.ovenspring/</code>, the working agreements, <code>AGENTS.md</code>{' '}
-              or <code>CLAUDE.md</code>
+              Changes to <code>.ovenspring/</code>, the working agreements, the knowledge,{' '}
+              <code>AGENTS.md</code> or <code>CLAUDE.md</code>
             </div>
             <div className={styles['line']}>
               Anything a design said it adds: schema, external connections, infrastructure, CI or

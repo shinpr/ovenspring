@@ -107,11 +107,11 @@ Write where the product is heading, in a few sentences. The lead plans every spr
 
 A reply about how the factory works revises the review. A reply about what to build next reaches the next proposal.
 
-**Close sprint** ends the sprint without approving the next one. It opens a pull request with the agreement and knowledge changes. Changes under `.ovenspring/` are [always held](#when-the-factory-merges) for you, and closing the sprint counts as that approval. With `merge.by = "factory"`, the pull request merges once its checks pass. With `merge.by = "owner"`, the thread links it for you to merge on GitHub. The next sprint is proposed after it merges, or at once when nothing changed.
+**Close sprint** ends the sprint without approving the next one. It opens a pull request with the agreement and knowledge changes. Those changes are [always held](#when-the-factory-merges) for you, and closing the sprint counts as that approval. With `merge.by = "factory"`, the pull request merges once its checks pass. With `merge.by = "owner"`, the thread links it for you to merge on GitHub. The next sprint is proposed after it merges, or at once when nothing changed.
 
 ### Working agreements and knowledge
 
-Both are how the factory learns from one sprint to the next, and both live in the repository.
+Both are how the factory learns from one sprint to the next, and both live in the repository: in `.ovenspring/agreements/` and `.ovenspring/knowledge/` unless you set other folders in Settings. Runs read them from the base branch and each sprint review commits to them, so the folders you choose must be ones git tracks. That is also how you keep `.ovenspring/` out of git. Point both folders elsewhere, ignore `.ovenspring/`, and the configuration stays on your machine.
 
 **Working agreements** are what the factory learned about its own work: one file shared by every role, and one per role. Every run reads the shared file and its role's file from the base branch. At each sprint review the lead goes through every agreement and asks whether the problem it answers came up. An agreement that didn't prevent its problem gets rewritten, or moved to the file of the role that makes the choice it is about. One whose occasion never arose is dropped when it was about a single event. A new agreement is added only for a gap the sprint showed and nothing else covers, because every agreement is one more thing each run has to keep in mind. An agreement is a line or two:
 
@@ -209,7 +209,7 @@ With `merge.by = "factory"`, the gate merges one pull request at a time, and onl
 
 Right before merging, the gate reads the base and the head again. If either moved, it decides again.
 
-**Held categories** are changes you approve before they merge: `schema`, `external-connection`, `infrastructure`, `ci` and `external-contract`. A change falls into one when its design declared it, or when a changed path matches the patterns you set for that category in Settings. A change under `.ovenspring/` at the repository root, or to an `AGENTS.md` or `CLAUDE.md` at any depth, is always held. For the pull request a sprint review opens, [Close sprint](#a-sprint-from-your-side) is that approval.
+**Held categories** are changes you approve before they merge: `schema`, `external-connection`, `infrastructure`, `ci` and `external-contract`. A change falls into one when its design declared it, or when a changed path matches the patterns you set for that category in Settings. A change under `.ovenspring/` at the repository root, in the agreements or knowledge folder, or to an `AGENTS.md` or `CLAUDE.md` at any depth, is always held. For the pull request a sprint review opens, [Close sprint](#a-sprint-from-your-side) is that approval.
 
 **Changes a person reviews** cover what paths can't name. Under Merging in Settings, describe each kind in your words, for example `payments: changes to how prices, discounts or refunds are calculated`. The design and the code review judge which kinds a change falls under, and such a change waits for your approval of its commit as a held one does.
 
@@ -324,6 +324,9 @@ issues_at_once = 3
 # review_rounds = 3                # no limit when unset
 # fix_ci_rounds = 3
 
+[agreements]
+path = ".ovenspring/agreements"
+
 [knowledge]
 path = ".ovenspring/knowledge"
 ```
@@ -351,7 +354,7 @@ The Sprints page and each issue's page download the records of that sprint or is
 |---|---|
 | The executable | `~/.local/bin/ovenspring` |
 | Configuration | `.ovenspring/config.toml` in the repository |
-| Working agreements | `.ovenspring/agreements/` in the repository |
+| Working agreements | `.ovenspring/agreements/`, or the folder you set |
 | Knowledge | `.ovenspring/knowledge/`, or the folder you set |
 | Issue branches | `ovenspring/<issue key>` |
 | Credentials | `~/.config/ovenspring/credentials/` (`$XDG_CONFIG_HOME` when set), readable by you only |
@@ -366,6 +369,6 @@ To stop using it in one repository:
 2. Delete its credentials file and state folder. Both are named after the repository's folder and a hash of its path, such as `storefront-3fa29c01b2d4`: `storefront-3fa29c01b2d4.toml` under the credentials location and `storefront-3fa29c01b2d4/` under the state location above.
 3. Run `git worktree prune` in the repository, so git forgets the worktrees that lived in the state folder.
 4. Close any open pull requests from `ovenspring/` branches you don't want, and delete those branches, locally and on GitHub.
-5. Delete `.ovenspring/` if you no longer want the configuration, agreements or knowledge.
+5. Delete `.ovenspring/` if you no longer want the configuration, agreements or knowledge, and the agreements and knowledge folders too if you set others.
 
 To remove it from the machine, do that for each repository, then delete `~/.local/bin/ovenspring`. You can also remove the Slack app from your workspace.

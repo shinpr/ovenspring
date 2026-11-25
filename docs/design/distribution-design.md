@@ -222,8 +222,11 @@ ready = "http://localhost:$PORT/health"
 [person_reviews]                   # kinds of change a person reviews before they merge, in the owner's words
 payments = "How customers are charged or refunded, src/billing/** included"
 
+[agreements]
+path = ".ovenspring/agreements"    # where the working agreements are kept; a folder inside the repository git tracks
+
 [knowledge]
-path = ".ovenspring/knowledge"     # where the factory keeps what it learns about the product; a folder inside the repository
+path = ".ovenspring/knowledge"     # where the factory keeps what it learns about the product; a folder inside the repository git tracks
 
 [guard]
 deny = ["kubectl * --context *prod*", "terraform apply *"]
@@ -298,7 +301,7 @@ The dashboard tells the owner which version the repository runs and when there i
 Contract: .ovenspring/config.toml
 Input:
   Type: TOML as above
-  Validation: unknown keys and values rejected; repo.base_branch non-empty; tracker.team required for linear; slack ids match Slack id shape and slack.owners non-empty; held names are the held categories, factory-configuration is refused (always held), each held entry has a path; person_reviews names are not held categories and each has a description; roles.*.skills exist in the folder the role's CLI reads; knowledge.path is a relative folder inside the repository; app.start and nothing_to_run not both; limits.issues_at_once at least 1
+  Validation: unknown keys and values rejected; repo.base_branch non-empty; tracker.team required for linear; slack ids match Slack id shape and slack.owners non-empty; held names are the held categories, factory-configuration is refused (always held), each held entry has a path; person_reviews names are not held categories and each has a description; roles.*.skills exist in the folder the role's CLI reads; agreements.path and knowledge.path are relative folders inside the repository; app.start and nothing_to_run not both; limits.issues_at_once at least 1
 Output:
   Type: typed Config
   On Error: the dashboard shows the key and the reason; the factory starts no work

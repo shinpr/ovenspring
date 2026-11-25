@@ -714,12 +714,14 @@ impl Daemon {
             agreements: prompt::read_agreements(
                 &self.paths.repo,
                 &self.config.repo.base_branch,
+                &self.config.agreements.path,
                 item.front.to,
             )
             .map_err(|e| DaemonError::Launch(e.to_string()))?,
             repo_skills: &role.skills,
             append: &role.append,
             person_reviews: &self.config.person_reviews,
+            agreements_folder: &self.config.agreements.path,
             knowledge: &self.config.knowledge.path,
         })
         .map_err(|e| DaemonError::Launch(e.to_string()))

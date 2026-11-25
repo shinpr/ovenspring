@@ -41,7 +41,29 @@ pub struct Config {
     #[serde(default)]
     pub limits: Limits,
     #[serde(default)]
+    pub agreements: AgreementsConfig,
+    #[serde(default)]
     pub knowledge: KnowledgeConfig,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(deny_unknown_fields)]
+pub struct AgreementsConfig {
+    /// Relative to the repository's root.
+    #[serde(default = "default_agreements_path")]
+    pub path: String,
+}
+
+fn default_agreements_path() -> String {
+    ".ovenspring/agreements".into()
+}
+
+impl Default for AgreementsConfig {
+    fn default() -> Self {
+        AgreementsConfig {
+            path: default_agreements_path(),
+        }
+    }
 }
 
 /// Where the factory keeps its knowledge in the repository.
@@ -381,6 +403,30 @@ impl Config {
         toml::to_string(self)
     }
 
+    fn check_folders(&self, path: &str) -> Result<(), ConfigError> {
+        for (key, folder, example) in [
+            (
+                "agreements.path",
+                &self.agreements.path,
+                "docs/factory/agreements",
+            ),
+            ("knowledge.path", &self.knowledge.path, "docs/knowledge"),
+        ] {
+            let inside = !folder.trim().is_empty()
+                && Path::new(folder)
+                    .components()
+                    .all(|c| matches!(c, std::path::Component::Normal(_)));
+            if !inside {
+                return Err(ConfigError::Invalid {
+                    path: path.into(),
+                    key: key.into(),
+                    message: format!("Give a folder inside the repository, such as {example}."),
+                });
+            }
+        }
+        Ok(())
+    }
+
     fn check_shape(&self, path: &str) -> Result<(), ConfigError> {
         let invalid = |key: &str, message: String| ConfigError::Invalid {
             path: path.into(),
@@ -457,17 +503,7 @@ impl Config {
                 ));
             }
         }
-        let knowledge = std::path::Path::new(&self.knowledge.path);
-        if self.knowledge.path.trim().is_empty()
-            || !knowledge
-                .components()
-                .all(|c| matches!(c, std::path::Component::Normal(_)))
-        {
-            return Err(invalid(
-                "knowledge.path",
-                "Give a folder inside the repository, such as docs/knowledge.".into(),
-            ));
-        }
+        self.check_folders(path)?;
         if self.app.nothing_to_run && self.app.start.is_some() {
             return Err(invalid(
                 "app.nothing_to_run",
@@ -630,18 +666,22 @@ owners = ["U0123456789"]
     }
 
     #[test]
-    fn knowledge_lives_in_a_folder_inside_the_repository() {
+    fn agreements_and_knowledge_live_in_folders_inside_the_repository() {
         let default = Config::parse(MINIMAL, "config.toml").unwrap();
+        assert_eq!(default.agreements.path, ".ovenspring/agreements");
         assert_eq!(default.knowledge.path, ".ovenspring/knowledge");
-        let ok = format!("{MINIMAL}\n[knowledge]\npath = \"docs/knowledge\"\n");
-        assert_eq!(
-            Config::parse(&ok, "config.toml").unwrap().knowledge.path,
-            "docs/knowledge"
+        let ok = format!(
+            "{MINIMAL}\n[agreements]\npath = \"docs/factory/agreements\"\n[knowledge]\npath = \"docs/knowledge\"\n"
         );
-        for bad in ["/tmp/knowledge", "../notes", "docs/../../x", ""] {
-            let text = format!("{MINIMAL}\n[knowledge]\npath = \"{bad}\"\n");
-            let err = Config::parse(&text, "config.toml").unwrap_err().to_string();
-            assert!(err.contains("knowledge.path"), "{bad}: {err}");
+        let ok = Config::parse(&ok, "config.toml").unwrap();
+        assert_eq!(ok.agreements.path, "docs/factory/agreements");
+        assert_eq!(ok.knowledge.path, "docs/knowledge");
+        for section in ["agreements", "knowledge"] {
+            for bad in ["/tmp/notes", "../notes", "docs/../../x", ""] {
+                let text = format!("{MINIMAL}\n[{section}]\npath = \"{bad}\"\n");
+                let err = Config::parse(&text, "config.toml").unwrap_err().to_string();
+                assert!(err.contains(&format!("{section}.path")), "{bad}: {err}");
+            }
         }
     }
 

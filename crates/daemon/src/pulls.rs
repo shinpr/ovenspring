@@ -724,6 +724,7 @@ impl Daemon {
         )?;
         Ok(categories_of_change(
             changed.split('\0').filter(|p| !p.is_empty()),
+            &[&self.config.agreements.path, &self.config.knowledge.path],
             &self.config.held,
             declared,
         ))
@@ -826,22 +827,27 @@ pub(crate) enum OwnerApprovals {
     Given(BTreeSet<Approval>),
 }
 
-/// Whether `path` is the factory's configuration, working agreements, or the repository's agent
-/// instructions (`AGENTS.md`, `CLAUDE.md` at any depth).
-fn is_factory_configuration(path: &str) -> bool {
+/// Whether `path` is the factory's configuration, in one of its `folders`, or the repository's
+/// agent instructions (`AGENTS.md`, `CLAUDE.md` at any depth).
+fn is_factory_configuration(path: &str, folders: &[&str]) -> bool {
     let name = path.rsplit('/').next().unwrap_or(path);
-    path.starts_with(".ovenspring/") || matches!(name, "AGENTS.md" | "CLAUDE.md")
+    path.starts_with(".ovenspring/")
+        || folders
+            .iter()
+            .any(|f| std::path::Path::new(path).starts_with(f))
+        || matches!(name, "AGENTS.md" | "CLAUDE.md")
 }
 
 /// The categories a diff touching `changed` paths is held for.
 fn categories_of_change<'a>(
     changed: impl IntoIterator<Item = &'a str>,
+    folders: &[&str],
     rules: &std::collections::BTreeMap<Approval, ovenspring_core::config::HeldCategory>,
     declared: &BTreeSet<Approval>,
 ) -> BTreeSet<Approval> {
     let mut categories = declared.clone();
     for path in changed {
-        if is_factory_configuration(path) {
+        if is_factory_configuration(path, folders) {
             categories.insert(Approval::FactoryConfiguration);
         }
         for (category, rule) in rules {
@@ -1126,5 +1132,20 @@ mod tests {
             codex_progress(&[older, newer], "abc", &bots),
             BotProgress::Done
         );
+    }
+
+    #[test]
+    fn a_change_to_the_agreements_or_knowledge_folder_is_held_wherever_they_are_kept() {
+        let folders = ["docs/factory/agreements", "docs/knowledge"];
+        let held = |path: &str| {
+            categories_of_change([path], &folders, &BTreeMap::new(), &BTreeSet::new())
+                .contains(&Approval::FactoryConfiguration)
+        };
+        assert!(held("docs/factory/agreements/executor.md"));
+        assert!(held("docs/knowledge/search-index.md"));
+        assert!(held(".ovenspring/config.toml"));
+        assert!(held("web/AGENTS.md"));
+        assert!(!held("docs/knowledge-old/notes.md"));
+        assert!(!held("src/export.rs"));
     }
 }

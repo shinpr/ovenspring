@@ -851,18 +851,25 @@ fn an_agreements_file_the_review_leaves_empty_is_deleted() {
 // AC: PRD AC-070: "The sprint review keeps the factory's knowledge ... its changes reach the base
 //     branch through the same pull request as the working agreements, in the folder the owner set,
 //     and the next sprint starts once it merges."
-// Behavior: `knowledge.path = "docs/knowledge"`; the closed review adds one knowledge file and
-//     changes no agreement -> the review's pull request adds that file under docs/knowledge and
-//     nothing else.
+// Behavior: `agreements.path = "docs/factory/agreements"` and `knowledge.path = "docs/knowledge"`,
+//     with the lead's agreement merged in the first -> the lead's launches read it; the closed review
+//     changes the shared agreement and adds one knowledge file -> the review's pull request adds
+//     those two files in those folders and nothing else.
 // @lane: integration
 // @dependency: daemon, sprint flow, FakeGitHub
 #[test]
-fn knowledge_the_review_adds_reaches_the_folder_the_owner_set_through_its_pull_request() {
+fn agreements_and_knowledge_are_read_and_written_in_the_folders_the_owner_set() {
     let env = Env::new();
+    std::fs::create_dir_all(env.repo.join("docs/factory/agreements")).unwrap();
+    std::fs::write(
+        env.repo.join("docs/factory/agreements/lead.md"),
+        "- Plan the smallest sprint that reaches the purpose.\n",
+    )
+    .unwrap();
     let mut script = Map::new();
     settling_sprint(&mut script);
-    sprint_steps(&mut script, false, &plan(&[]));
-    let mut learned = review(false);
+    sprint_steps(&mut script, true, &plan(&[]));
+    let mut learned = review(true);
     learned["output"]["knowledge"] = json!([{
         "file": "checkout/saved-addresses.md",
         "content": "# Saved addresses come from the account service\n"
@@ -870,7 +877,7 @@ fn knowledge_the_review_adds_reaches_the_folder_the_owner_set_through_its_pull_r
     script.insert("sprint-review".into(), json!([learned]));
     let (mut d, _, channel, _) = setup(
         &env,
-        "[merge]\nby = \"owner\"\n[knowledge]\npath = \"docs/knowledge\"\n",
+        "[merge]\nby = \"owner\"\n[agreements]\npath = \"docs/factory/agreements\"\n[knowledge]\npath = \"docs/knowledge\"\n",
         &script,
         vec![issue("ACME-120", &[])],
     );
@@ -892,7 +899,19 @@ fn knowledge_the_review_adds_reaches_the_folder_the_owner_set_through_its_pull_r
             &env.origin,
             &["diff", "--name-status", &format!("develop...{branch}")]
         ),
-        "A\tdocs/knowledge/checkout/saved-addresses.md"
+        "A\tdocs/factory/agreements/common.md\nA\tdocs/knowledge/checkout/saved-addresses.md"
+    );
+    let plan_prompt = env
+        .records()
+        .into_iter()
+        .find_map(|r| {
+            let prompt = r["prompt"].as_str()?.to_owned();
+            prompt.contains("# Step: sprint-plan").then_some(prompt)
+        })
+        .unwrap();
+    assert!(
+        plan_prompt.contains("- Plan the smallest sprint that reaches the purpose."),
+        "{plan_prompt}"
     );
 }
 

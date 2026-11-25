@@ -8,6 +8,7 @@ export const settings: Settings = {
     merge: { by: 'factory' },
     held: { schema: { paths: ['db/migrations/**'] } },
     person_reviews: { payments: 'How customers are charged or refunded' },
+    agreements: { path: '.ovenspring/agreements' },
     knowledge: { path: '.ovenspring/knowledge' },
     agents: { permissions: 'auto', mcp: ['context7'] },
     roles: {
