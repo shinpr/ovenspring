@@ -318,7 +318,10 @@ impl Env {
     pub fn script_agents(&self, script: &serde_json::Value) {
         self.install_fake_agents();
         let root = self.fake_bin.parent().unwrap();
-        std::fs::write(root.join("agent-script.json"), script.to_string()).unwrap();
+        // Moved in whole, since a test can change the script while agents read it.
+        let draft = root.join("agent-script.json.new");
+        std::fs::write(&draft, script.to_string()).unwrap();
+        std::fs::rename(draft, root.join("agent-script.json")).unwrap();
     }
 
     /// A tracker issue as the tracker poll writes it.
