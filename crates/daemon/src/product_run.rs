@@ -2,7 +2,6 @@
 //! `run-commands` step reads the repository, and the factory starts the product once with the
 //! commands it found. The owner keeps, changes or replaces the answer; the server writes `[app]`.
 
-use std::net::TcpStream;
 use std::path::Path;
 use std::time::Instant;
 
@@ -58,8 +57,7 @@ fn write(store: &Store, run: &ProductRun) -> Result<(), DaemonError> {
     Ok(())
 }
 
-/// Starts the product once in `worktree` with `config`, waits until it answers, and stops it. A
-/// port something else already answers on fails the check: the answer would not be this start's.
+/// Starts the product once in `worktree` with `config`, waits until it answers, and stops it.
 pub fn check(state: &Path, worktree: &Path, config: &AppConfig) -> RunCheck {
     let app = App {
         state,
@@ -68,21 +66,6 @@ pub fn check(state: &Path, worktree: &Path, config: &AppConfig) -> RunCheck {
         config,
     };
     let _ = app.stop();
-    let port = match app.port() {
-        Ok(port) => port,
-        Err(e) => {
-            return RunCheck::Failed {
-                output: e.to_string(),
-            };
-        }
-    };
-    if TcpStream::connect(("127.0.0.1", port)).is_ok() {
-        return RunCheck::Failed {
-            output: format!(
-                "Something already answers on port {port}, which the check uses; stop it and continue again."
-            ),
-        };
-    }
     let began = Instant::now();
     let result = app.start(READY_WAIT);
     let _ = app.stop();

@@ -108,6 +108,40 @@ fn starting_a_running_app_again_keeps_its_port_and_runs_setup_once() {
 }
 
 #[test]
+fn an_app_whose_port_another_process_took_starts_on_another_port() {
+    let state = tempfile::tempdir().unwrap();
+    let config = server_config();
+    let tree = worktree(state.path(), "ACME-1");
+    let app = App {
+        state: state.path(),
+        issue: "ACME-1",
+        worktree: &tree,
+        config: &config,
+    };
+    let _stop = Stopping(&app);
+    let kept = app.start(WAIT).unwrap();
+    app.stop().unwrap();
+    let elsewhere = tempfile::tempdir().unwrap();
+    let mut other = std::process::Command::new("python3")
+        .arg(SERVE)
+        .arg(kept.to_string())
+        .arg(elsewhere.path())
+        .spawn()
+        .unwrap();
+    while !answers(kept) {
+        std::thread::sleep(Duration::from_millis(50));
+    }
+
+    let port = app.start(WAIT);
+
+    let _ = other.kill();
+    let _ = other.wait();
+    let port = port.unwrap();
+    assert_ne!(port, kept);
+    assert!(answers(port));
+}
+
+#[test]
 fn a_command_run_against_an_app_gets_its_port_and_data_directory() {
     let state = tempfile::tempdir().unwrap();
     let config = server_config();
