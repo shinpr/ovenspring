@@ -5,10 +5,10 @@ pre-commit:
     - name: gitleaks
       run: gitleaks git --pre-commit --staged --redact --no-banner --verbose
     - name: rust format
-      glob: "*.rs"
+      glob: ["*.rs", "rustfmt.toml", "rust-toolchain.toml"]
       run: cargo fmt --check
     - name: clippy
-      glob: ["*.rs", "Cargo.toml", "Cargo.lock"]
+      glob: ["*.rs", "*Cargo.toml", "Cargo.lock", "clippy.toml", "rust-toolchain.toml"]
       run: cargo clippy --workspace --all-targets --all-features -- -D warnings
     - name: dashboard lint and format
       root: dashboard/
@@ -20,7 +20,7 @@ pre-push:
     - name: rust tests
       run: cargo test --workspace
     - name: rust dependencies
-      glob: ["Cargo.toml", "Cargo.lock", "deny.toml"]
+      glob: ["*Cargo.toml", "Cargo.lock", "deny.toml"]
       run: cargo deny check && cargo machete
     - name: dashboard checks
       root: dashboard/
