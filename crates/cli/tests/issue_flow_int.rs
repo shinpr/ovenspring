@@ -1506,16 +1506,19 @@ fn the_design_is_given_the_issues_ui_spec() {
         button: Button::Approve,
         user: OWNER.into(),
     });
-    let design = |env: &Env| {
-        ["board/active", "board/archive"]
-            .iter()
-            .flat_map(|dir| std::fs::read_dir(env.state().join(dir)).unwrap())
-            .map(|e| std::fs::read_to_string(e.unwrap().path()).unwrap())
+    let design = |d: &ovenspring_daemon::Daemon| {
+        let store = d.store();
+        store
+            .active_items()
+            .unwrap()
+            .into_iter()
+            .chain(store.archived_items().unwrap())
+            .map(|p| std::fs::read_to_string(p).unwrap())
             .find(|t| t.contains("step: design\n"))
     };
-    run_until(&mut d, 60, |_| {}, |_| design(&env).is_some());
+    run_until(&mut d, 60, |_| {}, |d| design(d).is_some());
 
-    let item = design(&env).unwrap();
+    let item = design(&d).unwrap();
     assert!(
         item.lines().any(|l| l == format!("ui_spec: {spec}")),
         "{item}"

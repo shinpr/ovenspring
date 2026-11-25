@@ -113,7 +113,7 @@ impl Daemon {
         if run.found.is_some() {
             return Ok(());
         }
-        for path in self.active_items()? {
+        for path in self.store.active_items()? {
             if self.store.read_item(&path)?.front.step == Step::RunCommands {
                 return Ok(());
             }

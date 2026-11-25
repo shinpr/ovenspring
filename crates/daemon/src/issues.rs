@@ -291,7 +291,7 @@ impl Daemon {
     /// An issue that ended while work for it was open (merged or dropped by someone, or with a
     /// step under way): its launches stop and its items are archived.
     pub(crate) fn end_work(&mut self, key: &str) -> Result<(), DaemonError> {
-        for path in self.active_items()? {
+        for path in self.store.active_items()? {
             if self.store.read_item(&path)?.front.issue.as_deref() != Some(key) {
                 continue;
             }
@@ -718,7 +718,7 @@ impl Daemon {
 
     /// Turns each finished issue item into its fact, archiving the item first.
     pub(crate) fn consume_finished(&mut self) -> Result<(), DaemonError> {
-        for path in self.active_items()? {
+        for path in self.store.active_items()? {
             let name = item_name(&path);
             if self.running.contains_key(&name) {
                 continue;
@@ -1066,7 +1066,7 @@ impl Daemon {
     /// an action that could not complete), and retries pushes that did not happen.
     pub(crate) fn reconcile(&mut self) -> Result<(), DaemonError> {
         let mut present: BTreeSet<(String, Step, Option<usize>)> = BTreeSet::new();
-        for path in self.active_items()? {
+        for path in self.store.active_items()? {
             let front = self.store.read_item(&path)?.front;
             if let Some(issue) = front.issue {
                 present.insert((issue, front.step, front.unit));
