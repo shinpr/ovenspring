@@ -72,6 +72,7 @@ So Oven Spring runs the whole process, from requirements to merge, and fits into
 - A Slack workspace where you can create an app
 - Claude Code, Codex or OpenCode, installed and signed in on the same machine
 - Whatever the repository needs to build, test and run
+- Checks the base branch requires, end-to-end tests among them ([Before you start](docs/GUIDE.md#before-you-start))
 
 ## Install
 
@@ -89,7 +90,7 @@ From inside the repository:
 ovenspring start
 ```
 
-The dashboard opens in your browser on its setup page. There you connect GitHub, your issues and Slack, choose the agent CLI, let the lead find how the product runs, and write the goal. The first sprint proposal then arrives in Slack.
+The dashboard opens in your browser on its setup page. There you connect GitHub, your issues and Slack, choose the agent CLI, let the lead find how the product runs, and write the goal. The first sprint proposal then arrives in Slack. [Setting up](docs/GUIDE.md#setting-up) in the guide goes through each step, the Slack app included.
 
 After setup you work through Slack and the dashboard. The terminal is only for `ovenspring start`, which also reopens the dashboard when the factory is already running, and `ovenspring stop`.
 
