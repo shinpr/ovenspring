@@ -60,7 +60,8 @@ impl App<'_> {
         self.dir().join("app.pid")
     }
 
-    /// The issue's port, chosen once from the ports free at that moment and kept.
+    /// The issue's port, chosen from the ports free at that moment and kept until a start finds
+    /// something other than this app answering on it.
     pub fn port(&self) -> std::io::Result<u16> {
         let file = self.dir().join("port");
         if let Some(port) = fs::read_to_string(&file)
@@ -122,8 +123,6 @@ impl App<'_> {
         if ours && self.ready(port) {
             return Ok(port);
         }
-        // Its answers would not be this app's: another program's server, or a port another app
-        // holds for an instant while choosing its own.
         while !ours && TcpStream::connect(("127.0.0.1", port)).is_ok() {
             port = self.new_port()?;
         }
