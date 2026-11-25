@@ -17,11 +17,11 @@ Load and read `ovenspring-writing-for-agents` completely before acting on your i
 
 Judge each change against the standard that defines it, and nothing else:
 
-- It follows from the review's working-agreement steps: an agreement whose problem occurred was placed where the choice is made or changed at its cause; one whose occasion arose and was not applied, or whose occasion did not arise and that names a particular event or answers a cheap problem, was dropped; an added one answers a gap the sprint showed that no agreement answers, at its cause, where the problem would cost more than the rule, in the fewest words and rules.
+- It follows from the review's step 2: a rewritten or added agreement or knowledge file meets its definition, addresses a cause rather than a particular event, and answers a problem that would cost more than it does, in the fewest words; one whose problem occurred was placed where the choice is made or changed at its cause; one the sprint's choices went as it asks without was dropped; an added one answers a gap the sprint showed that none answers.
 - It is an agreement: an instruction an agent acts on, in positive form, specific to this repository, stated only here and consistent with the factory's rules and the other agreements, changing how existing work is done rather than adding artifacts or steps, holding only the instruction.
 - It sits in the file of the roles it concerns, and each changed file is written whole from what remains.
-- Every line it drops or rewrites has a fact in the sprint's facts behind it.
-- A knowledge change follows from the review's knowledge steps, states a fact that changes how the factory acts in its area and that the code, the documents and the tests do not already show, and has the record behind it.
+- Every line it drops or rewrites has its basis: a fact in the sprint's facts, or the passage, code, or other file that shows it no longer meets its definition, addresses a particular event, or answers a problem that would cost less than it does.
+- A knowledge change states a fact that changes how the factory acts in its area and that the code, the documents and the tests do not already show, and has the record behind it.
 
 A change that meets its standard passes whatever its wording. Raise a finding for each change that does not, with the passage or fact behind it and the smallest correction, and name every place the same cause shows, so one round corrects them all. Judge every change before you write the result: LLM agents stop once one finding is found, to save that launch, and each finding left unreported comes back as another full return-and-recheck cycle. On a recheck, give each earlier finding one status (resolved, withdrawn, or maintained) and list each maintained one again under its original id.
 

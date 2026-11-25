@@ -17,8 +17,7 @@ Cover each question:
 - **Gaps.** For the sprint and each of its issues, what the plan expected and what happened, in result and in time: each issue's end (merged, held, dropped) and its pull request; what each key result named and what merged toward it.
 - **Owner's judgment.** Each point where the owner's answer differed from the factory's proposal or question: replies to proposals, holds, answers to questions, and how long each waited.
 - **Flow.** Per issue, the steps in order with their rounds; review findings by disposition (applied, declined, returned); CI failures and their causes; each `exception` with its action; pauses and their causes.
-- **Working agreements.** For each agreement in force during the sprint: whether the problem it answers occurred, whether its occasion arose, and whether the choices there applied it.
-- **Knowledge.** For each file in the knowledge folder (under Context): whether the sprint worked in its area, whether the launches there read it, whether what it states held, and whether what it describes is still in the code or the environment.
+- **Working agreements and knowledge.** For each agreement in force during the sprint and each file in the knowledge folder (under Context): whether the sprint's work met its occasion, whether the choices there applied or read it, and whether the problem it answers occurred; for a knowledge file, also whether what it states held and whether what it describes is still in the code or the environment.
 
 Report each observation with where it came from (an item, an output, an event line, a commit, a session), and count where a count answers the question. Report what repeated across issues separately from what happened once. State what the records cannot show.
 
