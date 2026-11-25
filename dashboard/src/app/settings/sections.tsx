@@ -570,8 +570,8 @@ export function Merging(props: SectionProps) {
         summary={
           <>
             <div className={styles['line']}>
-              Changes to <code>.ovenspring/</code>, the working agreements, <code>AGENTS.md</code>{' '}
-              or <code>CLAUDE.md</code>
+              Changes to <code>.ovenspring/</code>, the working agreements, the knowledge,{' '}
+              <code>AGENTS.md</code> or <code>CLAUDE.md</code>
             </div>
             <div className={styles['line']}>
               Anything a design said it adds: schema, external connections, infrastructure, CI or

@@ -87,8 +87,8 @@ pub enum Approval {
     Infrastructure,
     Ci,
     ExternalContract,
-    /// The factory's configuration, working agreements or the repository's agent instructions:
-    /// held by path whatever a design declares.
+    /// The factory's configuration, working agreements, knowledge or the repository's agent
+    /// instructions: held by path whatever a design declares.
     FactoryConfiguration,
     /// A kind of change the owner named in `[person_reviews]`, with the words that describe it: a
     /// person reviews it before it merges.

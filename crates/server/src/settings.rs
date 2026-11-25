@@ -223,8 +223,7 @@ fn lines(values: Vec<String>) -> Vec<String> {
         .collect()
 }
 
-/// Saves `section` from `body`, checking a changed connection before anything is written.
-/// Returns the GitHub token the section carries, if one was entered.
+/// Applies the `general` section to `config`; returns the GitHub token entered, if any.
 fn apply_general(config: &mut Config, general: GeneralSection) -> Option<String> {
     general
         .base_branch
@@ -248,15 +247,16 @@ fn apply_general(config: &mut Config, general: GeneralSection) -> Option<String>
         .into_iter()
         .map(|(name, words)| (name.trim().to_owned(), words.trim().to_owned()))
         .collect();
-    for (entered, path) in [
+    for (folder, path) in [
         (&general.agreements_path, &mut config.agreements.path),
         (&general.knowledge_path, &mut config.knowledge.path),
     ] {
-        entered.trim().trim_end_matches('/').clone_into(path);
+        folder.trim().trim_end_matches('/').clone_into(path);
     }
     entered(general.github_token)
 }
 
+/// Saves `section` from `body`, checking a changed connection before anything is written.
 pub(crate) fn save(
     context: &Context,
     section: SettingsSection,

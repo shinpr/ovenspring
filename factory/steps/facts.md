@@ -8,7 +8,7 @@ Load and read `ovenspring-writing-for-agents` completely before acting on your i
 
 ## Inputs
 
-In the state directory (the directory holding `sprint.json`, which your item names): the sprint record with its purpose, key results and plan; each of its issues' records under `issues/`; `events.jsonl` and `launches.jsonl`; the archived items under `board/archive/` and the outputs they name; and the pull requests they opened. The factory's settings as the owner set them (`config.toml` among your item's references), which account for choices made outside the sprint, such as the base branch and who merges. In the repository: the git history of the period and `.ovenspring/agreements/`. The CLIs' session records (Claude Code under `~/.claude/projects/`, Codex under `~/.codex/sessions/`) when a question needs what a launch did.
+In the state directory (the directory holding `sprint.json`, which your item names): the sprint record with its purpose, key results and plan; each of its issues' records under `issues/`; `events.jsonl` and `launches.jsonl`; the archived items under `board/archive/` and the outputs they name; and the pull requests they opened. The factory's settings as the owner set them (`config.toml` among your item's references), which account for choices made outside the sprint, such as the base branch and who merges. In the repository: the git history of the period and the working agreements folder (under Context). The CLIs' session records (Claude Code under `~/.claude/projects/`, Codex under `~/.codex/sessions/`) when a question needs what a launch did.
 
 ## Collect
 
@@ -17,7 +17,7 @@ Cover each question:
 - **Gaps.** For the sprint and each of its issues, what the plan expected and what happened, in result and in time: each issue's end (merged, held, dropped) and its pull request; what each key result named and what merged toward it.
 - **Owner's judgment.** Each point where the owner's answer differed from the factory's proposal or question: replies to proposals, holds, answers to questions, and how long each waited.
 - **Flow.** Per issue, the steps in order with their rounds; review findings by disposition (applied, declined, returned); CI failures and their causes; each `exception` with its action; pauses and their causes.
-- **Working agreements and knowledge.** For each agreement in force during the sprint and each knowledge file, in their folders (under Context): whether the sprint's work met its occasion, whether the choices there applied or read it, and whether the problem it answers occurred; for a knowledge file, also whether what it states held and whether what it describes is still in the code or the environment.
+- **Working agreements and knowledge.** For each agreement in force during the sprint and each file in the knowledge folder (under Context): whether the sprint's work met its occasion, whether the choices there applied or read it, and whether the problem it answers occurred; for a knowledge file, also whether what it states held and whether what it describes is still in the code or the environment.
 
 Report each observation with where it came from (an item, an output, an event line, a commit, a session), and count where a count answers the question. Report what repeated across issues separately from what happened once. State what the records cannot show.
 

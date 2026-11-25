@@ -377,6 +377,55 @@ fn a_change_to_the_agent_instructions_waits_for_the_owner_whatever_the_design_de
     assert_eq!(merges(&gh), [] as [String; 0]);
 }
 
+// AC: PRD AC-014: a pull request that changes the working agreements is held for the owner, in the
+//     folder the configuration names.
+// Behavior: `agreements.path = "docs/factory/agreements"`; ACME-123's implementation edits a file
+//     there and its design declares nothing -> checks pass -> the gate holds it, naming the
+//     factory's configuration, instead of merging.
+#[test]
+fn a_change_to_the_agreements_folder_the_owner_set_waits_for_the_owner() {
+    let env = Env::new();
+    env.configure(&format!(
+        "{CONFIG}[agreements]\npath = \"docs/factory/agreements\"\n"
+    ));
+    env.add_branch("develop");
+    let mut script = straight("ACME-123");
+    script.insert(
+        "implement@ACME-123".into(),
+        json!([support::scripts::implement_run(
+            "docs/factory/agreements/executor.md"
+        )]),
+    );
+    env.script_agents(&Value::Object(script));
+    let gh = Arc::new(always_passing(&env, requiring_test()));
+    let mut d = daemon(
+        &env,
+        services(
+            gh.clone(),
+            Arc::new(RecordingChannel::default()),
+            Arc::new(RecordingTracker::default()),
+        ),
+    );
+    d.begin_issue("ACME-123", "Export", vec![]).unwrap();
+    run_until(
+        &mut d,
+        60,
+        |_| {},
+        |d| stage(d, "ACME-123") == Stage::HeldForOwner,
+    );
+    let decision = d
+        .decisions()
+        .unwrap()
+        .into_iter()
+        .find(|x| x.issue.as_deref() == Some("ACME-123"))
+        .unwrap();
+    assert_eq!(
+        decision.categories,
+        [ovenspring_core::output::Approval::FactoryConfiguration]
+    );
+    assert_eq!(merges(&gh), [] as [String; 0]);
+}
+
 // AC: PRD AC-027: the owner is told the pull request is ready; AC-026: only once the checks the
 //     base requires have passed.
 // Behavior: `merge.by = "owner"`; classic protection requires `e2e`, which the factory's token
