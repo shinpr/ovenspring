@@ -1,0 +1,55 @@
+// The owner's wordmark, drawn in the text color so it follows the theme. The box ends at the letters' baseline (y 41) and the descenders
+// of p and g draw below it, so text aligned to the box's baseline sits on the letters' baseline.
+
+export function Wordmark({ className }: { className?: string | undefined }) {
+  return (
+    <svg
+      className={className}
+      viewBox="0 -1 306 42"
+      width="131"
+      height="18"
+      aria-hidden="true"
+      focusable="false"
+    >
+      <g fill="currentColor" fillRule="evenodd">
+        <path
+          transform="translate(1)"
+          d="M2 29V23C2 10 9.5 2 20 2s17 7.8 17 20v8c0 7.2-3.9 11-10.5 11H13C6 41 2 37 2 29Zm6-1c0 5.2 1.6 7.4 5.8 7.4H26c3.8 0 5-1.7 5-6.4v-8c0-8.1-4.1-13.3-11-13.3S8 13.4 8 23Z"
+        />
+        <path transform="translate(40.8)" d="M0 13.5h6.7l7.1 20.6 7.1-20.6h6.2L17 40.5h-6.7Z" />
+        <path
+          transform="translate(68.6)"
+          d="M27.2 25.7v1.7L8.1 31.1c1 3.2 3.4 4.9 7.8 4.9 3.8 0 6.9-1.2 10-3.5v5.7c-2.9 2.1-6.4 3.1-10.4 3.1C6.9 41.3 2 36.4 2 27.5 2 18.9 7.4 13 15.2 13c7.6 0 12 5.1 12 12.7ZM7.9 26.5l13.3-2.7c-.6-3.5-2.6-5.6-6.2-5.6-4.1 0-6.8 3.2-7.1 8.3Z"
+        />
+        <path
+          transform="translate(98.39999999999999)"
+          d="M2 40.5V25.8C2 18 7.1 13 14.9 13S28 18 28 25.8v14.7h-6V26c0-4.9-2.7-7.6-7.1-7.6S8 21.1 8 26v14.5Z"
+        />
+        <path
+          transform="translate(139.2)"
+          d="M29.8 4.4v6.1c-3.4-2.2-6.9-3.3-11-3.3-5.6 0-8.5 2.1-8.5 5.5 0 2.8 1.9 4.1 6.6 5.3l5.2 1.4c6.5 1.8 9.4 5.1 9.4 10.4 0 7.2-5.9 11.5-15.3 11.5-5.4 0-10.1-1.1-13.6-3.2v-6.4c3.9 2.7 8.3 4.1 13.4 4.1 5.7 0 9-1.9 9-5.6 0-2.8-1.9-4.5-6.4-5.7l-5.2-1.4C6.8 21.3 4 18.4 4 13.1 4 6.1 9.7 1.9 18.9 1.9c4.1 0 7.9.9 10.9 2.5Z"
+        />
+        <path
+          transform="translate(174.0)"
+          d="M2 51V25.8C2 18 7.3 13 15.2 13c8.2 0 13.6 5.7 13.6 14.4 0 8.5-4.8 13.5-12.4 13.5H8V51Zm6-15.5h7.3c4.8 0 7.5-2.9 7.5-8.2 0-5.4-2.9-8.9-7.6-8.9S8 21.2 8 26Z"
+        />
+        <path
+          transform="translate(205.8)"
+          d="M2 40.5V26c0-7.7 4.8-12.5 12.5-12.5h6.2v5.6h-5.6c-4.7 0-7.1 2.4-7.1 7.2v14.2Z"
+        />
+        <path
+          transform="translate(228.60000000000002)"
+          d="M3 3.2h6.3v6.2H3Zm-2 10.3h8.2v21.8h3.4v5.2H3.2V18.6H1Z"
+        />
+        <path
+          transform="translate(243.40000000000003)"
+          d="M2 40.5V25.8C2 18 7.1 13 14.9 13S28 18 28 25.8v14.7h-6V26c0-4.9-2.7-7.6-7.1-7.6S8 21.1 8 26v14.5Z"
+        />
+        <path
+          transform="translate(274.20000000000005)"
+          d="M28 25.5V50.8H9.5v3.9l-8-6.7 8-6.7v4.2H22v-7.8c-2.1 1.7-4.5 2.6-7.6 2.6C6.7 40.3 2 35.3 2 27c0-8.4 5.3-14 13.3-14C23.1 13 28 17.8 28 25.5ZM22 26c0-5-2.4-7.6-6.7-7.6C10.7 18.4 8 21.6 8 27s2.5 8.1 7 8.1c4.7 0 7-2.7 7-7.9Z"
+        />
+      </g>
+    </svg>
+  )
+}

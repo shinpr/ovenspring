@@ -1,0 +1,131 @@
+.header {
+  border-bottom: 1px solid var(--color-line);
+}
+
+.inner {
+  max-width: calc(var(--width-content) + 2 * var(--space-6));
+  margin: 0 auto;
+  padding: var(--space-4) var(--space-6);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3) var(--space-6);
+}
+
+/* On a narrow screen the repository moves to a line of its own rather than shrinking out of sight. */
+.brand {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-1) var(--space-3);
+  max-width: 100%;
+}
+
+.wordmark {
+  display: inline-flex;
+  color: var(--color-text);
+  text-decoration: none;
+}
+
+.wordmarkSvg {
+  display: block;
+  overflow: visible;
+}
+
+/* The version follows the wordmark it belongs to; a rule sets the repository apart from it. */
+.repository {
+  padding-left: var(--space-3);
+  border-left: 1px solid var(--color-line);
+  flex-shrink: 0;
+  max-width: 100%;
+  font-size: var(--text-small);
+  color: var(--color-text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.version {
+  font-size: var(--text-small);
+  color: var(--color-text-muted);
+  white-space: nowrap;
+}
+
+.update {
+  font-size: var(--text-small);
+  white-space: nowrap;
+}
+
+/* The steps take a row of their own under the header's line, at the content's width. */
+.steps {
+  flex-basis: 100%;
+  font-size: var(--text-small);
+}
+
+.steps p {
+  max-width: 72ch;
+  margin: 0 0 var(--space-2);
+}
+
+.steps pre {
+  margin: 0 0 var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-control);
+  background: var(--color-raised);
+  width: fit-content;
+  max-width: 100%;
+  white-space: pre-wrap;
+}
+
+.end {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3) var(--space-6);
+}
+
+.nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+}
+
+.nav a {
+  color: var(--color-text-muted);
+  text-decoration: none;
+  padding: 6px 10px;
+  font-weight: 500;
+}
+
+.nav a:hover {
+  color: var(--color-text);
+}
+
+.nav a[aria-current="page"] {
+  color: var(--color-text);
+  font-weight: 700;
+}
+
+.theme {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--color-text-muted);
+  font-size: var(--text-small);
+}
+
+.theme select {
+  width: auto;
+  margin-top: 0;
+  padding-top: 2px;
+  padding-bottom: 2px;
+}
+
+@media (max-width: 759px) {
+  .inner {
+    padding-left: var(--space-4);
+    padding-right: var(--space-4);
+  }
+}

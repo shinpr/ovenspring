@@ -1,0 +1,12 @@
+# gitleaks: the default rules, with only the exceptions below, each with its reason.
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Token-shaped test fixtures: the export masking test needs a value in the AWS key format, and the setup test sends a fake Linear key. Listed by value, so a real key in the same files is still found."
+regexTarget = "secret"
+regexes = [
+  '''^AKIAABCDEFGHIJKLMNOP$''',
+  '''^lin_api_fixture0001$''',
+]

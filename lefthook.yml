@@ -1,0 +1,5 @@
+# Git hooks for this repository: `lefthook install` sets them up once per clone.
+pre-commit:
+  jobs:
+    - name: gitleaks
+      run: gitleaks git --pre-commit --staged --redact --no-banner --verbose

@@ -1,0 +1,200 @@
+.frame {
+  display: grid;
+  max-width: 760px;
+}
+
+.frame > * + * {
+  margin-top: var(--space-6);
+}
+
+.title {
+  margin: 0;
+  font-size: var(--text-page-title);
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: -0.015em;
+}
+
+.steps {
+  margin: var(--space-3) 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-5);
+  color: var(--color-text-muted);
+  font-size: var(--text-small);
+}
+
+.steps [aria-current="step"] {
+  color: var(--color-text);
+  font-weight: 600;
+}
+
+.number {
+  margin-right: 6px;
+  font-weight: 600;
+}
+
+.stepTitle {
+  margin: 0;
+  font-size: var(--text-section-title);
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+}
+
+.text {
+  margin: 0;
+}
+
+.intro {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.block {
+  padding-top: var(--space-5);
+  border-top: 1px solid var(--color-line);
+}
+
+.frame > .block {
+  margin-top: var(--space-5);
+}
+
+.blockTitle {
+  margin: 0;
+  font-size: var(--text-lead);
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.small {
+  margin: 0;
+  font-size: var(--text-small);
+}
+
+.muted {
+  color: var(--color-text-muted);
+}
+
+.narrow {
+  max-width: 240px;
+}
+
+.how {
+  margin: 0;
+  padding-left: 20px;
+  display: grid;
+  gap: 6px;
+  font-size: var(--text-small);
+}
+
+.block > :not(:first-child) {
+  margin-top: var(--space-3);
+}
+
+.block > .blockTitle + .small {
+  margin-top: var(--space-1);
+}
+
+.block > .small + .how {
+  margin-top: 6px;
+}
+
+.ok {
+  color: var(--color-ok);
+}
+
+.fail {
+  color: var(--color-fail);
+}
+
+.accent {
+  color: var(--color-accent);
+}
+
+.out {
+  margin: var(--space-2) 0 0;
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-raised);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-control);
+  overflow-x: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: var(--font-mono);
+  font-size: var(--text-mono);
+}
+
+/* What is missing, above the button that was pressed. */
+.missing {
+  padding: var(--space-3) var(--space-4);
+  border-left: 3px solid var(--color-fail);
+  display: grid;
+  gap: var(--space-2);
+}
+
+.missing ul {
+  margin: 0;
+  padding-left: 20px;
+  display: grid;
+  gap: var(--space-1);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  align-items: center;
+}
+
+.progress {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: var(--space-2);
+}
+
+.progress li {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  gap: var(--space-1) var(--space-2);
+}
+
+.progress .sub {
+  grid-column: 2;
+  color: var(--color-text-muted);
+  font-size: var(--text-small);
+  overflow-wrap: anywhere;
+}
+
+.said {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.said li {
+  padding: var(--space-2) 0;
+  border-top: 1px solid var(--color-line);
+}
+
+.hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* One line of small text, kept while a block has no result yet. */
+.status {
+  min-height: calc(var(--text-small) * 1.6);
+}
+
+.status > p {
+  line-height: 1.6;
+}

@@ -1,0 +1,10 @@
+---
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/aqua-yaml.json
+# The command-line tools the Git hooks run, at fixed versions: `aqua i -l` installs them.
+# https://aquaproj.github.io/
+registries:
+  - type: standard
+    ref: v4.589.0 # renovate: depName=aquaproj/aqua-registry
+packages:
+  - name: evilmartians/lefthook@v2.2.2
+  - name: gitleaks/gitleaks@v8.30.1

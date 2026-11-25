@@ -1,0 +1,9 @@
+{
+  // Code that runs in Node: the token build and the tool configurations.
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ES2022"],
+    "types": ["node"]
+  },
+  "include": ["tokens", "vite.config.ts", ".storybook/main.ts"]
+}

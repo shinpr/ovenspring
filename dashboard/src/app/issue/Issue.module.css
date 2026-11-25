@@ -1,0 +1,231 @@
+.head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  align-items: baseline;
+}
+
+/* A page-wide action: at the title's end, away from the links, which only lead elsewhere. */
+.cancel {
+  margin-left: auto;
+}
+
+.key {
+  font-family: var(--font-mono);
+  color: var(--color-text-muted);
+}
+
+.links {
+  margin: 6px 0 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  font-size: var(--text-small);
+}
+
+.links > * {
+  line-height: 24px;
+}
+
+.now {
+  margin: var(--space-5) 0 0;
+  max-width: 72ch;
+  font-size: var(--text-lead);
+}
+
+.region {
+  margin-top: var(--space-7);
+}
+
+.group + .group {
+  margin-top: var(--space-6);
+}
+
+.heading {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-section-title);
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+.group > p,
+.group > details {
+  padding: 0 var(--space-2);
+}
+
+.group > p + p {
+  margin-top: var(--space-1);
+}
+
+.group > details {
+  margin-top: var(--space-3);
+}
+
+.path {
+  margin: var(--space-5) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.phase {
+  padding: var(--space-3) var(--space-2);
+}
+
+.phase + .phase {
+  border-top: 1px solid var(--color-line);
+}
+
+.phaseHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 10px;
+}
+
+.phaseName {
+  margin: 0;
+  font-size: var(--text-lead);
+  font-weight: 600;
+}
+
+.state {
+  font-size: var(--text-small);
+  color: var(--color-text-muted);
+}
+
+.current .state {
+  color: var(--color-text);
+  font-weight: 600;
+}
+
+.desc {
+  margin: 2px 0 0;
+  font-size: var(--text-small);
+  color: var(--color-text-muted);
+}
+
+.runs {
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.runsOf > summary {
+  margin-top: 4px;
+  font-size: var(--text-small);
+  color: var(--color-accent);
+  list-style: none;
+  cursor: pointer;
+}
+
+.runsOf > summary::-webkit-details-marker {
+  display: none;
+}
+
+.runsOf > summary::before {
+  content: "▸ ";
+}
+
+.runsOf[open] > summary::before {
+  content: "▾ ";
+}
+
+.line {
+  display: block;
+}
+
+.disposition {
+  font-weight: 600;
+}
+
+.whatis {
+  display: grid;
+  grid-template-columns: 110px minmax(0, 1fr);
+  gap: var(--space-3) var(--space-4);
+  max-width: 72ch;
+  margin: var(--space-5) 0 0;
+  padding: 0 var(--space-2);
+}
+
+.whatis dt {
+  color: var(--color-text-muted);
+}
+
+.whatis dd {
+  margin: 0;
+}
+
+.findings {
+  margin: var(--space-3) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.findings li {
+  padding: 6px 0;
+  border-top: 1px solid var(--color-line);
+  font-size: var(--text-small);
+}
+
+.prose {
+  margin: 0;
+}
+
+.muted {
+  margin: 0;
+  color: var(--color-text-muted);
+}
+
+.accent {
+  color: var(--color-accent);
+}
+
+.ok {
+  color: var(--color-ok);
+}
+
+.fail {
+  color: var(--color-fail);
+}
+
+.sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+@media (max-width: 759px) {
+  .whatis {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-1);
+  }
+
+  .whatis dd + dt {
+    margin-top: var(--space-2);
+  }
+
+  /* The title takes its own line, so the button always starts the next one, where the eye
+     returns, instead of following a title short enough to leave room beside it. */
+  .head > h1 {
+    flex-basis: 100%;
+  }
+
+  .cancel {
+    margin-left: 0;
+  }
+}
+
+.follow {
+  border: 0;
+  padding: 0;
+  background: none;
+  font: inherit;
+  font-size: var(--text-small);
+  color: var(--color-accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}

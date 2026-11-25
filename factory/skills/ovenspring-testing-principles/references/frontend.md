@@ -1,0 +1,38 @@
+# UI Test Implementation
+
+Applies to component, shared UI logic, and UI integration tests in any stack.
+
+## Project Toolchain Resolution
+
+Before writing a test, inspect the test scripts, runner configuration, setup files, neighboring tests, rendering environment, and network handlers. Preserve the repository's runner, renderer, imports, mock API, setup lifecycle, file naming, and test location.
+
+- Use the repository's network mocking layer for API behavior. When that layer is handler-based, extend its handlers instead of adding runner-level request mocks.
+- Use the configured runner's imports, module-mocking API, fake timers, and reset conventions.
+- When multiple approaches coexist, choose from the behavior under test and the setup the repository maintains for it rather than from proximity alone. If none is representative and adding or replacing tooling is outside the approved work, report the missing test-environment decision.
+
+## Test Scope
+
+- In UI code, logic that needs its own unit tests usually lives in shared components, shared UI logic, and utilities with a wide blast radius. Screen behavior is owned by the narrowest test that renders the real composition.
+- Configuration that changes runtime or build behavior requires executable validation.
+
+## Test Data
+
+- Keep test data minimal and free of real sensitive values.
+
+## Failure Classification
+
+| Evidence | Action |
+|---|---|
+| Expected value or test setup contradicts the accepted contract | Fix the test |
+| Implementation violates the accepted behavior or boundary | Fix the implementation |
+| Both interpretations remain compatible with available requirements | Return the unresolved behavior decision |
+
+## Repository Conventions
+
+- Preserve the repository's test location and naming.
+- Test rendered output, user interactions, accessibility, and observable error states rather than component internals.
+
+## Assertion Rules
+
+- Use mock-call assertions only when the call contract itself is the observable boundary.
+- For asynchronous UI, use the repository's established async query/wait pattern and assert the resulting user-visible state.

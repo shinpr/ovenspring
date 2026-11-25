@@ -1,0 +1,1302 @@
+//! Issues on the board: each issue's record, the facts its finished items produce, and the
+//! actions `flow::next` returns, carried out one fact at a time.
+
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::fmt::Write as _;
+use std::fs;
+use std::path::{Path, PathBuf};
+
+use ovenspring_core::config::Role;
+use ovenspring_core::flow::{self, Action, Cause, CommitPoint, Fact, Filing, IssueState, Stage};
+use ovenspring_core::item::{Front, Item, Status};
+use ovenspring_core::output::{Decision, PrepareOutput, QualityStatus, Scale, StepOutput};
+use ovenspring_core::plan;
+use ovenspring_core::step::{Document, Step};
+use ovenspring_store::{StoreError, item_name};
+use serde::{Deserialize, Serialize};
+use serde_json::json;
+
+use ovenspring_integrations::http::HttpError;
+
+use crate::records::{self, Service};
+use crate::worktree::git;
+use crate::{Daemon, DaemonError};
+
+/// What the daemon keeps about an issue: the flow's state and what the daemon's own actions need.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct IssueRecord {
+    pub flow: IssueState,
+    pub title: String,
+    /// The issue on the tracker.
+    #[serde(default)]
+    pub url: Option<String>,
+    pub depends_on: Vec<String>,
+    /// The latest output of each step, by step.
+    pub outputs: BTreeMap<String, String>,
+    /// The item that last ended, for the lead's `exception`.
+    pub last_item: Option<String>,
+    pub pushed_sha: Option<String>,
+    /// When `pushed_sha` was pushed (RFC 3339).
+    pub pushed_at: Option<String>,
+    pub pr_url: Option<String>,
+    /// Keys of pull request comments already given to an agent.
+    pub comments_seen: BTreeSet<String>,
+    /// The latest `sources/comments/` file.
+    pub comments_source: Option<String>,
+    /// When the wait for review bots began (RFC 3339).
+    pub bots_since: Option<String>,
+    /// The owner's answers, as source files the next item names.
+    pub answers: Vec<String>,
+    /// The sprint that put the issue on the board.
+    pub sprint: Option<String>,
+    /// When it merged (RFC 3339).
+    pub merged_at: Option<String>,
+    /// The review units of a large change: task indexes, from `decompose`'s task files.
+    #[serde(default)]
+    pub units: Vec<Vec<usize>>,
+    /// The worktree's tree before the first task, then after each `implement` (with the task it
+    /// carried out) and each `review-response` (with none): a task's changed files, and a
+    /// correction's, are the difference from the tree before it.
+    #[serde(default)]
+    pub trees: Vec<(Option<usize>, String)>,
+    /// The `changeSummary` of each implementation since the last commit, for its message.
+    #[serde(default)]
+    pub summaries: Vec<String>,
+    /// The factory's latest commit on the issue branch.
+    pub last_commit: Option<String>,
+    /// What the repository said when it last refused the factory's commit or push.
+    #[serde(default)]
+    pub refusal: Option<String>,
+    /// The findings each check last reported, by output key, as its source wrote them: what
+    /// `prior_feedback` and `correction_findings` carry.
+    #[serde(default)]
+    pub findings: BTreeMap<String, Vec<serde_json::Value>>,
+    /// The daemon operation that stopped the issue, while it is stopped.
+    #[serde(default)]
+    pub stopped: Option<crate::stops::StopRecord>,
+    /// What a failed recovery procedure printed, as a source the lead's next `exception` reads.
+    #[serde(default)]
+    pub recovery_log: Option<String>,
+    /// The design-phase session the next run of its step resumes.
+    #[serde(default)]
+    pub resume: Option<Resume>,
+    /// Why the owner canceled the issue, as the tracker is told.
+    #[serde(default)]
+    pub canceled: Option<String>,
+}
+
+/// A design-phase launch's session, for the next run of the same step to resume: the preparation
+/// turn's, or the work turn's that asked the owner. `session` is `None` when its launch recorded
+/// none, and the next run starts fresh; `question` is the preparation's message when it asks.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Resume {
+    pub step: Step,
+    pub session: Option<String>,
+    pub question: Option<String>,
+}
+
+impl IssueRecord {
+    pub fn new(key: &str, title: &str, depends_on: Vec<String>) -> IssueRecord {
+        IssueRecord {
+            flow: IssueState::new(key),
+            title: title.into(),
+            url: None,
+            depends_on,
+            outputs: BTreeMap::new(),
+            last_item: None,
+            pushed_sha: None,
+            pushed_at: None,
+            pr_url: None,
+            comments_seen: BTreeSet::new(),
+            comments_source: None,
+            bots_since: None,
+            answers: Vec::new(),
+            sprint: None,
+            merged_at: None,
+            units: Vec::new(),
+            trees: Vec::new(),
+            summaries: Vec::new(),
+            last_commit: None,
+            refusal: None,
+            findings: BTreeMap::new(),
+            stopped: None,
+            recovery_log: None,
+            resume: None,
+            canceled: None,
+        }
+    }
+
+    /// Whether a launch of `step` is in the design phase's dialogue: a lead's, before the issue's
+    /// execution starts (test design, the plan, or a small issue's implementation). `exception`
+    /// is the escalation route of both phases, not a step of the design.
+    pub fn in_dialogue(&self, step: Step) -> bool {
+        step.role() == Role::Lead
+            && step != Step::Exception
+            && ![Step::TestDesign, Step::WorkPlan, Step::Implement]
+                .iter()
+                .any(|s| self.outputs.contains_key(s.as_str()))
+    }
+
+    pub fn key(&self) -> &str {
+        &self.flow.key
+    }
+
+    pub fn branch(&self) -> String {
+        crate::worktree::branch_for(self.key())
+    }
+
+    /// Where the Design Doc is, as the design step reported it.
+    pub fn design_path(&self) -> Option<String> {
+        match self.output(Step::Design) {
+            Some(StepOutput::Document(d)) => d.path,
+            _ => None,
+        }
+    }
+
+    pub fn output(&self, step: Step) -> Option<StepOutput> {
+        let path = self.outputs.get(step.as_str())?;
+        let value = serde_json::from_str(&fs::read_to_string(path).ok()?).ok()?;
+        StepOutput::parse(step, value).ok()
+    }
+
+    /// The latest output of `key` as its agent wrote it.
+    pub fn raw_output(&self, key: &str) -> Option<serde_json::Value> {
+        let path = self.outputs.get(key)?;
+        serde_json::from_str(&fs::read_to_string(path).ok()?).ok()
+    }
+
+    /// The files each task changed, from the trees recorded around it.
+    pub(crate) fn task_files(&self, worktree: &Path) -> BTreeMap<usize, BTreeSet<String>> {
+        let mut files: BTreeMap<usize, BTreeSet<String>> = BTreeMap::new();
+        for pair in self.trees.windows(2) {
+            let [(_, before), (Some(task), after)] = pair else {
+                continue;
+            };
+            let changed = git(
+                worktree,
+                &["diff-tree", "-r", "-z", "--name-only", before, after],
+            )
+            .unwrap_or_default();
+            files.entry(*task).or_default().extend(
+                changed
+                    .split('\0')
+                    .filter(|f| !f.is_empty())
+                    .map(String::from),
+            );
+        }
+        files
+    }
+}
+
+/// Steps that are the orchestrator's or the factory's own judgment: they read the issue's records.
+const JUDGING: [Step; 8] = [
+    Step::Requirements,
+    Step::ScopeCheck,
+    Step::Resolution,
+    Step::RerunCheck,
+    Step::Exception,
+    Step::Prototype,
+    Step::FixCi,
+    Step::MergeBase,
+];
+
+pub(crate) fn record_path(key: &str) -> String {
+    format!("issues/{key}.json")
+}
+
+impl Daemon {
+    pub fn issue(&self, key: &str) -> Result<Option<IssueRecord>, DaemonError> {
+        crate::records::issue(&self.store, key)
+    }
+
+    /// The issue's record, which the caller knows exists.
+    pub(crate) fn record_of(&self, key: &str) -> Result<IssueRecord, DaemonError> {
+        self.issue(key)?
+            .ok_or_else(|| DaemonError::NoRecord(key.to_owned()))
+    }
+
+    pub fn issues(&self) -> Result<Vec<IssueRecord>, DaemonError> {
+        crate::records::issues(&self.store)
+    }
+
+    /// Saves the record; one that has just merged gets its merge time.
+    pub(crate) fn save_issue(&self, record: &IssueRecord) -> Result<(), DaemonError> {
+        let mut record = record.clone();
+        if record.flow.stage == Stage::Merged && record.merged_at.is_none() {
+            record.merged_at = Some(jiff::Timestamp::now().to_string());
+        }
+        self.store
+            .write_record(&record_path(record.key()), &record)?;
+        Ok(())
+    }
+
+    /// Puts an issue on the board. It starts once every issue it depends on is merged and fewer
+    /// than `limits.issues_at_once` are under way.
+    pub fn begin_issue(
+        &mut self,
+        key: &str,
+        title: &str,
+        depends_on: Vec<String>,
+    ) -> Result<(), DaemonError> {
+        if self.issue(key)?.is_some() {
+            return Ok(());
+        }
+        let record = IssueRecord {
+            url: self
+                .open_issues
+                .iter()
+                .find(|i| i.key == key)
+                .map(|i| i.url.clone()),
+            ..IssueRecord::new(key, title, depends_on)
+        };
+        self.save_issue(&record)?;
+        self.event(&json!({"event": "issue-begun", "issue": key}))
+    }
+
+    /// Applies one fact to an issue and carries out the actions it returns, including the facts
+    /// those actions produce, until none is left.
+    pub fn apply(&mut self, key: &str, fact: Fact) -> Result<(), DaemonError> {
+        let mut queue = VecDeque::from([fact]);
+        while let Some(fact) = queue.pop_front() {
+            let Some(mut record) = self.issue(key)? else {
+                return Ok(());
+            };
+            let (state, actions) = flow::next(&record.flow, &fact, self.flow_limits());
+            let from = record.flow.stage.clone();
+            record.flow = state;
+            if record.flow.resume().is_none() {
+                record.stopped = None;
+            }
+            self.save_issue(&record)?;
+            if record.flow.stage.is_finished() && !from.is_finished() {
+                self.end_work(key)?;
+                self.supersede_open_decisions(key)?;
+            }
+            self.event(&json!(crate::records::FactEvent {
+                issue: key.to_owned(),
+                fact: crate::records::fact_name(&fact),
+                from,
+                to: record.flow.stage.clone(),
+                at: String::new(),
+            }))?;
+            for action in actions {
+                if let Some(next) = self.act(key, &action)? {
+                    queue.push_back(next);
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// An issue that ended while work for it was open (merged or dropped by someone, or with a
+    /// step under way): its launches stop and its items are archived.
+    pub(crate) fn end_work(&mut self, key: &str) -> Result<(), DaemonError> {
+        for path in self.active_items()? {
+            if self.store.read_item(&path)?.front.issue.as_deref() != Some(key) {
+                continue;
+            }
+            let name = item_name(&path);
+            self.stop_launch(&name)?;
+            self.store.archive_item(&path)?;
+            self.event(&json!({"event": "item-ended-with-issue", "issue": key, "item": name}))?;
+        }
+        Ok(())
+    }
+
+    fn flow_limits(&self) -> flow::Limits {
+        flow::Limits {
+            review_rounds: self.config.limits.review_rounds,
+            fix_ci_rounds: self.config.limits.fix_ci_rounds,
+        }
+    }
+
+    fn act(&mut self, key: &str, action: &Action) -> Result<Option<Fact>, DaemonError> {
+        match action {
+            Action::File(filing) => {
+                self.file_step(key, filing)?;
+                Ok(None)
+            }
+            Action::Commit { after } => self.commit(key, *after).map(Some),
+            Action::StopApp => {
+                self.stop_app(key);
+                Ok(None)
+            }
+            Action::ClosePull => {
+                self.close_pull(key)?;
+                Ok(None)
+            }
+            Action::Push => self.push(key),
+            Action::AskOwner => {
+                self.ask_owner(key)?;
+                Ok(None)
+            }
+            Action::RequestApproval => {
+                self.request_approval(key)?;
+                Ok(None)
+            }
+            Action::WaitForBots => {
+                self.update_issue(key, |r| {
+                    r.bots_since = Some(jiff::Timestamp::now().to_string());
+                })?;
+                Ok(None)
+            }
+            Action::AnswerComments => {
+                self.answer_comments(key)?;
+                Ok(None)
+            }
+            Action::RunGate => self.run_gate(key),
+            Action::NotifyReadyForOwner => {
+                self.notify_ready(key)?;
+                Ok(None)
+            }
+            Action::CloseOnTracker => {
+                self.close_on_tracker(key)?;
+                Ok(None)
+            }
+            Action::StartOnTracker => {
+                if let Some(tracker) = &self.services.tracker {
+                    match tracker.start(key) {
+                        Ok(()) => self.event(&json!({"event": "started-on-tracker", "issue": key}))?,
+                        Err(e) => self.event(
+                            &json!({"event": "tracker-error", "issue": key, "error": e.to_string()}),
+                        )?,
+                    }
+                }
+                Ok(None)
+            }
+            Action::NotifyDependents => {
+                self.notify_dependents(key)?;
+                Ok(None)
+            }
+            Action::ReportStopped => {
+                self.report_stopped_for(Some(key))?;
+                Ok(None)
+            }
+            Action::RequestRecovery => {
+                self.request_recovery_for(Some(key))?;
+                Ok(None)
+            }
+        }
+    }
+
+    pub(crate) fn update_issue(
+        &self,
+        key: &str,
+        change: impl FnOnce(&mut IssueRecord),
+    ) -> Result<IssueRecord, DaemonError> {
+        let mut record = self.record_of(key)?;
+        change(&mut record);
+        self.save_issue(&record)?;
+        Ok(record)
+    }
+
+    /// After an issue ends: a merged one is closed on the tracker and its branch and app are
+    /// cleared; the issues waiting on a dropped one learn of it. Issues a merge unblocks start from
+    /// `schedule`, within `limits.issues_at_once`.
+    fn notify_dependents(&mut self, key: &str) -> Result<(), DaemonError> {
+        let Some(me) = self.issue(key)? else {
+            return Ok(());
+        };
+        if me.flow.stage == Stage::Merged {
+            if let Some(tracker) = &self.services.tracker {
+                match tracker.set_state(key, ovenspring_integrations::tracker::TrackerState::Done) {
+                    Ok(()) => self.event(&json!({"event": "closed-on-tracker", "issue": key}))?,
+                    Err(e) => self.event(
+                        &json!({"event": "tracker-error", "issue": key, "error": e.to_string()}),
+                    )?,
+                }
+            }
+            self.delete_branch(key, &me.branch())?;
+            self.stop_app(key);
+            return Ok(());
+        }
+        for other in self.issues()? {
+            if other.flow.stage == Stage::Queued && other.depends_on.iter().any(|d| d == key) {
+                self.apply(
+                    other.key(),
+                    Fact::DependencyLost {
+                        dependency: key.into(),
+                    },
+                )?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Deletes a merged branch from GitHub; one the repository already deleted is left as it is.
+    pub(crate) fn delete_branch(&self, name: &str, branch: &str) -> Result<(), DaemonError> {
+        let Some(gh) = &self.services.github else {
+            return Ok(());
+        };
+        match gh.delete_branch(branch) {
+            Ok(()) => self.event(&json!({"event": "branch-deleted", "branch": branch})),
+            Err(e) if matches!(e.status(), Some(404 | 422)) => Ok(()),
+            Err(e) => {
+                self.event(&json!({"event": "github-error", "issue": name, "error": e.to_string()}))
+            }
+        }
+    }
+
+    /// Cancels each issue the owner asked the dashboard to cancel.
+    pub(crate) fn take_cancels(&mut self) -> Result<(), DaemonError> {
+        for (key, request) in crate::records::take_cancel_requests(&self.store)? {
+            self.cancel_issue(&key, &request.words)?;
+        }
+        Ok(())
+    }
+
+    /// The owner's cancel ends the issue wherever it is; the tracker is told their words.
+    pub(crate) fn cancel_issue(&mut self, key: &str, words: &str) -> Result<(), DaemonError> {
+        if self.issue(key)?.is_none() {
+            return Ok(());
+        }
+        self.update_issue(key, |r| r.canceled = Some(words.to_owned()))?;
+        self.event(&json!({"event": "canceled", "issue": key}))?;
+        self.apply(key, Fact::Canceled)
+    }
+
+    /// Closes the issue's pull request without merging it, keeping its branch for whoever takes
+    /// the work up again.
+    fn close_pull(&self, key: &str) -> Result<(), DaemonError> {
+        let (Some(gh), Some(pr)) = (&self.services.github, self.record_of(key)?.flow.pr) else {
+            return Ok(());
+        };
+        match gh.close_pull(pr) {
+            Ok(()) => self.event(&json!({"event": "pull-closed", "issue": key, "pr": pr})),
+            Err(e) => {
+                self.event(&json!({"event": "github-error", "issue": key, "error": e.to_string()}))
+            }
+        }
+    }
+
+    fn close_on_tracker(&self, key: &str) -> Result<(), DaemonError> {
+        let Some(record) = self.issue(key)? else {
+            return Ok(());
+        };
+        let evidence = if let Some(words) = &record.canceled {
+            if words.is_empty() {
+                "Canceled by the owner.".to_owned()
+            } else {
+                format!("Canceled by the owner: {words}")
+            }
+        } else {
+            match (
+                record.output(Step::Exception),
+                record.output(Step::Requirements),
+            ) {
+                (Some(StepOutput::Exception(e)), _)
+                    if record.flow.stage == Stage::Dropped
+                        && record.outputs.contains_key(Step::Exception.as_str()) =>
+                {
+                    e.note
+                }
+                (_, Some(StepOutput::Requirements(r))) => {
+                    r.evidence.unwrap_or(r.convergence.outcome)
+                }
+                _ => "Closed by the factory.".into(),
+            }
+        };
+        let Some(tracker) = &self.services.tracker else {
+            return self.event(&json!({"event": "close-on-tracker", "issue": key, "note": "no tracker configured"}));
+        };
+        let result = tracker.comment(key, &evidence).and_then(|()| {
+            tracker.set_state(
+                key,
+                ovenspring_integrations::tracker::TrackerState::Canceled,
+            )
+        });
+        match result {
+            Ok(()) => self.event(&json!({"event": "closed-on-tracker", "issue": key})),
+            Err(e) => {
+                self.event(&json!({"event": "tracker-error", "issue": key, "error": e.to_string()}))
+            }
+        }
+    }
+
+    fn file_step(&self, key: &str, filing: &Filing) -> Result<PathBuf, DaemonError> {
+        let step = filing.step;
+        let record = self.record_of(key)?;
+        let name = self.new_item_name(&format!("{step}-{key}"));
+        let issue = self
+            .store
+            .source(&format!("issues/{key}.md"))
+            .display()
+            .to_string();
+        let mut refs = vec![issue.clone()];
+        refs.extend(record.answers.iter().cloned());
+        // The orchestrator's and the factory's own steps judge from the issue's records; a source
+        // agent's step receives its inputs as entries below.
+        if JUDGING.contains(&step) {
+            refs.extend(record.outputs.values().cloned());
+        }
+        if record.flow.origin == Some(ovenspring_core::flow::Origin::PrComments)
+            && matches!(step, Step::ReviewResponse | Step::Resolution)
+        {
+            refs.extend(record.comments_source.iter().cloned());
+        }
+        if step == Step::Exception {
+            refs.extend(record.last_item.iter().cloned());
+            refs.extend(record.recovery_log.iter().cloned());
+        }
+        let resumed = record.resume.as_ref().filter(|r| r.step == step);
+        let prepare = resumed.is_none() && record.in_dialogue(step);
+        let resume = resumed.and_then(|r| r.session.clone());
+        if record.resume.is_some() {
+            self.update_issue(key, |r| r.resume = None)?;
+        }
+        let worktree = self.worktree_of(key);
+        let mut request = self.request_text(&record, filing)?;
+        let entries = crate::handoff::Ctx {
+            record: &record,
+            filing,
+            issue: &issue,
+            base: &self.config.repo.base_branch,
+            worktree: &worktree,
+        }
+        .inputs();
+        if !entries.is_empty() {
+            request.push('\n');
+        }
+        for (field, entry) in entries {
+            let value = match entry {
+                crate::handoff::Entry::Text(t) => t,
+                crate::handoff::Entry::Json(v) => self.write_source(
+                    &format!(
+                        "handoffs/{name}-{}.json",
+                        field.to_lowercase().replace(' ', "-")
+                    ),
+                    &serde_json::to_string_pretty(&v).unwrap_or_default(),
+                )?,
+            };
+            let _ = write!(request, "\n{field}: {value}");
+        }
+        let item = Item {
+            front: Front {
+                step,
+                to: filing.role,
+                status: Status::Open,
+                issue: Some(key.into()),
+                sprint: None,
+                round: filing.round,
+                unit: filing.unit,
+                refs,
+                out: self.store.output_path(&name).display().to_string(),
+                prepare,
+                resume,
+            },
+            body: format!("{request}\n\n## Result\n"),
+        };
+        let path = self.store.file_item(&name, &item)?;
+        let filed = if prepare {
+            json!({"event": "filed", "issue": key, "item": name, "step": step, "turn": "prepare"})
+        } else {
+            json!({"event": "filed", "issue": key, "item": name, "step": step})
+        };
+        self.event(&filed)?;
+        Ok(path)
+    }
+
+    /// A name for a new item about `what`: the local time it is filed, then `what`, made unique
+    /// on the board and in the archive.
+    pub(crate) fn new_item_name(&self, what: &str) -> String {
+        let stamp = jiff::ZonedDateTime::now().strftime("%Y%m%d-%H%M%S");
+        self.store.unused_item_name(&format!("{stamp}-{what}"))
+    }
+
+    /// The request an item carries: what to do, in one or two sentences, with what the step
+    /// needs that no source file holds.
+    fn request_text(&self, record: &IssueRecord, filing: &Filing) -> Result<String, DaemonError> {
+        let key = record.key();
+        let round = filing
+            .round
+            .map(|r| format!(" (round {r})"))
+            .unwrap_or_default();
+        let plans = self.store.root().join("plans").display().to_string();
+        let correcting = record.flow.correcting();
+        let document = filing.step.document().map(Document::name);
+        if let (true, Some(document)) = (correcting, document) {
+            return Ok(format!(
+                "Update the {document} of {key} (update mode) for the findings the latest resolution applied."
+            ));
+        }
+        Ok(match filing.step {
+            Step::Requirements => format!("Settle the requirements of {key}: {}.", record.title),
+            Step::Prd => match record.output(Step::Requirements) {
+                Some(StepOutput::Requirements(r)) if r.prd_update.is_some() => format!(
+                    "Update the PRD {} (update mode) for what {key} changes in the behavior it states.",
+                    r.prd_update.unwrap_or_default()
+                ),
+                _ => format!("Write the PRD of {key}."),
+            },
+            Step::PrdReview => format!("Review the PRD of {key}{round}."),
+            Step::CodebaseAnalysis => format!("Analyze the code {key} concerns."),
+            Step::ScopeCheck => format!("Settle {key}'s scope with its codebase analysis."),
+            Step::Prototype => format!("Build the prototype of the screen {key} adds."),
+            Step::UiAnalysis => format!("Gather the UI facts for {key}'s UI Spec."),
+            Step::UiSpec => format!("Write the UI Spec of {key} from its approved prototype."),
+            Step::UiSpecReview => format!("Review the UI Spec of {key}{round}."),
+            Step::Adr => format!("Record the technical decisions the owner answered for {key}."),
+            Step::AdrReview => format!("Review the ADRs of {key}{round}."),
+            Step::Design => format!("Write the Design Doc of {key}."),
+            Step::DesignVerify => {
+                format!("Verify the Design Doc of {key} against the code{round}.")
+            }
+            Step::DesignReview => format!("Review the Design Doc of {key}{round}."),
+            Step::DesignSync => format!(
+                "Check the Design Doc of {key} against the repository's other Design Docs{round}."
+            ),
+            Step::TestDesign => format!("Generate the test skeletons of {key}."),
+            Step::WorkPlan => format!("Write the Work Plan of {key} in {plans}/{key}.md."),
+            Step::PlanReview => format!("Review the Work Plan of {key}{round}."),
+            Step::Decompose => {
+                format!("Decompose the Work Plan of {key} into task files in {plans}/tasks/.")
+            }
+            Step::Implement => match filing.task.and_then(|t| record.flow.tasks.get(t)) {
+                Some(task) => format!("Carry out the task in {}.", task.path),
+                None => format!("Implement {key} within its requirements."),
+            },
+            Step::TestReview => format!(
+                "Review the integration and E2E tests {key}'s change added or updated{round}."
+            ),
+            Step::Quality => {
+                format!("Run the quality checks on {key}'s change and fix what fails.")
+            }
+            Step::CodeReview => match filing.unit.filter(|_| record.units.len() > 1) {
+                Some(u) => format!("Review unit {u} of {key}'s change{round}."),
+                None => format!("Review the code of {key}{round}."),
+            },
+            Step::SecurityReview => format!("Review the security of {key}'s change{round}."),
+            Step::Resolution
+                if record.flow.origin == Some(ovenspring_core::flow::Origin::PrComments) =>
+            {
+                format!(
+                    "Judge the new comments on {key}'s pull request {}, each as a finding.",
+                    record.pr_url.as_deref().unwrap_or_default()
+                )
+            }
+            Step::Resolution => format!("Judge the findings on {key}."),
+            Step::RerunCheck => format!(
+                "Judge whether {key}'s correction changed the evidence the reviews that passed relied on."
+            ),
+            Step::ReviewResponse => {
+                format!("Correct {key}'s implementation for the applied findings.")
+            }
+            Step::FixCi => self.fix_ci_request(record)?,
+            Step::MergeBase => format!(
+                "First bring `origin/{}` and `origin/{}` into {key}'s branch with `git merge` and resolve each conflict within the issue's outcome: merging them before the push conflicted.",
+                record.branch(),
+                self.config.repo.base_branch
+            ),
+            Step::Exception => exception_request(record),
+            // The sprint's and the conversation's steps are filed for no issue.
+            Step::SprintPlan
+            | Step::Facts
+            | Step::SprintReview
+            | Step::AgreementsCheck
+            | Step::Conversation
+            | Step::RunCommands => format!("Run {} for {key}.", filing.step),
+        })
+    }
+
+    /// fix-ci's request, naming the checks that failed on the pushed head.
+    fn fix_ci_request(&self, record: &IssueRecord) -> Result<String, DaemonError> {
+        let key = record.key();
+        let failed = match &record.pushed_sha {
+            Some(sha) => self.failed_checks(sha)?.unwrap_or_default(),
+            None => vec![],
+        };
+        let at = record.pushed_sha.as_deref().unwrap_or("its head");
+        let which = if failed.is_empty() {
+            String::new()
+        } else {
+            format!("; these failed: {}", failed.join(", "))
+        };
+        Ok(format!(
+            "Make the checks pass on {key}'s branch at {at}{which}. Fix what the failed checks and their logs show."
+        ))
+    }
+
+    /// Turns each finished issue item into its fact, archiving the item first.
+    pub(crate) fn consume_finished(&mut self) -> Result<(), DaemonError> {
+        for path in self.active_items()? {
+            let name = item_name(&path);
+            if self.running.contains_key(&name) {
+                continue;
+            }
+            let item = self.store.read_item(&path)?;
+            let Some(key) = item.front.issue.clone() else {
+                if item.front.step == Step::Conversation {
+                    self.consume_conversation_item(&path, &item)?;
+                } else if item.front.step == Step::RunCommands {
+                    self.consume_run_commands_item(&path, &item)?;
+                } else if item.front.sprint.is_some()
+                    && matches!(
+                        item.front.status,
+                        Status::Done | Status::Blocked | Status::Failed
+                    )
+                {
+                    self.consume_sprint_item(&path, &item)?;
+                }
+                continue;
+            };
+            if self.issue(&key)?.is_none() {
+                // An item filed outside the flow (by hand or a probe) ends where it is.
+                continue;
+            }
+            if matches!(item.front.status, Status::Open | Status::Doing) {
+                continue;
+            }
+            let taken = self.take_finished(&path, &item, &key);
+            self.settle(&key, "taking in its finished step", taken)?;
+        }
+        Ok(())
+    }
+
+    fn take_finished(&mut self, path: &Path, item: &Item, key: &str) -> Result<(), DaemonError> {
+        if item.front.prepare {
+            return self.take_prepared(path, item, key);
+        }
+        let key = key.to_owned();
+        let session = self.session_of(&item_name(path))?;
+        let dialogue = self
+            .issue(&key)?
+            .is_some_and(|r| r.in_dialogue(item.front.step));
+        let unit = item.front.unit;
+        let fact = match item.front.status {
+            Status::Done => self.done_fact(&key, item)?,
+            Status::Blocked | Status::Failed => Fact::Stuck {
+                step: item.front.step,
+                unit,
+            },
+            Status::Open | Status::Doing => return Ok(()),
+        };
+        let archived = self.store.archive_item(path)?;
+        let step = item.front.step;
+        self.update_issue(&key, |r| {
+            r.last_item = Some(archived.display().to_string());
+            if item.front.status == Status::Done {
+                let key = ovenspring_core::output::output_key(step, unit);
+                let found = fs::read_to_string(&item.front.out)
+                    .ok()
+                    .and_then(|t| serde_json::from_str(&t).ok())
+                    .and_then(|v| crate::handoff::findings_of(&v));
+                if let Some(found) = found {
+                    r.findings.insert(key.clone(), found);
+                }
+                r.outputs.insert(key, item.front.out.clone());
+                if dialogue {
+                    r.resume = Some(Resume {
+                        step,
+                        session: session.clone(),
+                        question: None,
+                    });
+                }
+            }
+        })?;
+        let fact = self.after_done(&key, fact)?;
+        self.apply(&key, fact)?;
+        Ok(())
+    }
+
+    /// A preparation turn ended: its message reaches the owner (as a question that waits, or as
+    /// word that does not), and its session is kept for the work turn.
+    fn take_prepared(&mut self, path: &Path, item: &Item, key: &str) -> Result<(), DaemonError> {
+        let step = item.front.step;
+        let prepared = (item.front.status == Status::Done)
+            .then(|| fs::read_to_string(&item.front.out).ok())
+            .flatten()
+            .and_then(|t| serde_json::from_str(&t).ok())
+            .and_then(|v| PrepareOutput::parse(v).ok());
+        let session = self.session_of(&item_name(path))?;
+        let archived = self.store.archive_item(path)?.display().to_string();
+        let Some(prepared) = prepared else {
+            self.update_issue(key, |r| r.last_item = Some(archived))?;
+            return self.apply(
+                key,
+                Fact::Stuck {
+                    step,
+                    unit: item.front.unit,
+                },
+            );
+        };
+        let asks = prepared.question;
+        if let (Some(message), false) = (&prepared.message, asks) {
+            self.tell_owner(key, message)?;
+        }
+        self.update_issue(key, |r| {
+            r.last_item = Some(archived);
+            r.resume = Some(Resume {
+                step,
+                session,
+                question: prepared.message.filter(|_| asks),
+            });
+        })?;
+        self.apply(key, Fact::Prepared { step, asks })
+    }
+
+    /// The session the latest launch of `item` recorded.
+    fn session_of(&self, item: &str) -> Result<Option<String>, DaemonError> {
+        Ok(crate::records::launch_lines(&self.store)?
+            .into_iter()
+            .rev()
+            .find_map(|line| match line {
+                crate::records::LaunchLine::End(end) if end.item == item => end.session,
+                crate::records::LaunchLine::End(_) | crate::records::LaunchLine::Start(_) => None,
+            }))
+    }
+
+    fn done_fact(&self, key: &str, item: &Item) -> Result<Fact, DaemonError> {
+        let step = item.front.step;
+        let unit = item.front.unit;
+        let Some(output) = self.read_output(item)? else {
+            return Ok(Fact::Stuck { step, unit });
+        };
+        if let StepOutput::Resolution(r) = &output
+            && r.decision == Decision::Proceed
+        {
+            let undisposed = crate::handoff::undisposed(&self.record_of(key)?, r);
+            if !undisposed.is_empty() {
+                let error = format!("no disposition for {}", undisposed.join(", "));
+                self.event(&json!({"event": "unreadable-output", "step": step, "error": error}))?;
+                return Ok(Fact::Stuck { step, unit });
+            }
+        }
+        Ok(Fact::Done { step, unit, output })
+    }
+
+    /// What the daemon learns from a finished item beyond its output: an implementation's tree and
+    /// summary, the task files `decompose` wrote, the tasks that own the quality run's stubs.
+    fn after_done(&self, key: &str, fact: Fact) -> Result<Fact, DaemonError> {
+        let Fact::Done { step, output, .. } = &fact else {
+            return Ok(fact);
+        };
+        match (step, output) {
+            (Step::Implement | Step::ReviewResponse, StepOutput::Executor(e)) => {
+                let tree = self.tree_of(key);
+                let task = (*step == Step::Implement)
+                    .then(|| self.issue(key).ok().flatten())
+                    .flatten()
+                    .filter(|r| !r.flow.tasks.is_empty())
+                    .map(|r| r.flow.task);
+                self.update_issue(key, |r| {
+                    r.summaries.extend(e.change_summary.iter().cloned());
+                    // A correction's tree too, so a test review after it is given what it changed.
+                    if let Some(tree) = tree {
+                        r.trees.push((task, tree));
+                    }
+                })?;
+                Ok(fact)
+            }
+            (Step::Decompose, StepOutput::Document(d)) => {
+                let paths: Vec<String> = d.paths.iter().chain(d.path.iter()).cloned().collect();
+                self.planned(key, &paths)
+            }
+            (Step::Quality, StepOutput::Quality(q)) if q.status == QualityStatus::StubDetected => {
+                Ok(self.stubs(key, &q.incomplete_implementations)?)
+            }
+            _ => Ok(fact),
+        }
+    }
+
+    /// `decompose`'s task files in dependency order, with the review units of a large change.
+    fn planned(&self, key: &str, paths: &[String]) -> Result<Fact, DaemonError> {
+        let worktree = self.worktree_of(key);
+        let read = |p: &String| -> Result<(String, plan::TaskMeta), String> {
+            let path = worktree.join(p).display().to_string();
+            let text = fs::read_to_string(&path).map_err(|e| format!("{p}: {e}"))?;
+            Ok((
+                path,
+                plan::read_task(&text).map_err(|e| format!("{p}: {e}"))?,
+            ))
+        };
+        let ordered = paths
+            .iter()
+            .map(read)
+            .collect::<Result<Vec<_>, String>>()
+            .and_then(|tasks| plan::order(&tasks));
+        let (tasks, deps) = match ordered {
+            Ok(o) => o,
+            Err(e) => {
+                self.event(&json!({"event": "task-files-unreadable", "issue": key, "error": e}))?;
+                return Ok(Fact::Stuck {
+                    step: Step::Decompose,
+                    unit: None,
+                });
+            }
+        };
+        let large = self
+            .issue(key)?
+            .is_some_and(|r| r.flow.scale == Some(Scale::Large));
+        let units = if large {
+            plan::review_units(&deps)
+        } else {
+            vec![]
+        };
+        let tree = self.tree_of(key);
+        self.update_issue(key, |r| {
+            r.units.clone_from(&units);
+            r.trees = tree.map(|t| vec![(None, t)]).unwrap_or_default();
+        })?;
+        Ok(Fact::Planned { tasks, units })
+    }
+
+    /// The tasks whose recorded changes hold the files the quality run found incomplete; the last
+    /// task when no recorded change does.
+    fn stubs(&self, key: &str, incomplete: &[serde_json::Value]) -> Result<Fact, DaemonError> {
+        let Some(record) = self.issue(key)? else {
+            return Ok(Fact::Stubs { tasks: vec![] });
+        };
+        if record.flow.tasks.is_empty() {
+            return Ok(Fact::Stubs { tasks: vec![] });
+        }
+        let changed = record.task_files(&self.worktree_of(key));
+        let mut tasks = BTreeSet::new();
+        for i in incomplete {
+            let file = i.get("file").and_then(serde_json::Value::as_str);
+            let owner = file.and_then(|f| {
+                changed
+                    .iter()
+                    .rev()
+                    .find(|(_, files)| files.contains(f))
+                    .map(|(t, _)| *t)
+            });
+            tasks.insert(owner.unwrap_or(record.flow.tasks.len() - 1));
+        }
+        Ok(Fact::Stubs {
+            tasks: tasks.into_iter().collect(),
+        })
+    }
+
+    /// The worktree's tree as it stands, without committing: every file `git add -A` would take,
+    /// written through a temporary index.
+    fn tree_of(&self, key: &str) -> Option<String> {
+        let worktree = self.worktree_of(key);
+        let index = self.store.root().join(format!("trees/{key}.index"));
+        if let Some(dir) = index.parent() {
+            fs::create_dir_all(dir).ok()?;
+        }
+        let _ = fs::remove_file(&index);
+        let run = |args: &[&str]| {
+            std::process::Command::new("git")
+                .args(args)
+                .current_dir(&worktree)
+                .env("GIT_INDEX_FILE", &index)
+                .output()
+                .ok()
+                .filter(|o| o.status.success())
+                .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_owned())
+        };
+        run(&["add", "-A"])?;
+        let tree = run(&["write-tree"]);
+        let _ = fs::remove_file(&index);
+        tree
+    }
+
+    /// Commits the worktree at one of the flow's fixed points, with a message composed from the
+    /// outputs that led to it: `Committed`, also when there is nothing to commit, or `CommitFailed`
+    /// with what the repository said kept for the quality run that corrects it.
+    fn commit(&self, key: &str, after: CommitPoint) -> Result<Fact, DaemonError> {
+        let committed = Fact::Committed { after };
+        let Some(record) = self.issue(key)? else {
+            return Ok(committed);
+        };
+        let worktree = self.worktree_of(key);
+        let staged = git(&worktree, &["add", "-A"])
+            .and_then(|_| git(&worktree, &["diff", "--cached", "--name-only"]));
+        let made = match staged {
+            Ok(s) if s.is_empty() => {
+                self.event(&json!({"event": "nothing-to-commit", "issue": key, "after": after.to_string()}))?;
+                return Ok(committed);
+            }
+            Ok(_) => {
+                let message = commit_message(&record, after, &self.config.repo.base_branch);
+                git(&worktree, &["commit", "-q", "-m", &message])
+                    .and_then(|_| git(&worktree, &["rev-parse", "HEAD"]))
+            }
+            Err(e) => Err(e),
+        };
+        match made {
+            Ok(sha) => {
+                self.update_issue(key, |r| {
+                    r.summaries.clear();
+                    r.last_commit = Some(sha.clone());
+                    r.refusal = None;
+                })?;
+                self.event(
+                    &json!({"event": "committed", "issue": key, "after": after.to_string(), "sha": sha}),
+                )?;
+                Ok(committed)
+            }
+            Err(e) => {
+                self.refused(key, "commit", &e.to_string())?;
+                Ok(Fact::CommitFailed { after })
+            }
+        }
+    }
+
+    /// Keeps what the repository said when it refused the factory's `what` (commit or push).
+    pub(crate) fn refused(&self, key: &str, what: &str, error: &str) -> Result<(), DaemonError> {
+        self.event(&json!({"event": format!("{what}-refused"), "issue": key, "error": error}))?;
+        self.update_issue(key, |r| {
+            r.refusal = Some(format!(
+                "The repository refused the factory's {what}:\n{error}"
+            ));
+        })?;
+        Ok(())
+    }
+
+    /// A finished item's output parsed for its step; `None` once the reason it could not be read
+    /// is logged as an `unreadable-output` event.
+    pub(crate) fn read_output(&self, item: &Item) -> Result<Option<StepOutput>, DaemonError> {
+        let step = item.front.step;
+        let parsed = fs::read_to_string(&item.front.out)
+            .map_err(|e| e.to_string())
+            .and_then(|t| serde_json::from_str(&t).map_err(|e| e.to_string()))
+            .and_then(|v| StepOutput::parse(step, v));
+        match parsed {
+            Ok(output) => Ok(Some(output)),
+            Err(e) => {
+                self.event(&json!({"event": "unreadable-output", "step": step, "error": e}))?;
+                Ok(None)
+            }
+        }
+    }
+
+    /// Repairs any issue missing an item its state calls for (after a restart, a failed write, or
+    /// an action that could not complete), and retries pushes that did not happen.
+    pub(crate) fn reconcile(&mut self) -> Result<(), DaemonError> {
+        let mut present: BTreeSet<(String, Step, Option<usize>)> = BTreeSet::new();
+        for path in self.active_items()? {
+            let front = self.store.read_item(&path)?.front;
+            if let Some(issue) = front.issue {
+                present.insert((issue, front.step, front.unit));
+            }
+        }
+        for record in self.issues()? {
+            let key = record.key().to_owned();
+            let repaired = self.reconcile_issue(&record, &present);
+            self.settle(&key, "filing its step, committing or pushing", repaired)?;
+        }
+        Ok(())
+    }
+
+    fn reconcile_issue(
+        &mut self,
+        record: &IssueRecord,
+        present: &BTreeSet<(String, Step, Option<usize>)>,
+    ) -> Result<(), DaemonError> {
+        let key = record.key().to_owned();
+        for filing in flow::calls_for(&record.flow) {
+            if present.contains(&(key.clone(), filing.step, filing.unit)) {
+                continue;
+            }
+            self.file_step(&key, &filing)?;
+            self.event(&json!({"event": "reconciled", "issue": key, "step": filing.step}))?;
+        }
+        if record.flow.stage == Stage::Pushing
+            && let Some(fact) = self.push(&key)?
+        {
+            self.apply(&key, fact)?;
+        }
+        // A commit the daemon had not made when it stopped is made now.
+        if let Stage::Committing { after } = &record.flow.stage {
+            let fact = self.commit(&key, *after)?;
+            self.apply(&key, fact)?;
+        }
+        Ok(())
+    }
+
+    pub(crate) fn stop_app(&self, key: &str) {
+        let worktree = self.store.worktree(key);
+        let app = crate::app::App {
+            state: self.store.root(),
+            issue: key,
+            worktree: &worktree,
+            config: &self.config.app,
+        };
+        if let Err(e) = app.stop() {
+            // Stopping is best effort; the record of a failure is what the owner can act on.
+            let _ = self
+                .event(&json!({"event": "app-stop-error", "issue": key, "error": e.to_string()}));
+        }
+    }
+
+    pub(crate) fn worktree_of(&self, key: &str) -> PathBuf {
+        self.store.worktree(key)
+    }
+
+    /// Snapshots every open tracker issue to `sources/issues/<key>.md`, for the lead's sprint plan
+    /// and each issue's steps. A tracker that cannot be reached is logged and asked again later.
+    pub(crate) fn poll_tracker(&mut self) -> Result<(), DaemonError> {
+        let Some(tracker) = self.services.tracker.clone() else {
+            return Ok(());
+        };
+        match tracker.open_issues() {
+            Ok(mut issues) => {
+                // An issue someone else already started is theirs; the factory's own stay.
+                issues.retain(|i| !i.started || self.issue(&i.key).is_ok_and(|r| r.is_some()));
+                for issue in &issues {
+                    self.write_source(&format!("issues/{}.md", issue.key), &issue.render())?;
+                }
+                let keys: Vec<&str> = issues.iter().map(|i| i.key.as_str()).collect();
+                self.forget_closed_sources(&keys)?;
+                let known: Vec<&str> = self.open_issues.iter().map(|i| i.key.as_str()).collect();
+                let opened = keys.iter().any(|k| !known.contains(k));
+                if keys != known {
+                    self.event(&json!({"event": "tracker-issues", "open": keys}))?;
+                }
+                self.open_issues = issues;
+                // A sprint that found no issue to propose proposes again once one opens.
+                if opened {
+                    self.sprint_fact(&ovenspring_core::sprint::SprintFact::IssueOpened)?;
+                }
+                self.tracker_read = true;
+                self.tracker_error = None;
+                records::reached(&self.store, Service::Tracker, Ok(()))
+            }
+            // Not answering is the service's or the network's: shown as out of reach, not as a
+            // connection to fix.
+            Err(e @ HttpError::Transient { why, .. }) => {
+                records::reached(&self.store, Service::Tracker, Err(why))?;
+                self.event(&json!({"event": "service-unreachable", "operation": "reading the tracker", "error": e.to_string()}))
+            }
+            Err(e) => {
+                self.tracker_error = Some(e.to_string());
+                records::reached(&self.store, Service::Tracker, Ok(()))?;
+                self.event(&json!({"event": "tracker-error", "error": e.to_string()}))
+            }
+        }
+    }
+
+    /// Removes the snapshot of each issue the tracker no longer reports open, so a reader never
+    /// takes an old state for the current one. An issue the factory is still working on keeps its
+    /// snapshot: its steps read the requester's words from it.
+    fn forget_closed_sources(&self, open: &[&str]) -> Result<(), DaemonError> {
+        let dir = self.store.source("issues");
+        let entries = fs::read_dir(&dir).map_err(StoreError::io(&dir))?;
+        for entry in entries {
+            let path = entry.map_err(StoreError::io(&dir))?.path();
+            let Some(key) = path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .and_then(|n| n.strip_suffix(".md"))
+            else {
+                continue;
+            };
+            let in_hand = self
+                .issue(key)?
+                .is_some_and(|r| !r.flow.stage.is_finished());
+            if !open.contains(&key) && !in_hand {
+                fs::remove_file(&path).map_err(StoreError::io(&path))?;
+            }
+        }
+        Ok(())
+    }
+
+    /// The open issues as the tracker last reported them.
+    pub fn open_issues(&self) -> &[ovenspring_integrations::tracker::TrackerIssue] {
+        &self.open_issues
+    }
+
+    pub(crate) fn write_source(&self, rel: &str, text: &str) -> Result<String, DaemonError> {
+        let path: &Path = &self.store.source(rel);
+        if let Some(dir) = path.parent() {
+            fs::create_dir_all(dir).map_err(StoreError::io(dir))?;
+        }
+        fs::write(path, text).map_err(StoreError::io(path))?;
+        Ok(path.display().to_string())
+    }
+}
+
+/// A commit message for one of the flow's fixed points: what passed, and for an implementation
+/// the summaries of its changes and the verification limits it carries.
+fn commit_message(record: &IssueRecord, after: CommitPoint, base: &str) -> String {
+    let key = record.key();
+    let subject = match after {
+        CommitPoint::PrdReview => format!("{key}: add the PRD"),
+        CommitPoint::UiSpecReview => format!("{key}: add the UI Spec"),
+        CommitPoint::AdrReview => format!("{key}: record the technical decisions"),
+        CommitPoint::DesignSync => format!("{key}: add the design"),
+        CommitPoint::FixCi => format!("{key}: make the checks pass"),
+        CommitPoint::MergeBase => format!("{key}: resolve the conflict with origin/{base}"),
+        CommitPoint::Quality | CommitPoint::Push => format!("{key}: {}", record.title),
+    };
+    let mut message = subject;
+    if !record.summaries.is_empty() {
+        message.push_str("\n\n");
+        message.push_str(
+            &record
+                .summaries
+                .iter()
+                .map(|s| format!("- {s}"))
+                .collect::<Vec<_>>()
+                .join("\n"),
+        );
+    }
+    let step = match after {
+        CommitPoint::FixCi => Step::FixCi,
+        CommitPoint::MergeBase => Step::MergeBase,
+        CommitPoint::PrdReview
+        | CommitPoint::UiSpecReview
+        | CommitPoint::AdrReview
+        | CommitPoint::DesignSync
+        | CommitPoint::Quality
+        | CommitPoint::Push => Step::Quality,
+    };
+    if let Some(StepOutput::Quality(q)) = record.output(step)
+        && q.status == QualityStatus::VerificationIncomplete
+    {
+        let mut trailers = String::new();
+        for (reason, affected) in q.limitations() {
+            let _ = write!(
+                trailers,
+                "\nVerification-Limitation: {reason}\nVerification-Affected: {affected}"
+            );
+        }
+        if !trailers.is_empty() {
+            message.push('\n');
+            message.push_str(&trailers);
+        }
+    }
+    message
+}
+
+/// What the lead's `exception` is asked: the failure it takes, in the words that name it.
+fn exception_request(record: &IssueRecord) -> String {
+    let key = record.key();
+    let failed_recovery = if record.recovery_log.is_some() {
+        " The recovery procedure the owner approved did not succeed; what it printed is in your refs."
+    } else {
+        ""
+    };
+    let cause = if let Stage::Exception { cause, .. } = &record.flow.stage {
+        Some(cause)
+    } else {
+        None
+    };
+    if cause == Some(&Cause::PullClosed) {
+        return format!(
+            "{key}'s pull request {} was closed without being merged, by someone outside the factory. Choose the way forward.",
+            record.pr_url.as_deref().unwrap_or_default()
+        );
+    }
+    if let Some(stop) = &record.stopped {
+        return format!(
+            "{key} stopped: the factory's own operation, {}, failed on two passes in a row with: {}.{failed_recovery} Find the cause and choose the way forward.",
+            stop.operation, stop.error
+        );
+    }
+    let what = match cause {
+        Some(Cause::DependencyLost) => {
+            format!("{key} cannot start as planned: an issue it depends on was held or dropped")
+        }
+        Some(Cause::Push) => format!(
+            "the repository refused the push of {key}'s branch, and the quality runs could not correct what it reported"
+        ),
+        Some(cause @ (Cause::Step { .. } | Cause::Operation { .. } | Cause::PullClosed)) => {
+            format!("{cause} of {key} could not go on")
+        }
+        None => format!("a step of {key} could not go on"),
+    };
+    format!("Find why {what}, and choose the way forward.{failed_recovery}")
+}

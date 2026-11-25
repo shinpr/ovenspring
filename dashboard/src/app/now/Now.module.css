@@ -1,0 +1,16 @@
+.sprint {
+  margin: var(--space-7) 0 0;
+  font-size: var(--text-lead);
+}
+
+.label {
+  color: var(--color-text-muted);
+}
+
+.count {
+  font-weight: 600;
+}
+
+.groups {
+  margin-top: var(--space-6);
+}

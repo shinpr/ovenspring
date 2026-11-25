@@ -1,0 +1,1 @@
+{"session_id":"01a1fca5-dab8-7423-bc60-26271348820d","turn_id":"turn-1","cwd":"/state/worktrees/ACME-123","hook_event_name":"PreToolUse","model":"model-a","tool_name":"Bash","tool_use_id":"call_1","tool_input":{"command":"COMMAND"}}

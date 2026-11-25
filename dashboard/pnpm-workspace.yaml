@@ -1,0 +1,7 @@
+# Quarantine newly published versions for seven days; malware is usually detected and pulled
+# before then, so the cooldown avoids installing a fresh compromised release.
+minimumReleaseAge: 10080
+
+# Only packages whose build scripts are needed may run them.
+allowBuilds:
+  esbuild: true

@@ -1,0 +1,10 @@
+{
+  // The application and its stories: browser code, without Node's types.
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "jsx": "react-jsx",
+    "types": ["vite/client"]
+  },
+  "include": ["src", ".storybook/preview.tsx", ".storybook/vitest.setup.ts"]
+}

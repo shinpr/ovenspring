@@ -1,0 +1,65 @@
+.group {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+
+.legend {
+  padding: 0;
+  font-weight: 600;
+  font-size: var(--text-small);
+}
+
+.hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.hint {
+  margin: 2px 0 0;
+  color: var(--color-text-muted);
+  font-size: var(--text-small);
+}
+
+.choices {
+  display: grid;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.choice {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 2px 8px;
+  align-items: start;
+  font-size: var(--text-small);
+  cursor: pointer;
+}
+
+.note {
+  grid-column: 2;
+  color: var(--color-text-muted);
+  font-size: var(--text-small);
+}
+
+/* Under its choice, aligned with the choice's label; a labelled field leading it keeps its own
+   space from the choice, a line of status does not. */
+.more {
+  display: grid;
+  gap: var(--space-3);
+  margin: -2px 0 var(--space-2);
+  padding-left: 24px;
+}
+
+.more > :first-child:has(> label) {
+  margin-top: var(--space-2);
+}
+
+.more:last-child {
+  margin-bottom: 0;
+}

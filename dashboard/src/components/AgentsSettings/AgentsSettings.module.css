@@ -1,0 +1,12 @@
+.fail {
+  color: var(--color-fail);
+}
+
+.muted {
+  color: var(--color-text-muted);
+}
+
+.source {
+  color: var(--color-text-muted);
+  font-size: var(--text-small);
+}

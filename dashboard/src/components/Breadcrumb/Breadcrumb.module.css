@@ -1,0 +1,12 @@
+.crumbs {
+  margin: 0;
+  color: var(--color-text-muted);
+}
+
+.crumbs a {
+  color: var(--color-text-muted);
+}
+
+.crumbs a:hover {
+  color: var(--color-text);
+}

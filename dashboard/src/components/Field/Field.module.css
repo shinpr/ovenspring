@@ -1,0 +1,81 @@
+.field {
+  display: grid;
+  align-content: start;
+}
+
+.label {
+  font-weight: 600;
+  font-size: var(--text-small);
+}
+
+.optional {
+  color: var(--color-text-muted);
+  font-weight: 400;
+}
+
+.hint {
+  margin-top: 2px;
+  color: var(--color-text-muted);
+  font-size: var(--text-small);
+}
+
+.error {
+  margin-top: 4px;
+  color: var(--color-fail);
+  font-size: var(--text-small);
+}
+
+.control {
+  width: 100%;
+  margin-top: 6px;
+  padding: 7px 9px;
+  border: 1px solid var(--color-field-border);
+  border-radius: var(--radius-control);
+  background-color: var(--color-raised);
+  color: var(--color-text);
+  font: inherit;
+  font-size: var(--text-small);
+}
+
+.control[aria-invalid="true"] {
+  border-color: var(--color-fail);
+}
+
+textarea.control {
+  resize: vertical;
+}
+
+.mono {
+  font-family: var(--font-mono);
+  font-size: var(--text-mono);
+}
+
+/* A secret's field with its Show/Hide button inside the right edge, centred on the field. */
+.secret {
+  position: relative;
+  display: block;
+  margin-top: 6px;
+}
+
+.secret .control {
+  margin-top: 0;
+  padding-right: 44px;
+}
+
+.reveal {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 40px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  background: none;
+  color: var(--color-text-muted);
+  cursor: pointer;
+}
+
+.reveal:hover {
+  color: var(--color-text);
+}

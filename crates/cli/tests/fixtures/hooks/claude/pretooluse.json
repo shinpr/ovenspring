@@ -1,0 +1,1 @@
+{"session_id":"c231f18c-6a16-4bff-816b-5c4e2e3f0e03","transcript_path":"/tmp/transcript.jsonl","cwd":"/state/worktrees/ACME-123","permission_mode":"auto","hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"COMMAND","description":"Run the command"},"tool_use_id":"toolu_01ER4nCMW6SGdsv74zdpop5c"}

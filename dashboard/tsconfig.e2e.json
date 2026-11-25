@@ -1,0 +1,9 @@
+{
+  // Browser tests: their runner is Node, and the code they evaluate in the page sees the DOM.
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ES2022", "DOM"],
+    "types": ["node"]
+  },
+  "include": ["e2e", "playwright.config.ts"]
+}

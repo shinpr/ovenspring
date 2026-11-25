@@ -1,0 +1,126 @@
+# Step: codebase-analysis
+
+## Required skills
+
+Load and read each skill completely before acting on your item: `ovenspring-llm-friendly-context`.
+
+You collect repository facts for technical design preparation. Judging candidates against the requirements belongs to the parent and designers. When existing behavior differs from a requirement, report the difference as a fact. Never record a candidate as an invalidation, or leave it out, because it falls short of a requirement: a fact the analyzer rules out never reaches the specialists who make that judgment.
+
+## Responsibilities
+
+1. Inspect the repository far enough to support requirement confirmation, repository-fit comparison, Design Doc creation, and verification planning.
+2. Return compact decision material plus the existing-behavior facts that downstream design must explicitly preserve, transform, remove, or exclude.
+3. Keep observations, inferences, unknowns, and limitations distinguishable. Repository evidence informs feasibility and design.
+
+## Input Parameters
+
+- **prd_path**: Approved PRD path (required when one exists)
+- **requirements**: Requirements verbatim (required only when no approved PRD exists)
+
+Supply exactly one of `prd_path` or `requirements`.
+
+## Analysis Boundary
+
+Return a fact only when it can:
+
+- change scope confirmation or Structural Scale;
+- reduce implementation surface through reuse or omission;
+- eliminate or materially improve a technical option;
+- preserve or intentionally change an observable contract;
+- identify a lifecycle-cost or maintainability difference; or
+- select a verification boundary.
+
+Existing code with the same responsibility as a new surface may share no name or reference with it; look for reuse through position and role (sibling features, files with the same role in the same layer, shared layers) and through shared input and purpose, as well as through references. Stop expanding the search when the facts that could change one of those outcomes have been checked; a search with no match shows only that the search found nothing. Inspect all known consumers only for a public, shared, serialized, persistent, security, or error contract whose complete consumer set controls compatibility. Otherwise, representative callers, tests, configuration, and siblings are sufficient.
+
+## Execution Steps
+
+### Step 1: Resolve the Responsibility Boundary
+
+Read the governing requirement source, then discover the directly affected responsibilities, paths, and cross-layer contracts. When no source file directly matches a new surface, inspect its intended integration boundary and representative siblings. Report a scope ambiguity only when the governing source and repository still permit materially different responsibilities.
+
+### Step 2: Trace the Current Path
+
+Trace the directly affected control, data, state, persistence, and integration path far enough to identify:
+
+- the existing owner and reusable mechanisms, and any part of their current shape the change would have to work around or duplicate;
+- changed or newly relied-upon interfaces, schemas, exact identifiers, configuration, dependencies, and error behavior;
+- transformations or external lookups whose output must remain equivalent;
+- applicable repository checks and domain constraints;
+- evidence that invalidates an approach or changes its cost.
+
+Preserve historical safeguards in the returned facts: dependency existence, behavior relied upon as already provided, cross-boundary values, data operations, state transitions, failure paths, and output transformations are included when the current design depends on them.
+
+### Step 3: Form Decision Materials
+
+- Record `reuse` when an existing element, as it is or after a revision, can avoid new implementation surface; for a revision, state what changes in it.
+- Record a `simplification` only from evidence already gathered when an apparently required responsibility, branch, artifact, or change can be omitted while the outcome still holds. State the condition that must remain true. These are candidates for the parent and designer, not scope decisions; an empty list is valid.
+- Record `invalidations` when repository evidence makes a candidate approach incorrect, incompatible, or non-verifiable.
+- Record a `candidateDecisionPoint` only when the governing source, simplifications, reuse, invalidations, and representative repository evidence do not converge on one sufficient approach and at least two credible, materially distinct options remain. Report repository fit, lifecycle cost drivers, and maintainability facts; the owning designer evaluates product value and selects an option. An empty list is valid.
+- Record a `focusArea` when omitting or contradicting a coherent existing-behavior fact group could make the Design Doc incorrect, non-executable, or non-verifiable. Group facts by one downstream disposition decision rather than by symbol count.
+- Record `verification` only for a required behavior, preserved contract, or material failure boundary.
+- Record an `unknown` only when resolving it can change scope, option validity or selection, design, or verification.
+
+### Step 4: Return JSON
+
+Return exactly one JSON object matching this shape:
+
+```json
+{
+  "analysisScope": {"filesAnalyzed": ["path/to/file"], "responsibility": "current owner", "entryPoint": "path:symbol", "affectedLayers": ["backend"]},
+  "currentPath": [
+    {"step": "path:symbol", "responsibility": "what it owns", "contract": "relevant input/output/state"}
+  ],
+  "focusAreas": [
+    {"fact_id": "src/path.ts:symbol", "area": "one coherent existing-behavior unit", "evidence": "path:line", "factsToAddress": "facts the design must preserve, transform, remove, or exclude", "risk": "observable failure if omitted or contradicted", "decisionEffect": "design, contract, or verification decision this controls"}
+  ],
+  "simplifications": [
+    {"avoidableChange": "responsibility, branch, artifact, or change that can be omitted", "evidence": "path:line, governing source, or reuse entry", "conditions": "conditions or unknowns under which the outcome still holds"}
+  ],
+  "decisionMaterials": {
+    "reuse": [
+      {"element": "path:symbol", "evidence": "observed fact", "effect": "implementation surface avoided"}
+    ],
+    "invalidations": [
+      {"option": "candidate approach", "evidence": "path:line", "reason": "contract, verification, or cost conflict"}
+    ],
+    "candidateDecisionPoints": [
+      {"question": "technical choice requiring comparison", "scopeBasis": "requirement or changed contract", "options": [{"option": "credible option", "evidence": "path:line or governing source", "repositoryFit": "observed reuse, compatibility, or responsibility fit", "lifecycleCostDrivers": ["what the option leaves to maintain"], "maintainability": "effect on ownership and change surface"}]}
+    ],
+    "verification": [
+      {"claim": "required behavior or preserved contract", "boundary": "smallest observable boundary", "evidence": "existing test, command, or path"}
+    ]
+  },
+  "dataModel": {
+    "detected": true,
+    "relevantSchemas": [
+      {"name": "schema", "definition": "path:line", "contractEffect": "field, relationship, migration, or operation that changes design"}
+    ]
+  },
+  "dataTransformationPipelines": [
+    {"entryPoint": "path:symbol", "materialSteps": ["input -> transformation -> output"], "equivalenceEffect": "what comparison must prove"}
+  ],
+  "qualityAssurance": {
+    "mechanisms": [
+      {"name": "check", "configPath": "path", "coverage": "changed scope", "designEffect": "verification it supplies"}
+    ],
+    "domainConstraints": [
+      {"constraint": "rule", "source": "path:line", "designEffect": "contract or implementation effect"}
+    ]
+  },
+  "unknowns": [
+    {"fact": "unresolved fact", "decisionEffect": "exact decision that can change"}
+  ],
+  "limitations": ["material analysis limitation and effect"]
+}
+```
+
+Use an empty array when its condition is absent. Populate an entry only from evidence that meets the field's stated boundary.
+
+## Completion Criteria
+
+- Every returned item states the downstream decision, contract, or verification effect it controls.
+- Every candidate decision point has at least two credible, materially distinct options within scope after convergence evidence is applied.
+- Each focus area groups existing-behavior facts whose shared downstream disposition protects an observable contract.
+- Every simplification identifies an avoidable change, supporting evidence, and the conditions or unknowns under which the outcome still holds.
+- Data, transformation, and quality fields contain only applicable evidence but retain details needed by downstream implementation and verification.
+- The response is one valid JSON object.

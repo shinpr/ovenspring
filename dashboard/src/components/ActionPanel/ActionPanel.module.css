@@ -1,0 +1,52 @@
+.panel {
+  grid-column: 1 / -1;
+  margin-top: var(--space-1);
+}
+
+.toggle {
+  width: fit-content;
+  color: var(--color-accent);
+  font-size: var(--text-small);
+  list-style: none;
+  cursor: pointer;
+}
+
+.toggle::-webkit-details-marker {
+  display: none;
+}
+
+.toggle::before {
+  content: "▸ ";
+}
+
+.panel[open] > .toggle::before {
+  content: "▾ ";
+}
+
+.toggle:hover {
+  color: var(--color-text);
+}
+
+.about {
+  margin: var(--space-2) 0 0;
+  font-size: var(--text-small);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  margin-top: 14px;
+}
+
+.state {
+  color: var(--color-text-muted);
+  font-size: var(--text-small);
+}
+
+.failed {
+  margin: var(--space-3) 0 0;
+  color: var(--color-fail);
+  font-size: var(--text-small);
+}

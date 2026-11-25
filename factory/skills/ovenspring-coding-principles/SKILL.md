@@ -1,0 +1,145 @@
+---
+name: ovenspring-coding-principles
+description: Language-agnostic coding principles for maintainability, readability, and quality. Use when implementing features, refactoring code, or reviewing code quality.
+---
+
+# Language-Agnostic Coding Principles
+
+## Core Philosophy
+
+1. **Final State over Effort**: Minimize the complexity and size of what remains after the change — code, tests, concepts, and what a later change must know — not the work spent reaching it. The product keeps changing after this session and a future agent maintains whatever is left, so take on the larger change now when it leaves less behind. Do not choose a route because it needs fewer steps, edits, or tokens; effort only breaks a tie between results of equal final complexity.
+2. **Design Convergence**: Deliver the current required outcome with the least design surface in the final code. Selecting persistent state, public or cross-boundary contracts, behavioral modes, reusable abstractions, or component splits carries enough surface to justify the full convergence process first.
+3. **Structure for Local Edits**: The next change here will be made by an agent that reads only the code around it, so what a change must agree with belongs where that agent cannot miss it: a single definition, a type, an exhaustive branch, or a check that fails. For the code a change adds or extends, shape state so only valid combinations can be expressed, advance each state through its existing owner, and when a compiler, type, or lint check fails on the new code, change the structure so the check passes, suppressing it only when no such change exists.
+4. **Explicit over Implicit**: Make intentions clear through code structure and naming
+5. **Delete over Comment**: Remove unused code instead of commenting it out
+
+## Code Quality
+
+### Continuous Improvement
+- Refactor related code inside the accepted outcome and governing boundaries when it reduces the change's risk or maintenance cost
+- Improve code structure incrementally
+- Keep the codebase lean and focused
+- Delete code proven obsolete by the requested change after checking its callers
+
+### Readability
+- Use meaningful, descriptive names drawn from the problem domain
+- Use full words in names; abbreviations are acceptable only when widely recognized in the domain
+- Use descriptive names; single-letter names are acceptable only for loop counters or well-known conventions (i, j, x, y)
+- Extract magic numbers and strings into named constants. Take each value from an existing requirement, contract, measurement, or repository value for the same purpose; when none of these determines it, mark the constant as an assumed value in a comment
+- Keep code self-documenting where possible
+
+## Function Design
+
+### Parameter Management
+- Group related positional parameters into an object, struct, or dictionary when call-site clarity or coordinated evolution requires it. Retain positional parameters when their order is conventional and the call remains clear, or an external/public signature requires them
+- Preserve external/public signatures unless their migration is part of the accepted outcome or governing artifact
+
+### Single Responsibility
+- Extract a function when independently changing responsibilities or obscured control flow make the current unit harder to understand, verify, or reuse; retain a cohesive domain flow when extraction would create artificial coupling
+
+### Function Organization
+- Pure functions when possible (no side effects)
+- Separate data transformation from side effects
+- Use early returns to reduce nesting
+- Use early returns or extraction when nesting obscures state transitions or decision ownership; retain nested structure when it maps the domain decision more clearly
+- When code branches on the same closed set of values in more than one place, make every branch handle each value explicitly, so a new value is detected at every branch: by an exhaustiveness check where the language has one, otherwise by failing on an unhandled value
+
+## Error Handling
+
+### Error Management Principles
+- **Always handle errors**: Log with context or propagate explicitly
+- **Log appropriately**: Include context for debugging
+- **Protect sensitive data**: Mask or exclude passwords, tokens, PII from logs
+- **Fail fast**: Detect and report errors as early as possible
+
+### Error Propagation
+- Use language-appropriate error handling mechanisms
+- Propagate errors to appropriate handling levels
+- Provide meaningful error messages
+- Include error context when re-throwing
+
+## Reference Representativeness
+
+Existing code relates to a change in two ways. Code that depends on it — callers, consumers, configuration — is reached through references to the changed code. Code that already holds the same responsibility may share no name or reference with it; reach it through position and role (sibling features, files with the same role in the same layer, shared layers) and through the input it takes and the purpose it serves, then compare their logic to judge whether the responsibility is the same.
+
+When alternatives coexist, choose the pattern from responsibility, contract, lifecycle and repository usage rather than proximity or global popularity alone. Record the evidence only when it changes the choice.
+
+Expand to all known consumers for a changed public, shared, serialized or persistent contract whose compatibility depends on them. Stop when the candidates that could change implementation or proof have been read and judged; a search with no match shows only that the search found nothing. Resolve versions from applicable manifests and usage; record a specific limitation only when required compatibility evidence remains unavailable.
+
+## Performance Considerations
+
+### Optimization Approach
+- **Measure first**: Profile before optimizing
+- **Focus on algorithms**: Algorithmic complexity > micro-optimizations
+- **Use appropriate data structures**: Choose based on access patterns
+- **Resource management**: Handle memory, connections, and files properly
+
+### When to Optimize
+- After identifying actual bottlenecks through profiling
+- When performance issues are measurable
+- Optimize only after measurable bottlenecks are identified, not during initial development
+
+## Code Organization
+
+### Structural Principles
+- **Group related functionality**: Keep related code together
+- **Separate concerns**: Domain logic, data access, presentation
+- **Consistent naming**: Follow project conventions
+- **Module cohesion**: High cohesion within modules, low coupling between
+
+### File Organization
+- One primary responsibility per file
+- Logical grouping of related functions/classes
+- Clear folder structure reflecting architecture
+- Split a file when it contains independently changing responsibilities or creates material navigation, coupling, or verification cost; retain a cohesive file when splitting would add avoidable coupling or navigation cost
+
+## Commenting Principles
+
+### Default: code first
+Names, types, and structure are the primary medium. A comment earns its place only by carrying information the code itself cannot express. When in doubt, improve the name instead of adding a comment.
+
+### The test for every comment
+A comment is justified only if it answers one of these:
+- **Why**: reasoning, trade-off, or constraint behind a non-obvious decision
+- **Limitation / edge case**: a boundary a reader cannot infer from the code
+- **Public API contract**: behavior, inputs, outputs of an exported interface
+
+One comment per decision. If a comment restates what the names and control flow already show, delete it and rename instead.
+
+### Comment Scope
+- Comment the why, limits, and public contracts (per the test above); let names and structure carry everything else, including the "how"
+- Record historical context in version control commit messages, not in comments
+- Delete commented-out code (retrieve from git history when needed)
+
+### Comment Quality
+- Base comments on stable rationale, limits, and contracts rather than dates, versions, temporary state, or references to documents and their sections, which drift as those documents change
+- Update comments when changing code
+- Use proper grammar and formatting
+- Write for future maintainers
+
+## Security Principles
+
+### Secure Defaults
+- Store credentials and secrets through environment variables or dedicated secret managers
+- Use parameterized queries (prepared statements) for all database access
+- Use established cryptographic libraries provided by the language or framework
+- Generate security-critical values (tokens, IDs, nonces) with cryptographically secure random generators
+- Encrypt sensitive data at rest and in transit using standard protocols
+
+### Input and Output Boundaries
+- Validate all external input at system entry points for expected format, type, and length. External input includes request data, external service responses, model or tool output, and stored data whose writer is untrusted or whose consumer needs a guarantee the store does not make
+- When a change alters a boundary where external content or model output selects a tool's action, target, or destination, verify that those values cannot exceed the operation scope and access rights already granted to the caller
+- Encode output appropriately for its rendering context (HTML, SQL, shell, URL)
+- Return only information necessary for the caller in error responses; log detailed diagnostics server-side
+
+### Access Control
+- Apply authentication to all entry points that handle user data or trigger state changes
+- Verify authorization for each resource access, not only at the entry point
+- Grant only the permissions required for the operation (files, database connections, API scopes)
+- For changes involving identity or protected resources, prioritize authentication and per-resource authorization review
+
+For concrete detection patterns used by security review, see `references/security-checks.md`.
+
+## References
+
+- [references/frontend.md](references/frontend.md): read when implementing, reviewing, or fixing user-facing UI code

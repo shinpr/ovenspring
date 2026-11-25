@@ -1,0 +1,47 @@
+.group {
+  margin-top: var(--space-6);
+}
+
+.heading {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-section-title);
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+.list {
+  margin: var(--space-2) 0 0;
+  padding: 0 var(--space-2) 0 calc(var(--space-2) + 18px);
+}
+
+.help {
+  margin: 12px var(--space-2) 0;
+  font-size: var(--text-small);
+  color: var(--color-text-muted);
+}
+
+.text {
+  display: block;
+  width: calc(100% - 2 * var(--space-2));
+  min-height: 80px;
+  margin: 6px var(--space-2) 0;
+}
+
+.error {
+  margin: var(--space-1) var(--space-2) 0;
+  font-size: var(--text-small);
+  color: var(--color-fail);
+}
+
+.actions {
+  margin: 14px var(--space-2) 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.muted {
+  color: var(--color-text-muted);
+  font-size: var(--text-small);
+}

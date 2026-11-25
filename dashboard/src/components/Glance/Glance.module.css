@@ -1,0 +1,155 @@
+.section + .section {
+  margin-top: var(--space-6);
+}
+
+.heading {
+  margin: 0 0 var(--space-5);
+  font-size: var(--text-section-title);
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+.empty {
+  margin: 0;
+  padding: 0 var(--space-2);
+  color: var(--color-text-muted);
+}
+
+.rows {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: 88px minmax(0, 1fr) 100px 220px 104px;
+  gap: var(--space-4);
+  align-items: baseline;
+  padding: var(--space-3) var(--space-2);
+}
+
+.row + .row {
+  border-top: 1px solid var(--color-line);
+}
+
+.key {
+  font-family: var(--font-mono);
+  font-size: var(--text-mono);
+}
+
+.key a {
+  color: var(--color-text-muted);
+  text-decoration: none;
+}
+
+.title a {
+  color: var(--color-text);
+  text-decoration: none;
+}
+
+.key a:hover,
+.title a:hover {
+  text-decoration: underline;
+}
+
+.title {
+  overflow-wrap: anywhere;
+}
+
+.phase,
+.muted {
+  color: var(--color-text-muted);
+}
+
+.meta {
+  text-align: right;
+  color: var(--color-text-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.yours {
+  color: var(--color-accent);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.yours:hover {
+  text-decoration: underline;
+}
+
+.problem {
+  color: var(--color-fail);
+  font-weight: 600;
+}
+
+.follow {
+  border: 0;
+  padding: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  text-decoration: underline;
+  text-decoration-color: var(--color-line);
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.follow:hover {
+  text-decoration-color: var(--color-accent);
+}
+
+.sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+@media (max-width: 959px) {
+  .row {
+    grid-template-columns: 88px auto auto minmax(0, 1fr);
+    grid-template-areas:
+      "key title title title"
+      ". phase status meta";
+    gap: var(--space-1) var(--space-3);
+  }
+
+  .key {
+    grid-area: key;
+  }
+
+  .title {
+    grid-area: title;
+  }
+
+  .phase {
+    grid-area: phase;
+  }
+
+  .phase:not(:empty)::after {
+    content: " ·";
+  }
+
+  .status {
+    grid-area: status;
+  }
+
+  .meta {
+    grid-area: meta;
+    text-align: left;
+  }
+
+  /* With no phase, the status starts under the title, as the phase would. */
+  .phase:empty {
+    display: none;
+  }
+
+  .phase:empty + .status {
+    grid-column-start: phase;
+  }
+}

@@ -1,0 +1,8 @@
+.warning {
+  margin: 8px 0 0;
+  font-size: var(--text-small);
+}
+
+.warning b {
+  color: var(--color-fail);
+}

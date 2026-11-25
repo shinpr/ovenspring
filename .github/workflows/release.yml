@@ -1,0 +1,116 @@
+name: Release
+
+# A version tag (v0.1.0, or v0.1.0-rc.1 for a release candidate) builds the executable for each
+# platform with the dashboard inside, tests it there, and publishes the archives, SHA256SUMS and
+# install.sh. The release stays a draft until every platform has passed.
+on:
+  push:
+    tags: ["v[0-9]+.[0-9]+.[0-9]+*"]
+
+permissions:
+  contents: read
+
+jobs:
+  draft:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Open a draft release for the tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          prerelease=""
+          case "$TAG" in *-*) prerelease="--prerelease" ;; esac
+          gh release create "$TAG" --draft --verify-tag --title "$TAG" $prerelease
+
+  build:
+    needs: draft
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: write
+    strategy:
+      matrix:
+        include:
+          - target: aarch64-apple-darwin
+            os: macos-15
+          - target: x86_64-apple-darwin
+            os: macos-15-intel
+          - target: x86_64-unknown-linux-musl
+            os: ubuntu-24.04
+          - target: aarch64-unknown-linux-musl
+            os: ubuntu-24.04-arm
+    env:
+      CARGO_TERM_COLOR: always
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # The server embeds dashboard/dist at build time, so the dashboard is built first.
+      - name: Install pnpm
+        # Version is taken from the `packageManager` field in dashboard/package.json.
+        uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+        with:
+          package_json_file: dashboard/package.json
+
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: dashboard/.nvmrc
+          cache: pnpm
+          cache-dependency-path: dashboard/pnpm-lock.yaml
+
+      - name: Build the dashboard
+        working-directory: dashboard
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm run build
+
+      - name: Install pinned Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@a188e68d0fd2bd36ad51dccb2b07ba6e75105f30 # v2.0.1
+        with:
+          toolchain: 1.100.0
+          target: ${{ matrix.target }}
+
+      - name: Install the musl toolchain
+        if: contains(matrix.target, 'musl')
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+
+      - name: Test on this platform
+        run: cargo test --workspace --locked --target ${{ matrix.target }}
+
+      - name: Build the executable
+        run: cargo build --release --locked --target ${{ matrix.target }}
+
+      - name: Attach the archive to the draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+          ARCHIVE: ovenspring-${{ matrix.target }}.tar.gz
+        run: |
+          tar -czf "$ARCHIVE" -C "target/${{ matrix.target }}/release" ovenspring
+          gh release upload "$TAG" "$ARCHIVE"
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Publish the checksums, the install script and the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          mkdir archives
+          gh release download "$TAG" --pattern 'ovenspring-*.tar.gz' --dir archives
+          (cd archives && sha256sum ovenspring-*.tar.gz > ../SHA256SUMS)
+          gh release upload "$TAG" SHA256SUMS install.sh
+          gh release edit "$TAG" --draft=false

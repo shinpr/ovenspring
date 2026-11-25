@@ -1,0 +1,6 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "entry": ["e2e/**/*.e2e.test.ts"],
+  "project": ["src/**/*.{ts,tsx}", "tokens/**/*.ts", "e2e/**/*.ts", ".storybook/**/*.{ts,tsx}"],
+  "ignore": ["src/api/types.gen.ts"]
+}

@@ -1,0 +1,89 @@
+{
+  "$schema": "https://biomejs.dev/schemas/2.6.8/schema.json",
+  "assist": { "actions": { "source": { "organizeImports": "on" } } },
+  "formatter": {
+    "enabled": true,
+    "formatWithErrors": false,
+    "indentStyle": "space",
+    "indentWidth": 2,
+    "lineWidth": 100
+  },
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "preset": "recommended",
+      "complexity": {
+        "useLiteralKeys": "off",
+        "noVoid": "error",
+        "useMaxParams": { "level": "error", "options": { "max": 4 } },
+        "noExcessiveCognitiveComplexity": {
+          "level": "error",
+          "options": { "maxAllowedComplexity": 15 }
+        },
+        "noExcessiveNestedCallbacks": "error"
+      },
+      "style": {
+        "noNonNullAssertion": "error",
+        "useBlockStatements": "error",
+        "noNestedTernary": "error",
+        "useErrorCause": "error",
+        "useThrowOnlyError": "error"
+      },
+      "suspicious": {
+        "noExplicitAny": "error",
+        "noUnnecessaryConditions": "error",
+        "noShadow": "error",
+        "noEvolvingTypes": "error",
+        "noImplicitAnyLet": "error",
+        "noTsIgnore": "error",
+        "useErrorMessage": "error",
+        "noImportCycles": "error"
+      },
+      "correctness": { "noUndeclaredDependencies": "error" },
+      "nursery": {
+        "noFloatingPromises": "error",
+        "noMisusedPromises": "error",
+        "useAwaitThenable": "error",
+        "useExplicitReturnType": "error",
+        "useExhaustiveSwitchCases": "error",
+        "noUnsafeTypeAssertion": "error",
+        "noBaseToString": "error",
+        "noMisleadingReturnType": "error"
+      }
+    }
+  },
+  "overrides": [
+    {
+      "includes": ["**/*.tsx", "**/*.test.ts", "**/*.e2e.test.ts"],
+      "linter": {
+        "rules": {
+          "nursery": {
+            "useExplicitReturnType": "off"
+          }
+        }
+      }
+    }
+  ],
+  "javascript": {
+    "formatter": {
+      "semicolons": "asNeeded",
+      "quoteStyle": "single",
+      "trailingCommas": "es5"
+    }
+  },
+  "files": {
+    "includes": [
+      "**/*.ts",
+      "**/*.tsx",
+      "**/*.css",
+      "**/*.json",
+      "!**/node_modules",
+      "!**/dist",
+      "!**/storybook-static",
+      "!test-results",
+      "!playwright-report",
+      "!src/styles/tokens.css",
+      "!src/api/types.gen.ts"
+    ]
+  }
+}

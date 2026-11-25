@@ -1,0 +1,156 @@
+.pageTitle {
+  margin-bottom: 16px;
+}
+
+.layout {
+  display: grid;
+  grid-template-columns: 200px minmax(0, 1fr);
+  gap: 28px;
+  align-items: start;
+}
+
+.subnav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  position: sticky;
+  top: 12px;
+}
+
+.subnav a {
+  padding: 6px 0;
+  color: var(--color-text-muted);
+  font-size: var(--text-small);
+  text-decoration: none;
+}
+
+.subnav a:hover {
+  color: var(--color-text);
+}
+
+.subnav a[aria-current="page"] {
+  color: var(--color-text);
+  font-weight: 700;
+}
+
+@media (max-width: 760px) {
+  .layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .subnav {
+    position: static;
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 4px 16px;
+  }
+}
+
+.intro {
+  margin: 4px 0 10px;
+  padding: 0 var(--space-2);
+  color: var(--color-text-muted);
+  font-size: var(--text-small);
+}
+
+.line + .line {
+  margin-top: 3px;
+}
+
+.connected {
+  margin-top: 4px;
+  color: var(--color-ok);
+  font-size: var(--text-small);
+}
+
+.always {
+  color: var(--color-text-muted);
+  font-size: var(--text-small);
+}
+
+.always + .line {
+  margin-top: 3px;
+}
+
+.muted {
+  color: var(--color-text-muted);
+}
+
+.discarded {
+  margin: var(--space-4) 0 0;
+  color: var(--color-text-muted);
+}
+
+.section {
+  margin-top: 0;
+}
+
+.sectionTitle {
+  margin: 0;
+  font-size: var(--text-section-title);
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+.rows {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* The row after a nested list draws the line between them. */
+.subgroup .rows > li:last-child {
+  border-bottom: 0;
+}
+
+.secretAction {
+  justify-self: start;
+}
+
+.keep {
+  justify-self: start;
+  margin-top: 6px;
+}
+
+.number {
+  max-width: 120px;
+}
+
+.refused {
+  margin: 0;
+  color: var(--color-fail);
+  font-size: var(--text-small);
+}
+
+.out {
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-raised);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-control);
+  overflow-x: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: var(--font-mono);
+  font-size: var(--text-mono);
+}
+
+.subgroup {
+  list-style: none;
+}
+
+.subgroupTitle {
+  margin: var(--space-5) 0 var(--space-2);
+  padding: 0 var(--space-2);
+  font-size: var(--text-lead);
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.subgroupText {
+  margin: 0 0 6px;
+  padding: 0 var(--space-2);
+  list-style: none;
+  color: var(--color-text-muted);
+  font-size: var(--text-small);
+}

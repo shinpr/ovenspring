@@ -1,0 +1,36 @@
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+rust-version = "1.89"
+
+[workspace.lints.rust]
+unsafe_code = { level = "forbid", priority = 1 }
+rust_2018_idioms = { level = "warn", priority = -1 }
+
+[workspace.lints.clippy]
+pedantic = { level = "warn", priority = -2 }
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"
+wildcard_enum_match_arm = "deny"
+cognitive_complexity = "deny"
+too_many_arguments = "deny"
+float_cmp = "deny"
+allow_attributes = "deny"
+allow_attributes_without_reason = "deny"
+# Reason: modules group related domain types and functions.
+module_name_repetitions = { level = "allow", priority = -1 }
+# Reason: the crates are internal to one binary and expose no public library API.
+must_use_candidate = { level = "allow", priority = -1 }
+# Reason: internal functions carry their error context in the error values.
+missing_errors_doc = { level = "allow", priority = -1 }
+# Reason: production code denies implicit panic paths.
+missing_panics_doc = { level = "allow", priority = -1 }
+# Reason: internal docs use ordinary prose.
+doc_markdown = { level = "allow", priority = -1 }

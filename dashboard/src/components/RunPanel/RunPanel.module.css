@@ -1,0 +1,132 @@
+.panel {
+  width: min(560px, 100vw);
+  max-width: 100vw;
+  height: 100vh;
+  max-height: 100vh;
+  margin: 0 0 0 auto;
+  padding: 20px;
+  border: 0;
+  border-left: 1px solid var(--color-line);
+  background: var(--color-bg);
+  color: var(--color-text);
+  overflow-y: auto;
+}
+
+.panel::backdrop {
+  background: rgb(0 0 0 / 25%);
+}
+
+/* Floated, so the phase and the title's first line run beside it. */
+.close {
+  float: right;
+}
+
+.title {
+  margin: 0;
+  font-size: var(--text-section-title);
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+.facts {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--space-1) 14px;
+  margin: var(--space-3) 0 0;
+  font-size: var(--text-small);
+}
+
+.facts dt {
+  color: var(--color-text-muted);
+}
+
+.facts dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.subheading {
+  margin: 18px 0 6px;
+  font-size: var(--text-lead);
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.messages {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--text-small);
+}
+
+.messages li {
+  padding: 6px 0;
+  border-top: 1px solid var(--color-line);
+}
+
+.said {
+  margin: 0;
+}
+
+/* An agent's Markdown: paragraphs, lists, headings and code, spaced as body text. */
+.markdown > :first-child {
+  margin-top: 0;
+}
+
+.markdown > :last-child {
+  margin-bottom: 0;
+}
+
+.markdown p,
+.markdown ul,
+.markdown ol,
+.markdown pre,
+.markdown table {
+  margin: 0 0 var(--space-2);
+}
+
+.markdown ul,
+.markdown ol {
+  padding-left: 1.4em;
+}
+
+.markdown h1,
+.markdown h2,
+.markdown h3,
+.markdown h4 {
+  margin: var(--space-3) 0 var(--space-1);
+  font-size: inherit;
+  font-weight: 600;
+}
+
+.markdown pre {
+  overflow-x: auto;
+  white-space: pre;
+}
+
+.log {
+  margin: 14px 0 0;
+}
+
+.muted {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--text-small);
+}
+
+.ok {
+  color: var(--color-ok);
+}
+
+.fail {
+  color: var(--color-fail);
+}
+
+.sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}

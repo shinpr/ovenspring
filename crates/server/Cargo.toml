@@ -1,0 +1,25 @@
+[package]
+name = "ovenspring-server"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+axum = { version = "0.8.9", default-features = false, features = ["http1", "json", "query", "tokio"] }
+ovenspring-agents = { version = "0.1.0", path = "../agents" }
+ovenspring-core = { version = "0.1.0", path = "../core" }
+ovenspring-daemon = { version = "0.1.0", path = "../daemon" }
+ovenspring-integrations = { version = "0.1.0", path = "../integrations" }
+ovenspring-store = { version = "0.1.0", path = "../store" }
+semver = "1.0.28"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+tokio = { version = "1.54.1", features = ["net", "rt"] }
+ts-rs = { version = "12.0.1", features = ["no-serde-warnings"] }
+
+[dev-dependencies]
+tempfile = "3.27.0"

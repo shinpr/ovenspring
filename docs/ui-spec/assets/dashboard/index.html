@@ -1,0 +1,1570 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Oven Spring</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI1MTIiIGhlaWdodD0iNTEyIiB2aWV3Qm94PSIwIDAgMTI4IDEyOCIgcm9sZT0iaW1nIiBhcmlhLWxhYmVsPSJPdmVuIFNwcmluZyI+CjxyZWN0IHdpZHRoPSIxMjgiIGhlaWdodD0iMTI4IiByeD0iMjQiIGZpbGw9IiNmZmZkZjkiLz4KPHBhdGggZmlsbD0iIzk5NTMzNCIgZmlsbC1ydWxlPSJldmVub2RkIiBkPSJNMTggOTFWNjBjMC0yMyAxNC0zOSAzNC00NCAxNC00IDI1LTEgMzcgNmwxOCAxMWMtOS00LTE5LTUtMzAtMi0xOCA1LTMyIDIxLTMyIDQxdjM0Wm0xMC05IDggNVY2OWMwLTE0IDUtMjcgMTQtMzctMTQgNi0yMiAxOC0yMiAzMloiLz4KPHBhdGggZmlsbD0iIzU1MzYyOSIgZmlsbC1ydWxlPSJldmVub2RkIiBkPSJNNTAgMTA4VjczYzAtMTkgMTEtMzMgMjgtMzggMTktNSAzMiA1IDMyIDIzdjMxWm0xNC0yMiAzMi0xMFY2MWMwLTktNi0xNC0xNC0xMi0xMCAzLTE4IDEyLTE4IDIzWiIvPgo8L3N2Zz4K">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root,
+:root[data-theme="light"] {
+  --color-bg: #f7f3ec;
+  --color-raised: #fffdf9;
+  --color-line: #e4dccf;
+  --color-field-border: #8a7c6b;
+  --color-text: #2a1f16;
+  --color-text-muted: #6e6152;
+  --color-accent: #9c4416;
+  --color-on-accent: #fffdf9;
+  --color-ok: #3f6b33;
+  --color-fail: #a3301c;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) {
+    --color-bg: #16110d;
+    --color-raised: #1f1813;
+    --color-line: #30271f;
+    --color-field-border: #7a6c5c;
+    --color-text: #f2e9dc;
+    --color-text-muted: #ab9d8b;
+    --color-accent: #f0a25a;
+    --color-on-accent: #16110d;
+    --color-ok: #a3c98f;
+    --color-fail: #f08a72;
+  }
+}
+
+:root[data-theme="dark"] {
+  --color-bg: #16110d;
+  --color-raised: #1f1813;
+  --color-line: #30271f;
+  --color-field-border: #7a6c5c;
+  --color-text: #f2e9dc;
+  --color-text-muted: #ab9d8b;
+  --color-accent: #f0a25a;
+  --color-on-accent: #16110d;
+  --color-ok: #a3c98f;
+  --color-fail: #f08a72;
+}
+
+:root {
+  --font-sans: "Hanken Grotesk Variable", "Hanken Grotesk", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", "Menlo", monospace;
+  --text-headline: 32px;
+  --text-page-title: 30px;
+  --text-section-title: 22px;
+  --text-wordmark: 18px;
+  --text-lead: 17px;
+  --text-body: 15px;
+  --text-small: 14px;
+  --text-mono: 13px;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 40px;
+  --space-7: 64px;
+  --radius-control: 4px;
+  --width-content: 1200px;
+}
+:root{color-scheme:light;--caret:url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A//www.w3.org/2000/svg%27%20width%3D%2710%27%20height%3D%276%27%20viewBox%3D%270%200%2010%206%27%3E%3Cpath%20d%3D%27M1%201l4%204%204-4%27%20fill%3D%27none%27%20stroke%3D%27%236e6152%27%20stroke-width%3D%271.5%27%20stroke-linecap%3D%27round%27%20stroke-linejoin%3D%27round%27/%3E%3C/svg%3E");--check:url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A//www.w3.org/2000/svg%27%20width%3D%2712%27%20height%3D%2712%27%20viewBox%3D%270%200%2012%2012%27%3E%3Cpath%20d%3D%27M2.5%206.2l2.3%202.3%204.7-5%27%20fill%3D%27none%27%20stroke%3D%27%23fffdf9%27%20stroke-width%3D%271.8%27%20stroke-linecap%3D%27round%27%20stroke-linejoin%3D%27round%27/%3E%3C/svg%3E");}
+:root[data-theme="dark"]{color-scheme:dark;--caret:url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A//www.w3.org/2000/svg%27%20width%3D%2710%27%20height%3D%276%27%20viewBox%3D%270%200%2010%206%27%3E%3Cpath%20d%3D%27M1%201l4%204%204-4%27%20fill%3D%27none%27%20stroke%3D%27%23ab9d8b%27%20stroke-width%3D%271.5%27%20stroke-linecap%3D%27round%27%20stroke-linejoin%3D%27round%27/%3E%3C/svg%3E");--check:url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A//www.w3.org/2000/svg%27%20width%3D%2712%27%20height%3D%2712%27%20viewBox%3D%270%200%2012%2012%27%3E%3Cpath%20d%3D%27M2.5%206.2l2.3%202.3%204.7-5%27%20fill%3D%27none%27%20stroke%3D%27%2316110d%27%20stroke-width%3D%271.8%27%20stroke-linecap%3D%27round%27%20stroke-linejoin%3D%27round%27/%3E%3C/svg%3E");}
+@media (prefers-color-scheme:dark){:root:not([data-theme]){color-scheme:dark;--caret:url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A//www.w3.org/2000/svg%27%20width%3D%2710%27%20height%3D%276%27%20viewBox%3D%270%200%2010%206%27%3E%3Cpath%20d%3D%27M1%201l4%204%204-4%27%20fill%3D%27none%27%20stroke%3D%27%23ab9d8b%27%20stroke-width%3D%271.5%27%20stroke-linecap%3D%27round%27%20stroke-linejoin%3D%27round%27/%3E%3C/svg%3E");--check:url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A//www.w3.org/2000/svg%27%20width%3D%2712%27%20height%3D%2712%27%20viewBox%3D%270%200%2012%2012%27%3E%3Cpath%20d%3D%27M2.5%206.2l2.3%202.3%204.7-5%27%20fill%3D%27none%27%20stroke%3D%27%2316110d%27%20stroke-width%3D%271.8%27%20stroke-linecap%3D%27round%27%20stroke-linejoin%3D%27round%27/%3E%3C/svg%3E");}}
+
+/* Form controls drawn from the tokens, not the operating system's defaults. */
+select{-webkit-appearance:none;appearance:none;background-image:var(--caret);background-repeat:no-repeat;background-position:right var(--space-3) center;background-size:10px 6px;padding-right:calc(var(--space-3) * 2 + 10px)!important}
+select:disabled{color:var(--color-text-muted);opacity:1}
+.proto select{--caret:url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A//www.w3.org/2000/svg%27%20width%3D%2710%27%20height%3D%276%27%20viewBox%3D%270%200%2010%206%27%3E%3Cpath%20d%3D%27M1%201l4%204%204-4%27%20fill%3D%27none%27%20stroke%3D%27%23ab9d8b%27%20stroke-width%3D%271.5%27%20stroke-linecap%3D%27round%27%20stroke-linejoin%3D%27round%27/%3E%3C/svg%3E")}
+input[type=checkbox],input[type=radio]{-webkit-appearance:none;appearance:none;flex:none;width:16px;height:16px;margin:3px 0 0;border:1px solid var(--color-field-border);background:var(--color-raised);border-radius:var(--radius-control);cursor:pointer;display:inline-grid;place-content:center}
+input[type=radio]{border-radius:50%}
+input[type=radio]:checked{border-color:var(--color-accent);box-shadow:inset 0 0 0 3px var(--color-raised);background:var(--color-accent)}
+input[type=checkbox]:checked{border-color:var(--color-accent);background:var(--color-accent) var(--check) center/12px 12px no-repeat}
+input[type=checkbox]:focus-visible,input[type=radio]:focus-visible{outline:2px solid var(--color-accent);outline-offset:3px}
+.proto input[type=checkbox]{background-color:#1f1813;border-color:#7a6c5c}
+fieldset{margin:0;padding:0;border:0;min-width:0}
+legend{padding:0}
+textarea{resize:vertical}
+::placeholder{color:var(--color-text-muted);opacity:1}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--color-bg);color:var(--color-text);font-family:var(--font-sans);font-size:var(--text-body);line-height:1.55;-webkit-font-smoothing:antialiased}
+a{color:var(--color-accent);text-underline-offset:3px}
+a:hover{color:var(--color-text)}
+a:focus-visible,button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible,summary:focus-visible{outline:2px solid var(--color-accent);outline-offset:3px}
+code,kbd,.mono{font-family:var(--font-mono);font-size:var(--text-mono)} code{overflow-wrap:anywhere} kbd{padding:0 5px;border:1px solid var(--color-line);border-radius:var(--radius-control);background:var(--color-raised)}
+h1,h2,h3{margin:0;font-weight:600;letter-spacing:-.01em}
+h1{font-size:var(--text-page-title);line-height:1.2}
+h2{font-size:var(--text-section-title);line-height:1.25}
+h3{font-size:var(--text-lead);line-height:1.3}
+p{margin:0}
+.muted{color:var(--color-text-muted)}
+.small{font-size:var(--text-small)}
+.ok{color:var(--color-ok)} .fail{color:var(--color-fail)} .accent{color:var(--color-accent)}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+
+/* prototype controls: not part of the product */
+.proto{background:#2a1f16;color:#f2e9dc;font:13px/1.4 var(--font-sans);padding:8px 16px;display:flex;flex-wrap:wrap;gap:8px 18px;align-items:center}
+.proto b{font-weight:600;letter-spacing:.02em}
+.proto label{display:flex;gap:6px;align-items:center}
+.proto select{font:inherit;background-color:#1f1813;color:#f2e9dc;border:1px solid #7a6c5c;border-radius:var(--radius-control);padding:2px 4px}
+.proto a{color:#f0a25a}
+.proto .sep{opacity:.5}
+.proto-btn{font:inherit;color:#f0a25a;background:none;border:1px solid #7a6c5c;border-radius:var(--radius-control);padding:2px 8px;cursor:pointer}
+
+/* product chrome */
+header.top{border-bottom:1px solid var(--color-line);background:var(--color-bg)}
+.top-in{max-width:calc(var(--width-content) + 2*var(--space-6));margin:0 auto;padding:var(--space-4) var(--space-6);display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:var(--space-3) var(--space-6)}
+.goalband{background:var(--color-raised);border-bottom:1px solid var(--color-line)}
+.gb-in{max-width:calc(var(--width-content) + 2*var(--space-6));margin:0 auto;padding:var(--space-3) var(--space-6);display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:var(--space-1) var(--space-4);align-items:baseline}
+.gb-l{color:var(--color-text-muted);font-size:var(--text-small)}
+.gb-t{font-size:var(--text-lead);max-width:72ch}
+.gb-t.none{color:var(--color-text-muted)}
+.gb-a{font-size:var(--text-small);white-space:nowrap}
+@media (max-width:760px){.gb-in{padding:var(--space-3) var(--space-4);grid-template-columns:1fr}}
+/* On a narrow screen the repository moves to a line of its own rather than shrinking out of sight. */
+.brand{display:flex;flex-wrap:wrap;align-items:baseline;gap:var(--space-1) var(--space-3);max-width:100%}
+.brand .word{display:inline-flex;color:var(--color-text);text-decoration:none}
+.brand .word svg{display:block;overflow:visible}
+/* The version follows the wordmark it belongs to; a rule sets the repository apart from it. */
+.brand .ver{color:var(--color-text-muted);font-size:var(--text-small);white-space:nowrap}
+.brand .repo{padding-left:var(--space-3);border-left:1px solid var(--color-line);flex-shrink:0;max-width:100%;color:var(--color-text-muted);font-size:var(--text-small);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.top-end{display:flex;flex-wrap:wrap;align-items:center;gap:var(--space-3) var(--space-6)}
+[data-nav-only][hidden]{display:none}
+nav.main{display:flex;gap:2px;flex-wrap:wrap}
+nav.main a{color:var(--color-text-muted);text-decoration:none;padding:6px 10px;font-weight:500}
+nav.main a:hover{color:var(--color-text)}
+nav.main a[aria-current="page"]{color:var(--color-text);font-weight:700}
+.theme{font-size:var(--text-small);color:var(--color-text-muted);display:flex;gap:6px;align-items:center}
+.theme select{font:inherit;color:var(--color-text);background-color:var(--color-raised);border:1px solid var(--color-field-border);border-radius:var(--radius-control);padding:2px 9px}
+
+main{max-width:calc(var(--width-content) + 2*var(--space-6));margin:0 auto;padding:var(--space-6) var(--space-6) var(--space-7)}
+@media (max-width:759px){.top-in,main{padding-left:var(--space-4);padding-right:var(--space-4)}}
+.stack>*+*{margin-top:var(--space-6)}
+
+/* status line */
+.status{padding:0}
+.status .what{font-weight:600;font-size:var(--text-page-title);line-height:1.2;letter-spacing:-.01em}
+.status .how{font-size:var(--text-lead)}
+.status+*{margin-top:var(--space-7)!important}
+.status.halt .what{color:var(--color-fail)}
+.status.yours .what{color:var(--color-accent)}
+.status .how{margin-top:var(--space-2);color:var(--color-text);max-width:72ch}
+.status .how+.how{margin-top:var(--space-1)}
+.need-list{margin-top:var(--space-4);max-width:72ch}
+/* grouping: regions, groups, items (see How this was designed, 6) */
+.region{margin-top:var(--space-7)}
+.grp{margin-top:var(--space-6)}
+.grp>h2{margin-bottom:var(--space-2)}
+.grp>.list,.grp>.path,.grp>.whatis{margin-top:var(--space-5)}
+.list>*+*{border-top:1px solid var(--color-line)}
+.ctx{font-size:var(--text-lead)}
+.subh{margin:var(--space-5) 0 var(--space-2)}
+.grp>p,.grp>.whatis,.grp>details,.grp>.links,.grp>.subh,.grp>.kv,.grp>.actions,.grp>.empty{padding-left:var(--space-2);padding-right:var(--space-2)}
+.grp>p+p{margin-top:var(--space-1)}
+.grp>.list.kr,.grp>.kv{margin-top:var(--space-2)}
+.grp>.actions,.grp>details{margin-top:var(--space-3)}
+.rname{font-weight:700;text-transform:capitalize}
+.item{padding:var(--space-3) var(--space-2)}
+.item>p+p{margin-top:var(--space-1)}
+.whatis{display:grid;grid-template-columns:110px minmax(0,1fr);gap:var(--space-3) var(--space-4);margin:0;max-width:72ch}
+.whatis dt{color:var(--color-text-muted)} .whatis dd{margin:0}
+.inow{font-size:var(--text-lead);margin-top:var(--space-5);max-width:72ch}
+/* glance rows on Now */
+.wrow{display:grid;grid-template-columns:88px minmax(0,1fr) 100px 220px 104px;gap:var(--space-4);padding:var(--space-3) var(--space-2);align-items:baseline}
+.wrow .k{font-family:var(--font-mono);font-size:var(--text-mono)}
+.wrow .k a{color:var(--color-text-muted);text-decoration:none}
+.wrow .t a{color:var(--color-text);text-decoration:none;font-weight:500}
+.wrow .t a:hover,.wrow .k a:hover{text-decoration:underline}
+.wrow .ph-w{color:var(--color-text-muted)}
+.wrow .meta{color:var(--color-text-muted);text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
+.yours{color:var(--color-accent);font-weight:600;text-decoration:none}
+a.yours:hover{text-decoration:underline;color:var(--color-accent)}
+.wrow .fail{font-weight:600}
+@media (max-width:959px){
+  .wrow{grid-template-columns:88px auto auto minmax(0,1fr);grid-template-areas:"key title title title" ". phase status meta";gap:var(--space-1) var(--space-3)}
+  .wrow .k{grid-area:key} .wrow .t{grid-area:title} .wrow .ph-w{grid-area:phase} .wrow .st-w{grid-area:status}
+  .wrow .meta{grid-area:meta;text-align:left}
+  .wrow .ph-w:not(:empty)::after{content:" ·"}
+  /* With no phase, the status starts under the title, as the phase would. */
+  .wrow .ph-w:empty{display:none} .wrow .ph-w:empty+.st-w{grid-column-start:phase}
+}
+@media (max-width:760px){
+  .whatis{grid-template-columns:1fr;gap:0} .whatis dd{margin-bottom:var(--space-3)}
+}
+
+.context{display:grid;grid-template-columns:auto 1fr;gap:4px 14px;font-size:var(--text-small)}
+.context dt{color:var(--color-text-muted)}
+.context dd{margin:0;min-width:0}
+
+/* sections and rows */
+section>h2{display:flex;flex-wrap:wrap;align-items:baseline;gap:var(--space-2);margin-bottom:var(--space-5)}
+section>h2 .sub{font-size:var(--text-small);font-weight:400;color:var(--color-text-muted)}
+.rows{border-top:1px solid var(--color-line)}
+.row{display:grid;grid-template-columns:minmax(0,1.15fr) 104px minmax(0,1.35fr);gap:4px 16px;padding:var(--space-3) var(--space-2);border-bottom:1px solid var(--color-line);align-items:start}
+.row.two{grid-template-columns:minmax(0,1.15fr) minmax(0,1.49fr)}
+.issue a{color:var(--color-text);text-decoration:none;display:grid;grid-template-columns:76px minmax(0,1fr);gap:0 8px}
+.issue a:hover .t{text-decoration:underline}
+.issue .k{font-family:var(--font-mono);font-size:var(--text-mono);color:var(--color-text-muted);padding-top:2px}
+.issue .t{font-weight:500;min-width:0;overflow-wrap:anywhere}
+.phase{font-size:var(--text-small);color:var(--color-text-muted);padding-top:1px}
+.now .doing{min-width:0}
+.follow{display:inline;font:inherit;color:inherit;background:none;border:0;padding:0;text-align:left;cursor:pointer;text-decoration:underline;text-decoration-color:var(--color-line);text-underline-offset:3px}
+.follow:hover{text-decoration-color:var(--color-accent)}
+.now .last{font-size:var(--text-small);color:var(--color-text-muted);margin-top:2px}
+.dur{color:var(--color-text-muted);white-space:nowrap}
+.need{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:var(--space-1) var(--space-4);padding:var(--space-3) var(--space-2);border-bottom:1px solid var(--color-line);align-items:center}
+.need .ask{font-weight:600;color:var(--color-text)}
+.need .about{font-size:var(--text-small);margin-top:2px}
+.btn{display:inline-flex;align-items:center;gap:6px;font:inherit;font-weight:600;font-size:var(--text-small);border-radius:var(--radius-control);padding:7px 12px;cursor:pointer;text-decoration:none;border:1px solid var(--color-field-border);background:var(--color-bg);color:var(--color-text);white-space:nowrap}
+.btn.primary{background:var(--color-accent);border-color:var(--color-accent);color:var(--color-on-accent)}
+.btn.quiet{border-color:transparent;background:transparent;color:var(--color-accent);padding:4px 6px}
+.btn[disabled],.btn.primary[disabled]{background:transparent;border-color:var(--color-line);color:var(--color-text-muted);cursor:not-allowed}
+.secret .reveal:hover{color:var(--color-text)}
+.secret{position:relative;display:block;margin-top:6px}
+.field .secret input[type=password],.field .secret input[type=text]{margin-top:0;padding-right:44px}
+.secret .reveal{position:absolute;top:0;bottom:0;right:4px;margin:auto 0;display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;padding:0;border:0;background:transparent;color:var(--color-text-muted);cursor:pointer;border-radius:var(--radius-control)}
+fieldset.field{border:0;padding:0;margin-left:0;margin-right:0;min-width:0}
+fieldset.field>legend{padding:0;font-weight:600;font-size:var(--text-small)}
+.secret .reveal:focus-visible{outline-offset:-3px}
+.choice-more{padding-left:24px;margin:-2px 0 var(--space-4)}
+.choice-more:last-child{margin-bottom:0}
+.choice-more>.field:first-child{margin-top:var(--space-2)}
+.opt{font-weight:400}
+.stepper{list-style:none;margin:var(--space-2) 0 0;padding:0;display:flex;flex-wrap:wrap;gap:4px 24px;font-size:var(--text-small)}
+.setup>.su-block{margin-top:var(--space-5);border-top:1px solid var(--color-line);padding-top:var(--space-5)}
+.setup>.actions{margin-top:var(--space-6)}
+.setup .su-form>.actions{margin-top:var(--space-6)}
+.setup .err-summary{margin-top:var(--space-6)}
+.setup .err-summary:not([hidden])+.actions{margin-top:var(--space-3)}
+.su-block>h3+p{margin-top:4px}
+.su-status{margin-top:var(--space-3);min-height:calc(var(--text-small) * 1.6)}
+/* The result's line is kept while a block has none, so a check starting as a field is left moves nothing below it. */
+.err-summary{border:1px solid var(--color-line);border-left:4px solid var(--color-fail);background:var(--color-raised);border-radius:var(--radius-control);padding:var(--space-3) var(--space-4)}
+.err-summary .es-t{font-size:var(--text-small);font-weight:600}
+.err-summary ul{margin:6px 0 0;padding-left:18px;font-size:var(--text-small)}
+.err-summary a{color:var(--color-fail);display:inline-block;min-height:24px;line-height:24px}
+.err-summary li+li{margin-top:2px}
+.btn.quiet.inline{padding:0;font-size:inherit;text-decoration:underline;text-underline-offset:3px}
+.field>label{display:block;font-weight:600;font-size:var(--text-small)}
+.field .err:empty{display:none}
+.field .err{display:block}
+.empty{padding:var(--space-3) var(--space-2);color:var(--color-text-muted);border-bottom:1px solid var(--color-line)}
+
+@media (max-width:760px){
+  .row,.row.two{grid-template-columns:1fr;gap:2px}
+  .phase:not(:empty)::before{content:"Phase: "} .phase:empty{display:none}
+  .row .phase,.row .now{padding-left:84px}
+  .need{grid-template-columns:1fr}
+  .need .btn{justify-self:start}
+}
+
+/* issue page */
+.ihead{display:flex;flex-wrap:wrap;gap:6px 16px;align-items:baseline}
+.ihead .k{font-family:var(--font-mono);color:var(--color-text-muted)}
+.links{display:flex;flex-wrap:wrap;gap:4px 16px;font-size:var(--text-small);margin-top:6px}
+.cols{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(0,1fr);gap:32px;align-items:start}
+@media (max-width:860px){.cols{grid-template-columns:1fr}}
+.nowbox{margin-left:0;margin-right:0;margin-bottom:0;padding:0 0 16px;border-bottom:1px solid var(--color-line);display:grid;grid-template-columns:auto 1fr;gap:2px 14px;font-size:var(--text-small)}
+.nowbox dt{color:var(--color-text-muted)} .nowbox dd{margin:0;min-width:0}
+.path{list-style:none;margin:0;padding:0}
+.ph{padding:var(--space-3) var(--space-2)}
+.path>.ph+.ph{border-top:1px solid var(--color-line)}
+.ph-h{display:flex;flex-wrap:wrap;gap:2px 10px;align-items:baseline}
+.ph-h h3{font-size:var(--text-lead)}
+.ph-h .st{font-size:var(--text-small);color:var(--color-text-muted)}
+.ph.now .ph-h .st{color:var(--color-text);font-weight:600}
+.ph .desc{font-size:var(--text-small);color:var(--color-text-muted);margin-top:2px}
+details.steps>summary{cursor:pointer;font-size:var(--text-small);color:var(--color-accent);margin-top:4px;list-style:none}
+details.steps>summary::-webkit-details-marker{display:none}
+details.steps>summary::before{content:"▸ ";} details.steps[open]>summary::before{content:"▾ ";}
+.steplist{list-style:none;margin:6px 0 0;padding:0}
+.step{display:grid;grid-template-columns:92px minmax(0,1fr) auto;gap:2px 10px;padding:5px 0;border-top:1px solid var(--color-line);font-size:var(--text-small);align-items:baseline}
+.step .tm{font-family:var(--font-mono);font-size:var(--text-mono);color:var(--color-text-muted);white-space:nowrap}
+.step .who{font-weight:600}
+.step .res{font-size:var(--text-small);white-space:nowrap}
+.step button.run,.inow button.run{font:inherit;font-size:var(--text-small);background:none;border:0;color:var(--color-accent);cursor:pointer;padding:0;text-decoration:underline;text-underline-offset:2px}
+@media (max-width:560px){.step{grid-template-columns:1fr}.step .res{white-space:normal}}
+.about>*+*{margin-top:18px}
+.about h3{font-size:var(--text-small);font-weight:700;margin-bottom:2px}
+.about ul{margin:0;padding-left:18px}
+.dec{border-top:1px solid var(--color-line);padding:8px 0;font-size:var(--text-small)}
+.dec .q{font-weight:600}
+.find{border-top:1px solid var(--color-line);padding:6px 0;font-size:var(--text-small)}
+.find .disp{font-weight:600}
+
+/* drawer */
+.drawer{position:fixed;inset:0;background:rgba(22,17,13,.35);display:none;z-index:20}
+.drawer.open{display:block}
+.drawer .panel{position:absolute;right:0;top:0;bottom:0;width:min(560px,100%);background:var(--color-bg);border-left:1px solid var(--color-line);padding:20px;overflow:auto}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:4px 14px;font-size:var(--text-small);margin-top:12px}
+.kv dt{color:var(--color-text-muted)} .kv dd{margin:0;min-width:0;overflow-wrap:anywhere}
+.said{font-size:var(--text-small);white-space:pre-wrap}
+.msgs{list-style:none;margin:0;padding:0}
+.msgs li{border-top:1px solid var(--color-line);padding:6px 0;font-size:var(--text-small)}
+.msgs .tm{font-family:var(--font-mono);font-size:var(--text-mono);color:var(--color-text-muted)}
+
+/* activity */
+.filters{display:flex;flex-wrap:wrap;gap:10px 16px;align-items:center;font-size:var(--text-small)}
+.filters label{display:flex;gap:6px;align-items:center;min-width:0;max-width:100%}
+.filters select.f{min-width:0;width:100%}
+select.f{font:inherit;color:var(--color-text);background-color:var(--color-raised);border:1px solid var(--color-field-border);border-radius:var(--radius-control);padding:5px 8px;max-width:100%}
+.ev{display:grid;grid-template-columns:52px 84px minmax(0,1fr) auto;gap:2px var(--space-3);padding:var(--space-2);border-bottom:1px solid var(--color-line);font-size:var(--text-small);align-items:baseline}
+.ev .tm{font-family:var(--font-mono);font-size:var(--text-mono);color:var(--color-text-muted)}
+.ev .k{font-family:var(--font-mono);font-size:var(--text-mono);color:var(--color-text-muted)}
+.ev .k a{color:inherit}
+.ev .res{font-size:var(--text-small);white-space:nowrap}
+@media (max-width:620px){.ev{grid-template-columns:52px minmax(0,1fr)}.ev .k{grid-column:2}.ev .txt{grid-column:2}.ev .res{grid-column:2;white-space:normal}}
+
+/* sprints */
+.card{padding:0}
+.kr{list-style:none;padding:0;margin:6px 0 0}
+.kr li{padding:var(--space-2);font-size:var(--text-small)}
+.facts{display:flex;flex-wrap:wrap;gap:4px 20px;font-size:var(--text-small);margin-top:8px}
+.past>summary{cursor:pointer;padding:var(--space-3) var(--space-2);display:grid;grid-template-columns:140px minmax(0,1fr) auto;gap:4px 14px;list-style:none;align-items:baseline}
+.past>summary::-webkit-details-marker{display:none}
+.past>summary>span:first-child::before{content:"▸ "}
+.past[open]>summary>span:first-child::before{content:"▾ "}
+.past .body{padding:0 var(--space-2) var(--space-4) 162px}
+@media (max-width:620px){.past>summary{grid-template-columns:1fr}.past .body{padding-left:4px}}
+
+/* settings */
+.settings{display:grid;grid-template-columns:200px minmax(0,1fr);gap:28px;align-items:start}
+.snav{display:flex;flex-direction:column;gap:2px;position:sticky;top:12px}
+.snav a{color:var(--color-text-muted);text-decoration:none;padding:6px 0;font-size:var(--text-small)}
+.snav a:hover{color:var(--color-text)}
+.snav a[aria-current="page"]{color:var(--color-text);font-weight:700}
+@media (max-width:760px){.settings{grid-template-columns:1fr}.snav{position:static;flex-direction:row;flex-wrap:wrap;gap:4px 16px}}
+.sgrp{margin-top:0}
+.sgrp>h2+p{padding:0 var(--space-2)}
+.srow{border-top:1px solid var(--color-line);padding:var(--space-3) var(--space-2);display:grid;grid-template-columns:minmax(0,220px) minmax(0,1fr) auto;gap:6px 18px;align-items:start}
+.srow:last-child{border-bottom:1px solid var(--color-line)}
+.srow .lbl{font-weight:600}
+.srow .lbl .what{display:block;font-weight:400;font-size:var(--text-small);color:var(--color-text-muted);margin-top:2px}
+.srow .val{min-width:0;overflow-wrap:anywhere;font-size:var(--text-small)}
+.srow .val .line+.line{margin-top:3px}
+.srow .state{font-size:var(--text-small);margin-top:4px}
+.fixed{font-size:var(--text-small);color:var(--color-text-muted)}
+@media (max-width:760px){.srow{grid-template-columns:1fr}}
+.edit{grid-column:1/-1;padding:4px 0 0;margin-top:6px}
+.field{display:block;margin-top:12px}
+.field:first-child{margin-top:0}
+.field>span{display:block;font-weight:600;font-size:var(--text-small)}
+.field .help{display:block;font-size:var(--text-small);font-weight:400;color:var(--color-text-muted);margin-top:2px}
+.field input[type=text],.field input[type=password],.field textarea,.field select{width:100%;font:inherit;font-size:var(--text-small);color:var(--color-text);background-color:var(--color-raised);border:1px solid var(--color-field-border);border-radius:var(--radius-control);padding:7px 9px;margin-top:6px}
+.field textarea{min-height:80px;font-family:var(--font-mono);font-size:var(--text-mono)}
+.plain{margin:var(--space-2) 0 0;padding:0 var(--space-2) 0 calc(var(--space-2) + 18px)}
+.grp>.field{padding:0 var(--space-2)}
+.field textarea.prose{font-family:var(--font-sans);font-size:var(--text-small)}
+.field input[aria-invalid=true],.field textarea[aria-invalid=true]{border-color:var(--color-fail)}
+.err-summary:focus{outline:2px solid var(--color-accent);outline-offset:3px}
+.field input[type=text]:disabled,.field input[type=password]:disabled,.field textarea:disabled{color:var(--color-text-muted);background-color:transparent;border-color:var(--color-line);cursor:not-allowed}
+input[type=radio]:disabled{opacity:.5;cursor:not-allowed}
+.choices{display:grid;gap:8px;margin-top:6px}
+.choice{display:grid;grid-template-columns:auto 1fr;gap:2px 8px;font-size:var(--text-small);align-items:start}
+.choice .note{grid-column:2;font-size:var(--text-small);color:var(--color-text-muted)}
+.warn{font-size:var(--text-small);margin-top:8px}
+.warn b{color:var(--color-fail)}
+.actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:14px;align-items:center}
+.err{color:var(--color-fail);font-size:var(--text-small);margin-top:4px}
+.applies{font-size:var(--text-small);color:var(--color-text-muted)}
+.role{border-top:1px solid var(--color-line);padding:var(--space-3) var(--space-2)}
+.role .rh{display:flex;flex-wrap:wrap;gap:4px 12px;align-items:baseline;justify-content:space-between}
+.role .does{font-size:var(--text-small);color:var(--color-text-muted);margin-top:2px}
+.role dl{display:grid;grid-template-columns:220px minmax(0,1fr);column-gap:18px;gap:4px 14px;font-size:var(--text-small);margin:10px 0 0}
+.role dt{color:var(--color-text-muted)} .role dd{margin:0;min-width:0;overflow-wrap:anywhere}
+@media (max-width:560px){.role dl{grid-template-columns:1fr}.role dt{margin-top:6px}}
+.clamp{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+
+/* setup */
+ol.how{margin:6px 0 0;padding-left:20px;font-size:var(--text-small)}
+ol.how li+li{margin-top:4px}
+.result{font-size:var(--text-small);margin-top:8px}
+.stepper li{color:var(--color-text-muted)}
+.stepper li[aria-current]{color:var(--color-text);font-weight:600}
+.stepper .n{font-weight:700;margin-right:6px}
+.progress{list-style:none;margin:var(--space-3) 0 0;padding:0;font-size:var(--text-small)}
+.progress li{display:grid;grid-template-columns:20px minmax(0,1fr);gap:2px 6px;padding:4px 0}
+.progress .m{text-align:center}
+.progress .sub{grid-column:2;color:var(--color-text-muted)}
+pre.out{font-family:var(--font-mono);font-size:var(--text-mono);background:var(--color-raised);border:1px solid var(--color-line);border-radius:var(--radius-control);padding:var(--space-2) var(--space-3);margin:6px 0 0;white-space:pre-wrap;overflow-wrap:anywhere}
+
+/* explain mode */
+.why{display:none}
+body.explain .why{display:block;font-size:var(--text-small);line-height:1.45;color:var(--color-accent);margin:6px 0 10px;max-width:72ch}
+body.explain .why b{font-weight:600}
+
+/* process page */
+.proc>*+*{margin-top:28px}
+.proc table{border-collapse:collapse;width:100%;font-size:var(--text-small)}
+.proc th,.proc td{text-align:left;vertical-align:top;border-top:1px solid var(--color-line);padding:6px 8px}
+.proc th{color:var(--color-text-muted);font-weight:600}
+.minis{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+@media (max-width:860px){.minis{grid-template-columns:1fr}.proc .scroll{overflow-x:auto}}
+.mini{border:1px dashed var(--color-field-border);padding:10px;font-size:var(--text-small)}
+.mini .b{border:1px solid var(--color-line);padding:4px 6px;margin-top:6px}
+.mini h3{font-size:var(--text-small)}
+.proto-frame{display:block;width:100%;height:80vh;margin-top:var(--space-5);border:1px solid var(--color-line);background:#fff}
+.strength{margin-top:var(--space-2);font-size:var(--text-lead);max-width:72ch}
+.approve{margin-top:var(--space-2)}
+/* "Now / <here>": the way back from a page reached from Now. */
+.crumbs{color:var(--color-text-muted)} .crumbs a{color:var(--color-text-muted)} .crumbs a:hover{color:var(--color-text)}
+.contact{margin:0 0 12px;color:var(--color-text-muted);font-size:var(--text-small)}
+.toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);background:var(--color-text);color:var(--color-bg);padding:10px 16px;font-size:var(--text-small);display:none;z-index:30;max-width:calc(100% - 32px)}
+.toast.show{display:block}
+</style>
+</head>
+<body>
+<div class="proto" role="region" aria-label="Prototype controls (not part of the product)">
+  <b>PROTOTYPE</b><span class="sep">|</span>
+  <label>Factory situation
+    <select id="sit">
+      <option value="normal">Working, one decision waits on you</option>
+      <option value="problem">The lead is handling a problem</option>
+      <option value="stopped">A stop only you can resolve</option>
+      <option value="paused">Paused (usage limit)</option>
+      <option value="unreachable">GitHub out of reach</option>
+      <option value="lost">Dashboard lost contact</option>
+      <option value="proposing">Proposing the next sprint</option>
+      <option value="approve-sprint">Sprint proposal waits on you</option>
+      <option value="noissues">No open issue serves the goal</option>
+      <option value="review">Sprint review in progress</option>
+      <option value="ownermerge">You merge: one is ready</option>
+      <option value="several">Two prerequisites missing</option>
+      <option value="config">Settings file cannot be read</option>
+      <option value="setup">First start (not set up)</option>
+      <option value="setup-run">First start: the lead finds how the product runs</option>
+      <option value="setup-stopped">First start: the lead's agent failed</option>
+      <option value="setup-started">First start: the product started, you decide</option>
+      <option value="setup-nothing">First start: the lead found nothing to run</option>
+      <option value="setup-failed">First start: the product did not start</option>
+      <option value="setup-goal">First start: set the goal and start</option>
+    </select></label>
+  <label><input type="checkbox" id="explain"> Explain each element</label>
+  <button type="button" class="proto-btn" id="su-fill" hidden onclick="suFill()">Fill Slack with sample values</button>
+  <a href="#/process">How this was designed</a>
+</div>
+
+<header class="top" id="chrome">
+  <div class="top-in">
+    <div class="brand"><a class="word" href="#/now" aria-label="Oven Spring"><svg viewBox="0 -1 306 42" width="131" height="18" aria-hidden="true" focusable="false" > <g fill="currentColor" fill-rule="evenodd"> <path transform="translate(1)" d="M2 29V23C2 10 9.5 2 20 2s17 7.8 17 20v8c0 7.2-3.9 11-10.5 11H13C6 41 2 37 2 29Zm6-1c0 5.2 1.6 7.4 5.8 7.4H26c3.8 0 5-1.7 5-6.4v-8c0-8.1-4.1-13.3-11-13.3S8 13.4 8 23Z" /> <path transform="translate(40.8)" d="M0 13.5h6.7l7.1 20.6 7.1-20.6h6.2L17 40.5h-6.7Z" /> <path transform="translate(68.6)" d="M27.2 25.7v1.7L8.1 31.1c1 3.2 3.4 4.9 7.8 4.9 3.8 0 6.9-1.2 10-3.5v5.7c-2.9 2.1-6.4 3.1-10.4 3.1C6.9 41.3 2 36.4 2 27.5 2 18.9 7.4 13 15.2 13c7.6 0 12 5.1 12 12.7ZM7.9 26.5l13.3-2.7c-.6-3.5-2.6-5.6-6.2-5.6-4.1 0-6.8 3.2-7.1 8.3Z" /> <path transform="translate(98.39999999999999)" d="M2 40.5V25.8C2 18 7.1 13 14.9 13S28 18 28 25.8v14.7h-6V26c0-4.9-2.7-7.6-7.1-7.6S8 21.1 8 26v14.5Z" /> <path transform="translate(139.2)" d="M29.8 4.4v6.1c-3.4-2.2-6.9-3.3-11-3.3-5.6 0-8.5 2.1-8.5 5.5 0 2.8 1.9 4.1 6.6 5.3l5.2 1.4c6.5 1.8 9.4 5.1 9.4 10.4 0 7.2-5.9 11.5-15.3 11.5-5.4 0-10.1-1.1-13.6-3.2v-6.4c3.9 2.7 8.3 4.1 13.4 4.1 5.7 0 9-1.9 9-5.6 0-2.8-1.9-4.5-6.4-5.7l-5.2-1.4C6.8 21.3 4 18.4 4 13.1 4 6.1 9.7 1.9 18.9 1.9c4.1 0 7.9.9 10.9 2.5Z" /> <path transform="translate(174.0)" d="M2 51V25.8C2 18 7.3 13 15.2 13c8.2 0 13.6 5.7 13.6 14.4 0 8.5-4.8 13.5-12.4 13.5H8V51Zm6-15.5h7.3c4.8 0 7.5-2.9 7.5-8.2 0-5.4-2.9-8.9-7.6-8.9S8 21.2 8 26Z" /> <path transform="translate(205.8)" d="M2 40.5V26c0-7.7 4.8-12.5 12.5-12.5h6.2v5.6h-5.6c-4.7 0-7.1 2.4-7.1 7.2v14.2Z" /> <path transform="translate(228.60000000000002)" d="M3 3.2h6.3v6.2H3Zm-2 10.3h8.2v21.8h3.4v5.2H3.2V18.6H1Z" /> <path transform="translate(243.40000000000003)" d="M2 40.5V25.8C2 18 7.1 13 14.9 13S28 18 28 25.8v14.7h-6V26c0-4.9-2.7-7.6-7.1-7.6S8 21.1 8 26v14.5Z" /> <path transform="translate(274.20000000000005)" d="M28 25.5V50.8H9.5v3.9l-8-6.7 8-6.7v4.2H22v-7.8c-2.1 1.7-4.5 2.6-7.6 2.6C6.7 40.3 2 35.3 2 27c0-8.4 5.3-14 13.3-14C23.1 13 28 17.8 28 25.5ZM22 26c0-5-2.4-7.6-6.7-7.6C10.7 18.4 8 21.6 8 27s2.5 8.1 7 8.1c4.7 0 7-2.7 7-7.9Z" /> </g> </svg></a><span class="ver">v0.1.0</span><span class="repo" data-nav-only>acme-shop</span></div>
+    <div class="top-end" data-nav-only>
+    <nav class="main" aria-label="Main">
+      <a href="#/now" data-nav="now">Now</a>
+      <a href="#/activity" data-nav="activity">Activity</a>
+      <a href="#/sprints" data-nav="sprints">Sprints</a>
+      <a href="#/settings/connections" data-nav="settings">Settings</a>
+    </nav>
+    <label class="theme">Theme <select id="theme" aria-label="Theme"><option value="auto">System</option><option value="light">Light</option><option value="dark">Dark</option></select></label>
+    </div>
+  </div>
+</header>
+<section class="goalband" id="goalband" aria-label="Product goal"></section>
+
+<main id="app" tabindex="-1"></main>
+
+<div class="drawer" id="drawer" aria-hidden="true"><div class="panel" role="dialog" aria-modal="true" aria-labelledby="dr-title" id="drawer-panel"></div></div>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script>
+/* ------------------------------------------------------------------ data
+   One fictional sprint, run forward from 10:02 to 14:20 by the factory's rules:
+   at most 3 issues under way; an issue starts when its in-sprint dependencies merged
+   and a place is free; Small skips design; Large adds the PRD; a new screen adds a prototype. */
+const NOW = '14:20';
+const SLACK = 'https://example.slack.com/archives/C0123456789/p1795424389';
+const CL = {cli:'Claude Code', model:'claude-opus-5-5', effort:'high'};
+const CX = {cli:'Codex', model:'gpt-6-luna', effort:'max'};
+const CR = {cli:'Codex', model:'gpt-6.1-sol', effort:'high'};
+const GOAL = {text:'Shoppers find and buy the right product without having to ask support.'};
+const SPRINT = {purpose:'Shoppers can find a product by what it does, not only by its name.', started:'Nov 23, 10:02',
+  krs:['A search for what a product does returns that product on the first page of results.','Fewer than 1 in 20 searches return nothing.']};
+
+function run(base, cost, said){ return Object.assign({}, base, {cost, said}); }
+
+const ISSUES = {
+ 'ACME-141':{title:'Search products by their attributes', size:'Medium', sizeWhy:'One outcome; touches the search index, the query and the API; no new screen.',
+  outcome:'A shopper who searches for what a product does (such as "waterproof") finds products with that attribute.',
+  nonGoals:['Changing how results are ranked','A new results page (ACME-142)'], pr:null,
+  phases:[
+   {name:'Requirements', state:'done', span:'10:03–10:09', steps:[
+     {who:'Lead', text:'Read the issue and judged it Medium', res:'Medium', s:'10:03', e:'10:09', run:run(CL,0.42,'Outcome settled: attribute words in a search match product attributes. Medium: the index, the query and the API change; no screen.')}]},
+   {name:'Design', state:'done', span:'10:09–11:43', steps:[
+     {who:'Lead', text:'Read the code', res:'done', s:'10:09', e:'10:16', run:run(CL,0.38,'Search is a single SQL LIKE over names; attributes live in product_attributes.')},
+     {who:'Lead', text:'Decided which documents it needs', res:'Design Doc only', s:'10:16', e:'10:18', run:run(CL,0.09,'No screen and no decision for you: a Design Doc is enough.')},
+     {who:'Lead', text:'Wrote the design', res:'done', s:'10:18', e:'10:41', run:run(CL,1.12,'docs/design/attribute-search.md written.')},
+     {who:'Reviewer', text:'Checked the design against the code', res:'consistent', ok:true, s:'10:41', e:'10:47', run:run(CR,null,'Every claim matches the code.')},
+     {who:'Reviewer', text:'Reviewed the design', res:'2 findings', s:'10:47', e:'10:55', run:run(CR,null,'2 findings: missing index rebuild step; unclear API error for empty query.')},
+     {who:'Lead', text:'Judged the 2 findings', res:'1 applied · 1 declined', s:'10:55', e:'10:58', run:run(CL,0.21,'Applied the index rebuild. Declined the API error change: the existing contract already returns 400.')},
+     {who:'Lead', text:'Wrote the design', res:'done', s:'10:58', e:'11:05', run:run(CL,0.33,'Index rebuild step added.')},
+     {who:'Reviewer', text:'Reviewed the design again (round 2)', res:'pass', ok:true, s:'11:05', e:'11:09', run:run(CR,null,'Finding resolved.')},
+     {who:'Reviewer', text:'Compared it with the other designs', res:'no conflicts', ok:true, s:'11:09', e:'11:12', run:run(CR,null,'No other design contradicts it.')},
+     {who:'Executor', text:'Wrote the test skeletons', res:'done', s:'11:12', e:'11:24', run:run(CX,null,'2 integration tests, 1 e2e test skeleton.')},
+     {who:'Lead', text:'Wrote the work plan', res:'done', s:'11:24', e:'11:33', run:run(CL,0.41,'3 tasks.')},
+     {who:'Reviewer', text:'Reviewed the work plan', res:'pass', ok:true, s:'11:33', e:'11:38', run:run(CR,null,'Plan covers the design.')},
+     {who:'Lead', text:'Split the plan into 3 tasks', res:'3 tasks', s:'11:38', e:'11:43', run:run(CL,0.18,'Task files written.')}]},
+   {name:'Build', state:'done', span:'11:43–13:40', steps:[
+     {who:'Executor', text:'Implemented task 1 of 3: attribute index', res:'done', s:'11:43', e:'12:10', run:run(CX,null,'Index built; tests pass.')},
+     {who:'Executor', text:'Implemented task 2 of 3: query', res:'stopped: provider overloaded', s:'12:10', e:'12:12', run:Object.assign(run(CX,null,null),{failure:'Codex reported server_overloaded. The factory ran the step again 5 minutes later (1 of up to 3 tries).'})},
+     {who:'Executor', text:'Implemented task 2 of 3: query', res:'done', s:'12:17', e:'12:41', run:run(CX,null,'Query matches attributes.')},
+     {who:'Reviewer', text:'Checked the tests', res:'pass', ok:true, s:'12:41', e:'12:47', run:run(CR,null,'Tests prove the behavior.')},
+     {who:'Executor', text:'Implemented task 3 of 3: API', res:'done', s:'12:47', e:'13:22', run:run(CX,null,'API accepts attribute queries.')},
+     {who:'Executor', text:'Ran the quality checks', res:'pass', ok:true, s:'13:22', e:'13:40', run:run(CX,null,'lint, types, tests: pass.')},
+     {who:'Factory', text:'Committed the implementation', res:'', s:'', e:'13:40'}]},
+   {name:'Review', state:'now', span:'from 13:40', steps:[
+     {who:'Reviewer', text:'Reviewed the code', res:'3 findings', s:'13:40', e:'14:16', run:run(CR,null,'3 findings: N+1 query in attribute lookup; missing test for empty attribute; duplicated mapping.')},
+     {who:'Reviewer', text:'Reviewed security', res:'1 finding', s:'13:40', e:'14:05', run:run(CR,null,'1 finding: attribute value is interpolated into SQL.')},
+     {who:'Lead', text:'Is judging the 4 findings', res:'running', now:true, s:'14:17', run:run(CL,null,null)}],
+    ahead:'the executor corrects what the lead applies, then the reviews check again.'},
+   {name:'Merge', state:'ahead', desc:'Push, CI, review bots and required approvals, then the factory merges it.'}],
+  now:{section:'progress', phase:'Review', act:'Judging findings', since:'14:17'},
+  findings:[
+   {check:'Design review, round 1', text:'The design has no step to rebuild the index for existing products.', disp:'applied', ans:'Added the rebuild to the design.'},
+   {check:'Design review, round 1', text:'The API should return a specific error for an empty query.', disp:'declined', ans:'The existing contract already returns 400 for it; changing it is outside the outcome.'},
+   {check:'Code review, round 1', text:'Attribute lookup runs one query per product (N+1).', disp:null},
+   {check:'Code review, round 1', text:'No test for a product with no attributes.', disp:null},
+   {check:'Code review, round 1', text:'Attribute mapping is duplicated in two modules.', disp:null},
+   {check:'Security review, round 1', text:'Attribute value is put into SQL as text.', disp:null}],
+  decisions:[]},
+ 'ACME-142':{title:'Results page for attribute search', size:'Large', sizeWhy:'Several outcomes for the shopper (seeing, comparing, narrowing results) and a new screen.',
+  outcome:'A shopper sees search results with the attributes they searched for highlighted, and can compare products side by side.',
+  nonGoals:['Filters by price and size (ACME-145)','Saving searches'], pr:null, prototype:{strength:'binding', basis:'The issue asks for a new page; how it looks and is laid out is what you are approving.'},
+  phases:[
+   {name:'Requirements', state:'done', span:'10:03–11:20', steps:[
+     {who:'Lead', text:'Read the issue and judged it Large', res:'Large', s:'10:03', e:'10:12', run:run(CL,0.51,'Large: three outcomes for shoppers and a new screen. One question for you on scope.')},
+     {who:'Lead', text:'asked you which outcomes belong in this issue', res:'', s:'', e:'10:12'},
+     {who:'You', text:'Answered in Slack: "Only the results page; filters come in ACME-145."', res:'', s:'', e:'10:31', you:true},
+     {who:'Lead', text:'Wrote the PRD', res:'done', s:'10:31', e:'10:58', run:run(CL,0.96,'docs/prd/attribute-results.md written from the issue and your answer.')},
+     {who:'Reviewer', text:'Reviewed the PRD', res:'pass', ok:true, s:'10:58', e:'11:06', run:run(CR,null,'PRD complete; no open item.')},
+     {who:'You', text:'Approved the PRD in Slack', res:'', s:'', e:'11:20', you:true}]},
+   {name:'Design', state:'now', span:'from 11:20', steps:[
+     {who:'Lead', text:'Read the code', res:'done', s:'11:20', e:'11:29', run:run(CL,0.44,'Results render server-side in one template.')},
+     {who:'Lead', text:'Decided which documents it needs', res:'prototype, UI Spec, Design Doc', s:'11:29', e:'11:33', run:run(CL,0.12,'A new screen: prototype for your approval, then UI Spec and Design Doc.')},
+     {who:'Lead', text:'Made the prototype', res:'done', s:'11:33', e:'13:58', run:run(CL,2.31,'One HTML page: results list with highlighted attributes and a compare tray.')},
+     {who:'Lead', text:'asked you to approve the prototype', res:'', s:'13:58', now:true, you:true}]},
+   {name:'Build', state:'ahead', desc:'Each task implemented and checked, then the repository\'s quality checks.'},
+   {name:'Review', state:'ahead', desc:'Code and security reviews. The lead judges the findings, and applied ones are corrected and checked again.'},
+   {name:'Merge', state:'ahead', desc:'Push, CI, review bots and required approvals, then the factory merges it.'}],
+  now:{section:'you'},
+  findings:[],
+  decisions:[
+   {kind:'Question', asked:'10:12', q:'Which of the issue\'s outcomes belong in this issue: the results page only, or with filters?', ans:'You replied 10:31: "Only the results page; filters come in ACME-145."'},
+   {kind:'Approve the PRD', asked:'11:06', q:'The requirements, attached as the PRD.', ans:'You approved 11:20.'},
+   {kind:'Approve the prototype', asked:'13:58', q:'The results page prototype. Binding: the implementation follows it except where the UI Spec says otherwise.', ans:null}]},
+ 'ACME-143':{title:'Index product descriptions for search', size:'Small', sizeWhy:'One change in the indexer; no design needed.', outcome:'Words in a product\'s description are found by search.', nonGoals:['Indexing reviews'], pr:'https://github.com/acme/acme-shop/pull/211',
+  phases:[
+   {name:'Requirements', state:'done', span:'10:03–10:07', steps:[{who:'Lead', text:'Read the issue and judged it Small', res:'Small', s:'10:03', e:'10:07', run:run(CL,0.28,'Small: one indexer change.')}]},
+   {name:'Design', state:'skipped', desc:'A small change goes straight to building.'},
+   {name:'Build', state:'done', span:'10:07–11:04', steps:[
+     {who:'Executor', text:'Implemented the change', res:'done', s:'10:07', e:'10:52', run:run(CX,null,'Descriptions indexed.')},
+     {who:'Executor', text:'Ran the quality checks', res:'pass', ok:true, s:'10:52', e:'11:04', run:run(CX,null,'pass')}]},
+   {name:'Review', state:'done', span:'11:04–11:31', steps:[
+     {who:'Reviewer', text:'Reviewed the code', res:'pass', ok:true, s:'11:04', e:'11:29', run:run(CR,null,'No finding.')},
+     {who:'Reviewer', text:'Reviewed security', res:'pass', ok:true, s:'11:04', e:'11:31', run:run(CR,null,'No finding.')}]},
+   {name:'Merge', state:'done', span:'11:31–12:48', steps:[
+     {who:'Factory', text:'Pushed and opened pull request #211', res:'', s:'', e:'11:31'},
+     {who:'CI', text:'passed', res:'', s:'', e:'11:44'},
+     {who:'Review bot', text:'left 1 comment on the pull request', res:'', s:'', e:'11:52'},
+     {who:'Lead', text:'Judged the 1 finding', res:'1 declined', s:'11:52', e:'11:58', run:run(CL,0.11,'Declined: the bot rated it optional.')},
+     {who:'Factory', text:'brought in the base branch, which had moved, and pushed again', res:'', s:'', e:'12:30'},
+     {who:'CI', text:'passed', res:'', s:'', e:'12:44'},
+     {who:'Factory', text:'merged pull request #211', res:'', s:'', e:'12:48'}]}],
+  now:{section:'done', short:'Merged', text:'Merged', at:'12:48'}, findings:[{check:'ai-reviewer[bot] on the pull request', text:'Consider stemming description words.', disp:'declined', ans:'The bot rated it optional; outside the outcome.'}], decisions:[]},
+ 'ACME-144':{title:'Match search words despite typos', size:'Medium', sizeWhy:'One outcome; changes the query and adds a dictionary; no screen.', outcome:'A search with one typo per word still finds the product.', nonGoals:['Suggestions while typing'], pr:'https://github.com/acme/acme-shop/pull/214',
+  phases:[
+   {name:'Requirements', state:'done', span:'10:03–10:08', steps:[{who:'Lead', text:'Read the issue and judged it Medium', res:'Medium', s:'10:03', e:'10:08', run:run(CL,0.37,'Medium.')}]},
+   {name:'Design', state:'done', span:'10:08–11:50', steps:[{who:'Lead', text:'wrote the design, the test plan and the work plan, each checked, and split it into 2 tasks', res:'', s:'10:08', e:'11:50'}]},
+   {name:'Build', state:'done', span:'11:50–13:20', steps:[{who:'Executor', text:'implemented the 2 tasks and ran the quality checks', res:'pass', ok:true, s:'11:50', e:'13:20'}]},
+   {name:'Review', state:'done', span:'13:20–14:12', steps:[
+     {who:'Reviewer', text:'Reviewed the code', res:'2 findings', s:'13:20', e:'13:41', run:run(CR,null,'2 findings.')},
+     {who:'Reviewer', text:'Reviewed security', res:'pass', ok:true, s:'13:20', e:'13:36', run:run(CR,null,'No finding.')},
+     {who:'Lead', text:'Judged the 2 findings', res:'2 applied', s:'13:41', e:'13:44', run:run(CL,0.19,'Both applied.')},
+     {who:'Executor', text:'Applied the findings', res:'done', s:'13:44', e:'13:58', run:run(CX,null,'Corrected.')},
+     {who:'Executor', text:'Ran the quality checks', res:'pass', ok:true, s:'13:58', e:'14:04', run:run(CX,null,'pass')},
+     {who:'Reviewer', text:'Reviewed the code again (round 2)', res:'pass', ok:true, s:'14:04', e:'14:12', run:run(CR,null,'Both resolved.')}]},
+   {name:'Merge', state:'now', span:'from 14:16', steps:[
+     {who:'Factory', text:'Pushed and opened pull request #214', res:'', s:'', e:'14:16'},
+     {who:'CI', text:'is running on pull request #214', res:'', s:'14:16', now:true}],
+    ahead:'the review bots, then the merge.'}],
+  now:{section:'progress', phase:'Merge', act:'Waiting for CI', since:'14:16'},
+  findings:[{check:'Code review, round 1', text:'Edit distance is computed for every product.', disp:'applied', ans:'Limited to candidates from the index.'},{check:'Code review, round 1', text:'Dictionary loads on every request.', disp:'applied', ans:'Loaded once at start.'}], decisions:[]},
+ 'ACME-145':{title:'Filter results by price and size', size:null, outcome:null, nonGoals:[], pr:null, deps:['ACME-142'],
+  phases:[{name:'Requirements', state:'ahead', desc:'The lead reads the issue and decides what to build and how big it is.'},{name:'Design', state:'ahead', desc:'The lead reads the code, writes the design and plans the tasks. Reviewers check each document.'},{name:'Build', state:'ahead', desc:'Each task implemented and checked, then the repository\'s quality checks.'},{name:'Review', state:'ahead', desc:'Code and security reviews. The lead judges the findings, and applied ones are corrected and checked again.'},{name:'Merge', state:'ahead', desc:'Push, CI, review bots and required approvals, then the factory merges it.'}],
+  now:{section:'queued', short:'After <a href="#/issue/ACME-142">ACME-142</a> merges', why:'Starts after ACME-142 merges'}, findings:[], decisions:[]},
+ 'ACME-146':{title:'Remove the old search endpoint', size:null, outcome:null, nonGoals:[], pr:null,
+  phases:[{name:'Requirements', state:'done', span:'10:03–10:40', steps:[
+     {who:'Lead', text:'Read the issue and found it needs no change', res:'', s:'10:03', e:'10:38', run:run(CL,0.34,'/api/search/v1 was removed in commit 3f2a9c1 on Nov 12; nothing calls it.')},
+     {who:'Factory', text:'Commented the evidence on Linear and closed the issue', res:'dropped', s:'', e:'10:40'}]},
+   {name:'Design', state:'skipped', desc:'Not needed: the issue was closed.'},{name:'Build', state:'skipped', desc:'Not needed: the issue was closed.'},{name:'Review', state:'skipped', desc:'Not needed: the issue was closed.'},{name:'Merge', state:'skipped', desc:'Not needed: the issue was closed.'}],
+  now:{section:'done', short:'Closed: already done', text:'Closed: already done', at:'10:40'}, findings:[], decisions:[]},
+ 'ACME-147':{title:'Record what shoppers search for', size:null, outcome:null, nonGoals:[], pr:null,
+  phases:[{name:'Requirements', state:'ahead', desc:'The lead reads the issue and decides what to build and how big it is.'},{name:'Design', state:'ahead', desc:'The lead reads the code, writes the design and plans the tasks. Reviewers check each document.'},{name:'Build', state:'ahead', desc:'Each task implemented and checked, then the repository\'s quality checks.'},{name:'Review', state:'ahead', desc:'Code and security reviews. The lead judges the findings, and applied ones are corrected and checked again.'},{name:'Merge', state:'ahead', desc:'Push, CI, review bots and required approvals, then the factory merges it.'}],
+  now:{section:'queued', short:'When an issue in progress ends', why:'Starts when one of ACME-141, ACME-142, ACME-144 ends, because <a href="#/settings/safety">Settings</a> limits how many issues run at once'}, findings:[], decisions:[]}
+};
+const ORDER = Object.keys(ISSUES);
+
+const PAST = [
+ {id:'20261121-0903', range:'Nov 21 – Nov 22', purpose:'Shoppers can check out as guests.', met:2, of:2,
+  krs:[{t:'A shopper without an account completes a purchase.', met:true, ev:'e2e test checkout-guest passes on main; 14 guest orders on staging.'},{t:'Checkout asks for no field that delivery does not need.', met:true, ev:'Form has 6 fields, all used by delivery.'}],
+  merged:4, dropped:0, held:1, agreements:['executor.md'], runs:61, cost:'$14.20', uncosted:38},
+ {id:'20261118-1410', range:'Nov 18 – Nov 20', purpose:'Shoppers can trust the price shown is the price paid.', met:1, of:2,
+  krs:[{t:'The cart total equals the order total for every order.', met:true, ev:'0 mismatches in 212 orders.'},{t:'Shipping cost shows before checkout.', met:false, ev:'ACME-128 dropped: depends on the carrier API, which has no test account.'}],
+  merged:3, dropped:1, held:0, agreements:[], runs:44, cost:'$9.85', uncosted:27}];
+
+/* ------------------------------------------------------------------ helpers */
+const $ = s => document.querySelector(s);
+const esc = s => String(s==null?'':s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+function mins(from, to=NOW){ const p=t=>{const [h,m]=t.split(':').map(Number);return h*60+m}; return p(to)-p(from); }
+/* "3 min", "2 h", "2 h 5 min". */
+function span(m){ m=Math.max(1,m); return m<60 ? `${m} min` : (m%60===0 ? `${Math.floor(m/60)} h` : `${Math.floor(m/60)} h ${m%60} min`); }
+function ago(t){ return span(mins(t)); }
+function why(text){ return `<div class="why" role="note"><b>Why this is here:</b> ${text}</div>`; }
+function ext(href, label){ return `<a href="${href}" target="_blank" rel="noopener">${label}<span aria-hidden="true"> ↗</span><span class="sr"> (opens in a new tab)</span></a>`; }
+function toast(msg){ const t=$('#toast'); t.textContent=msg; t.classList.add('show'); clearTimeout(t._h); t._h=setTimeout(()=>t.classList.remove('show'),3600); }
+/* "22 runs. $3.14 for the 8 on Claude Code; 14 on Codex report no cost." */
+function runsCost(steps){
+  const runs=steps.filter(s=>s.run), ended=runs.filter(s=>!s.now), running=runs.length-ended.length;
+  const byCli=rows=>[...new Set(rows.map(r=>r.run.cli))].map(cli=>`${rows.filter(r=>r.run.cli===cli).length} on ${cli}`).join(' and ');
+  const costed=ended.filter(s=>s.run.cost!=null), uncosted=ended.filter(s=>s.run.cost==null);
+  const spent=costed.reduce((sum,s)=>sum+s.run.cost,0);
+  const parts=[costed.length?`$${spent.toFixed(2)} for the ${byCli(costed)}`:'', uncosted.length?`${byCli(uncosted)} report no cost`:''].filter(Boolean);
+  const count=`${runs.length} run${runs.length===1?'':'s'}${running?`, ${running} running`:''}.`;
+  return parts.length?`${count} ${parts.join('; ')}.`:count;
+}
+/* On a page other than Now while the factory does not answer: what the page shows is from the last answer. */
+function lostNote(){ return SIT==='lost'?`<p class="contact" role="status">The dashboard lost contact with the factory; this page is as it was at ${NOW}.</p>`:''; }
+function allSteps(i){ return (i.phases||[]).flatMap(p=>(p.steps||[]).map(s=>Object.assign({phase:p.name},s))); }
+
+/* ------------------------------------------------------------------ situations */
+let SIT = 'normal';
+function situation(){
+  const s = {status:null, needs:[], issues:JSON.parse(JSON.stringify(ISSUES)), sprint:true, sprintNote:null};
+  s.needs.push({ask:'Approve prototype', about:'ACME-142', title:ISSUES['ACME-142'].title, asked:'13:58', delivered:true});
+  s.status = {cls:'', what:'Working', how:['Agents are at work on 2 issues.']};
+  const i144 = s.issues['ACME-144'];
+  switch(SIT){
+    case 'problem':
+      i144.now = {section:'progress', phase:'Merge', act:'Problem: CI fix stopped', since:'14:11', problem:'CI fix stopped'};
+      break;
+    case 'stopped':
+      i144.now = {section:'you'};
+      s.needs.push({ask:'Resolve a stop', about:'ACME-144', title:ISSUES['ACME-144'].title, asked:'14:09', delivered:true});
+      break;
+    case 'paused':
+      s.status = {cls:'halt', what:'Paused', how:['The agent on ACME-141 (implement) stopped with an error: You\'ve hit your usage limit. Nothing new starts until you resume.', 'Resume with <kbd>@Oven Spring !resume</kbd> in Slack once its cause is fixed.']};
+      s.issues['ACME-141'].now = Object.assign({}, s.issues['ACME-141'].now, {held:true});
+      s.issues['ACME-144'].now = Object.assign({}, s.issues['ACME-144'].now, {held:true});
+      break;
+    case 'ownermerge':
+      i144.now = {section:'you'};
+      s.needs.push({ask:'Merge on GitHub', about:'ACME-144', title:ISSUES['ACME-144'].title, delivered:true, href:ISSUES['ACME-144'].pr, where:'on GitHub'});
+      break;
+    case 'several':
+      s.status = {cls:'halt', what:'Partly on hold', how:['Steps that need these wait. Everything else goes on.'], items:[
+        {what:'Slack is not connected.', fix:'Decisions wait, unsent, until it is. Enter the Slack tokens in Settings.', link:'#/settings/connections', linkText:'Change the Slack tokens in Settings'},
+        {what:'Linear refused the connection.', fix:'Its key may have been revoked (HTTP 401). No new issue is read and no sprint is proposed until it is fixed.', link:'#/settings/connections', linkText:'Change the Linear key in Settings'}]};
+      break;
+    case 'config':
+      s.status = {cls:'halt', what:'Settings not applied', how:['/Users/mina/acme-shop/.ovenspring/config.toml: roles.executor.skills: payments-domain is not in .agents/skills, where this role\'s agent loads skills. Put it there, or uncheck it.','The factory goes on with the settings it last read without an error. Change it in <a href="#/settings/connections">Settings</a> or fix <code>.ovenspring/config.toml</code>.']};
+      break;
+    case 'unreachable':
+      s.status = {cls:'halt', what:'Can\'t reach GitHub', how:['Since 14:02 every call to GitHub fails (no connection). The factory tries again every 30 seconds. Steps that need GitHub (pushing, CI, merging) wait. The rest go on.', 'Nothing to do unless it lasts: check this computer\'s network.']};
+      i144.now = Object.assign({}, i144.now, {since:'14:16'});
+      break;
+    case 'lost':
+      s.status = {cls:'halt', what:'The dashboard lost contact with the factory', how:['Last contact 14:20. Everything below is as it was then.', 'If the factory stopped, run <kbd>ovenspring start</kbd> in a terminal in this repository\'s folder. It opens a new dashboard tab.']};
+      break;
+    case 'proposing':
+      /* Straight after setup: the first sprint, from the tracker setup connected. */
+      if (FIRST_RUN) {
+        const where = SU.v.tracker==='linear' ? 'on Linear' : 'in GitHub Issues';
+        s.sprint=false; s.needs=[]; s.status={cls:'idle', what:'Proposing the first sprint', how:[`The lead is choosing issues from the goal and the 9 open issues ${where}. The proposal will reach you in Slack.`]};
+        s.sprintLine = 'No sprint has run yet.';
+        break;
+      }
+      s.sprint=false; s.needs=[]; s.status={cls:'idle', what:'Proposing the next sprint', how:['The lead is choosing issues from the goal and the 9 open issues on Linear. The proposal will reach you in Slack.']};
+      s.sprintNote = 'The last sprint ended Nov 23, 15:40.';
+      break;
+    case 'approve-sprint':
+      s.sprint=false; s.needs=[{ask:'Approve sprint proposal', about:null, title:'Shoppers can compare products before buying', asked:'15:52', delivered:true}];
+      s.status={cls:'yours', what:'Waiting for you', how:['No sprint runs until you answer the proposal in Slack.']};
+      s.sprintNote = 'The last sprint ended Nov 23, 15:40.';
+      break;
+    case 'noissues':
+      s.sprint=false; s.needs=[]; s.status={cls:'idle', what:'Waiting for an issue that serves the goal', how:[`None of the 9 open issues on Linear moves the product toward the goal; ${ext(SLACK,'the lead told you in Slack what is missing')} (Nov 23, 15:44).`,'A new sprint is proposed as soon as an issue opens on Linear.']};
+      s.sprintNote = 'The last sprint ended Nov 23, 15:40.';
+      break;
+    case 'review':
+      s.issues['ACME-142'].now={section:'done', short:'Merged', text:'Merged', at:'15:31'}; s.issues['ACME-141'].now={section:'done', short:'Merged', text:'Merged', at:'15:12'}; s.issues['ACME-144'].now={section:'done', short:'Merged', text:'Merged', at:'14:51'}; s.issues['ACME-145'].now={section:'done', short:'Held for the review', text:'Held for the review', at:'15:20'}; s.issues['ACME-147'].now={section:'done', short:'Merged', text:'Merged', at:'15:38'};
+      s.needs=[]; s.status={cls:'idle', what:'Reviewing the sprint', how:['Every issue has ended. The analyzer is collecting the sprint\'s facts. The review then reaches you in Slack.']};
+      break;
+  }
+  if (s.status.what==='Working'){ const n=Object.values(s.issues).filter(i=>i.now.section==='progress').length; s.status.how=[n?`${n} issue${n===1?'':'s'} in progress.`:'Everything under way waits on you.']; if(!n){ s.status.cls='yours'; s.status.what='Waiting for you'; } }
+  return s;
+}
+
+/* ------------------------------------------------------------------ views */
+function viewNow(){
+  const s = situation();
+  if (SIT.startsWith('setup')) return viewSetup();
+  const st = s.status;
+  let h = `<div class="status ${st.cls}" role="status" aria-live="polite">
+    <h1 class="what">${st.what}</h1>${st.how.map(x=>`<p class="how">${x}</p>`).join('')}
+    ${st.items?`<div class="list need-list">${st.items.map(m=>`<div class="item"><p><b>${m.what}</b></p><p class="muted">${m.fix}</p>${m.link?`<p><a href="${m.link}">${m.linkText}</a></p>`:''}</div>`).join('')}</div>`:''}
+  </div>
+  ${why('<b>Answers:</b> is the factory moving; if not, why, and what you do where. Instructions appear only when something is yours to fix. <b>Without it:</b> a stopped factory looks the same as a working one.')}
+  <div class="region">
+  <p class="ctx">${s.sprint?`<span class="muted">Sprint</span> ${esc(SPRINT.purpose)} <span style="font-weight:600">· ${doneCount(s)} of ${ORDER.length} ended</span>`:(s.sprintLine?`<span class="muted">${s.sprintLine}</span>`:`<span class="muted">No sprint running. ${s.sprintNote}</span> <a href="#/sprints">Sprints</a>`)}</p>
+  ${why('<b>Answers:</b> how far the sprint has come, and what it is for. The goal it serves is in the band above, on every screen: everything the factory chooses is measured against it.')}`;
+  const row = (k, title, phase, status, meta, cls='') => `<div class="wrow ${cls}"><span class="k">${k?`<a href="#/issue/${k}">${k}</a>`:''}</span><span class="t">${k?`<a href="#/issue/${k}">${esc(title)}</a>`:esc(title)}</span><span class="ph-w">${phase}</span><span class="st-w">${status}</span><span class="meta">${meta}</span></div>`;
+  if (s.needs.length) {
+    h += `<section class="grp" aria-labelledby="h-you"><h2 id="h-you">Waiting for you</h2>
+    <div class="list">${s.needs.map(n=>row(n.about, n.title, '', n.delivered?`<a class="yours" href="${n.href||SLACK}" target="_blank" rel="noopener"><span aria-hidden="true">● </span>${n.ask}<span aria-hidden="true"> ↗</span><span class="sr"> ${n.where||'in Slack'} (opens in a new tab)</span></a>`:`<span class="muted">${n.ask} · not in Slack yet</span>`, '')).join('')}</div>
+    ${why('<b>Answers:</b> is anything mine, and what. The action opens it in Slack. ● goes with "yours" and nothing else.')}</section>`;
+  }
+  if (!s.sprint) return h + '</div>';
+  const by = sec => ORDER.filter(k=>s.issues[k].now.section===sec);
+  const prog = by('progress'), q = by('queued'), done = by('done');
+  h += `<section class="grp" aria-labelledby="h-prog"><h2 id="h-prog">In progress</h2>
+   <div class="list">${prog.length?prog.map(k=>{ const n=s.issues[k].now; const cur = allSteps(ISSUES[k]).find(x=>x.now&&x.run&&!n.held); const id = cur?RUNS.push(cur)-1:null;
+     const act = n.held?'<span class="muted">On hold (paused)</span>':(n.problem?`<span class="fail"><span aria-hidden="true">▲ </span>${esc(n.act)}</span>`:esc(n.act));
+     return row(k, s.issues[k].title, n.phase, cur&&!n.problem?`<button class="follow" onclick="openRun(${id})">${act}</button>`:act, ago(n.since)); }).join(''):'<div class="empty">Nothing is in progress.</div>'}</div>
+   ${why('<b>Answers:</b> where each issue is and what is happening, in a fixed set of short words (five phases; one activity list), with the time it has been in that activity. ▲ goes with a problem the lead is handling and nothing else. Click an activity to read what the agent is saying. <b>Without it:</b> you go back to the logs.')}</section>`;
+  if (q.length) h += `<section class="grp" aria-labelledby="h-q"><h2 id="h-q">Waiting to start</h2>
+   <div class="list">${q.map(k=>row(k, s.issues[k].title, '', `<span class="muted">${s.issues[k].now.short}</span>`, '')).join('')}</div>
+   ${why('<b>Answers:</b> why it has not started: an issue it depends on, or the limit on issues at once (the issue page names the issues under way). No time: waiting here is not a problem.')}</section>`;
+  h += `<section class="grp" aria-labelledby="h-d"><h2 id="h-d">Done</h2>
+   <div class="list">${done.length?done.map(k=>{const n=s.issues[k].now; return row(k, s.issues[k].title, '', n.short==='Merged'?n.short:`<span class="muted">${n.short}</span>`, n.at);}).join(''):'<div class="empty">No issue has ended yet.</div>'}</div>
+   ${why('<b>Answers:</b> how each settled issue ended and when (a clock time, where in progress shows a duration; with its date, such as "Nov 20, 21:00", when it ended on an earlier day, since a sprint spans days). Closed and held stay listed.')}</section>`;
+  return h + '</div>';
+}
+function doneCount(s){ return ORDER.filter(k=>s.issues[k].now.section==='done').length; }
+
+/* ---- issue */
+function viewIssue(key){
+  const s = situation(); const i = s.issues[key]; if(!i) return `<p>No such issue. <a href="#/now">Back to Now</a></p>`;
+  const st = allSteps(i); const n = i.now;
+  const cur = st.find(x=>x.now&&x.run&&!n.held); const cid = cur?RUNS.push(cur)-1:null;
+  let nowText;
+  /* In progress: the agent at work and what it is doing, or the activity alone when no agent is. */
+  if (n.section==='progress' && n.problem) nowText = `<span class="fail">The lead is handling a problem: ${esc(n.problem)}</span>`;
+  else if (n.section==='progress') nowText = `${cur?`<b>${cur.who}</b> is ${esc(lc(n.act))}`:esc(n.act)}${n.held?'<span class="muted"> · on hold while the factory is paused</span>':`<span class="muted"> · for ${ago(n.since)}</span>`}${cur?` <button class="run" onclick="openRun(${cid})">follow</button>`:''}`;
+  else if (n.section==='you') { const nd=s.needs.find(x=>x.about===key); nowText = `<b class="accent">Waiting for you: ${nd?nd.ask:'your answer'}</b> ${nd&&nd.href?ext(nd.href,'Open the pull request'):ext(SLACK,'Answer in Slack')}`; }
+  else if (n.section==='queued') nowText = n.why+'.';
+  else nowText = `${n.text} at ${n.at}.`;
+  return `${lostNote()}<p class="crumbs"><a href="#/now">Now</a> / ${key}</p>
+  <div class="ihead"><h1>${esc(i.title)}</h1></div>
+  <div class="links">${ext('https://linear.app/acme/issue/'+key,'Linear issue')}${i.pr?ext(i.pr,'Pull request #'+i.pr.split('/').pop()):'<span class="muted">No pull request yet</span>'}${i.prototype?`<a href="#/prototype/${key}">Prototype</a>`:''}</div>
+  <p class="inow">${nowText}</p>
+  ${why('<b>Answers:</b> where this issue is now, in a sentence that names who acts. <b>Without it:</b> you go back to Now to find out.')}
+  <div class="region">
+  <section class="grp" aria-labelledby="h-path"><h2 id="h-path">Path</h2>
+   ${why('<b>Answers:</b> how far along it is and what is ahead, by the five phases every issue shares. First on this page because you come here most often from Now, wanting to know where it is.')}
+   <ol class="path">${i.phases.map(p=>phaseItem(p, n)).join('')}</ol></section>
+  <section class="grp" aria-labelledby="h-what"><h2 id="h-what">What it is</h2>
+   <dl class="whatis">${i.outcome?`<dt>Outcome</dt><dd>${esc(i.outcome)}</dd>`:''}${i.nonGoals.length?`<dt>Not in it</dt><dd>${i.nonGoals.map(esc).join('<br>')}</dd>`:''}<dt>Size</dt><dd>${i.size?`<b>${i.size}</b>`:`<span class="muted">${i.now.section==='done'?'Not judged: the issue ended first.':'Judged when the lead reads the issue.'}</span>`}</dd></dl>
+   ${why('<b>Answers:</b> what the issue is to deliver, what it leaves out, and how big the lead judged it, which decides its path.')}</section>
+  <section class="grp" aria-labelledby="h-find"><h2 id="h-find">Review findings</h2>${findingsBlock(i)}</section>
+  <section class="grp" aria-labelledby="h-runs"><h2 id="h-runs">Runs and cost</h2>
+   ${st.some(x=>x.run)?`<p>${runsCost(st)}</p>
+   <p class="links"><a href="#/activity" onclick="ACT_ISSUE='${key}'">See them in Activity</a></p>`:'<p>No runs yet.</p>'}
+   ${dlPanel('issue:'+key, "this issue's records")}
+   ${why('<b>Answers:</b> what this issue cost where it is known, and its records. A partial sum never stands alone as a total.')}</section>
+  </div>`;
+}
+function runsOf(steps){ return (steps||[]).filter(s=>s.run); }
+function phaseItem(p, n){
+  const label = {done:`done · ${p.span}`, now:`now · ${p.span}`, ahead:'ahead', skipped:'skipped'}[p.state];
+  let h = `<li class="ph ${p.state}"><div class="ph-h"><h3>${p.name}</h3><span class="st">${label}</span></div>`;
+  if (p.desc && (p.state==='ahead'||p.state==='skipped')) h += `<p class="desc">${p.desc}</p>`;
+  const steps = runsOf(p.steps).map(s=>Object.assign({phase:p.name},s));
+  if (steps.length){
+    const list = `<ul class="steplist">${steps.map(stepItem).join('')}</ul>`;
+    if (p.state==='now') h += list;
+    else h += `<details class="steps"><summary>${steps.length} run${steps.length>1?'s':''}</summary>${list}</details>`;
+  }
+  /* What comes next within the phase follows the activity under way; waiting on you or a problem has none. */
+  if (p.state==='now' && p.ahead && n.section==='progress' && !n.problem) h += `<p class="desc">Next: ${p.ahead}</p>`;
+  return h + '</li>';
+}
+let RUNS = [];
+function stepItem(s){
+  const id = RUNS.push(s)-1;
+  const tm = s.now ? `${s.s}–` : (s.s?`${s.s}–${s.e}`:s.e);
+  return `<li class="step${s.now?' current':''}"><span class="tm">${tm}</span><span>${sentence(s)}</span><span>${s.run?`<button class="run" onclick="openRun(${id})">${s.now?'follow':'open run'}</button>`:''}</span></li>`;
+}
+function lc(t){ return t.charAt(0).toLowerCase()+t.slice(1); }
+function sentence(s){
+  const res = s.now ? (s.you?'':` <span class="dur">· for ${ago(s.s)}</span>`) : (s.res&&s.res!=='done'?` <span class="${s.ok?'ok':s.fail?'fail':'muted'}">→ ${esc(s.res)}</span>`:'');
+  return `<span class="who">${s.who}</span> ${esc(lc(s.text))}${res}`;
+}
+function findingsBlock(i){
+  if(!i.findings.length) return '<p class="muted">No findings so far.</p>';
+  const a=i.findings.filter(f=>f.disp==='applied').length, d=i.findings.filter(f=>f.disp==='declined').length, o=i.findings.length-a-d;
+  const parts=[a&&`${a} applied`, d&&`${d} declined`, o&&`${o} being judged`].filter(Boolean).join(', ');
+  return `<p>${i.findings.length} finding${i.findings.length===1?'':'s'}: ${parts}.</p>
+  <details class="steps"><summary>Show each finding and its answer</summary>${i.findings.map(f=>`<div class="find"><span class="disp ${f.disp==='applied'?'ok':f.disp==='declined'?'muted':'accent'}">${f.disp||'being judged'}</span> <span class="muted small">· ${f.check}</span><div>${esc(f.text)}</div>${f.ans?`<div class="muted small">${esc(f.ans)}</div>`:''}</div>`).join('')}</details>`;
+}
+function openRun(id){
+  const s = RUNS[id]; const r = s.run; const running = !!s.now;
+  const dur = running ? `${ago(s.s)} so far` : span(mins(s.s,s.e));
+  $('#drawer-panel').innerHTML = `<button class="btn quiet" onclick="closeRun()" style="float:right">Close</button>
+   <p class="small muted">${s.phase||''} · run</p><h2 id="dr-title">${s.who} ${esc(lc(s.text))}</h2>
+   <dl class="kv"><dt>Agent</dt><dd>${r.cli} · ${r.model} · effort ${r.effort}</dd><dt>Started</dt><dd>${s.s}</dd><dt>${running?'Running for':'Took'}</dt><dd>${dur}</dd>
+   <dt>Result</dt><dd class="${s.ok?'ok':s.fail?'fail':''}">${running?'Running':(s.res&&s.res!=='done'?esc(s.res):'Done')}</dd>${r.failure?`<dt>Why</dt><dd>${esc(r.failure)}</dd>`:''}<dt>Cost</dt><dd>${r.cost!=null?'$'+r.cost.toFixed(2):(running?'Known when it ends':`Not reported: ${r.cli} does not report cost`)}</dd></dl>
+   <h3 style="margin:18px 0 6px">${running?'What the agent has said so far':'What the agent said last'}</h3>
+   ${r.said===null&&!running?'<p class="muted">The run ended before the agent said anything.</p>':running?`<ul class="msgs"><li><span>Reading the 4 findings and the change they are about.</span></li><li><span>The N+1 lookup and the SQL interpolation are real; checking whether the duplicated mapping is worth changing.</span></li><li><span>The empty-attribute test is covered by an existing case; preparing to decline it with that evidence.</span></li></ul>`:`<div class="said">${esc(r.said)}</div>`}
+   <p style="margin-top:14px"><a href="#" onclick="openLog(${id});return false">Open the full log<span aria-hidden="true"> ↗</span><span class="sr"> (opens in a new tab)</span></a> <span class="small muted">: everything ${r.cli} printed during the run.</span></p>`;
+  $('#drawer').classList.add('open'); $('#drawer').setAttribute('aria-hidden','false'); $('#drawer-panel').querySelector('button').focus();
+}
+function openLog(id){
+  const s=RUNS[id], r=s.run;
+  const lines = r.cli==='Claude Code'
+    ? [{type:'system',subtype:'init',model:r.model,session_id:'5c1f0a2e'},{type:'assistant',message:{content:[{type:'text',text:'Reading the item and its sources.'}]}},{type:'assistant',message:{content:[{type:'tool_use',name:'Read',input:{file_path:'src/search/query.ts'}}]}},{type:'user',message:{content:[{type:'tool_result',content:'(file contents)'}]}},{type:'assistant',message:{content:[{type:'text',text:r.said||'…'}]}}].concat(s.now?[]:[{type:'result',is_error:false,total_cost_usd:r.cost,usage:{input_tokens:48210,output_tokens:3120}}])
+    : [{type:'thread.started',thread_id:'0199a1c2'},{type:'item.completed',item:{type:'reasoning',text:'Reading the item.'}},{type:'item.completed',item:{type:'command_execution',command:'rg -n attribute src/search',exit_code:0}},{type:'item.completed',item:{type:'agent_message',text:r.said||'…'}},{type:'turn.completed',usage:{input_tokens:61200,cached_input_tokens:40100,output_tokens:2810}}];
+  const text = lines.map(l=>JSON.stringify(l)).join('\n');
+  window.open(URL.createObjectURL(new Blob([text],{type:'text/plain;charset=utf-8'})),'_blank','noopener');
+}
+function closeRun(){ $('#drawer').classList.remove('open'); $('#drawer').setAttribute('aria-hidden','true'); }
+$('#drawer').addEventListener('click', e=>{ if(e.target.id==='drawer') closeRun(); });
+document.addEventListener('keydown', e=>{ if(e.key==='Escape') closeRun(); });
+
+/* ---- activity */
+let ACT_ISSUE='all', ACT_SPRINT='cur';
+function viewActivity(){
+  RUNS = [];
+  const ev = [];
+  ORDER.forEach(k=>allSteps(ISSUES[k]).forEach(s=>{ if(s.run) ev.push(Object.assign({key:k},s)); }));
+  ev.sort((a,b)=> (b.now?1:0)-(a.now?1:0) || (b.e||b.s).localeCompare(a.e||a.s));
+  const shown = (ACT_SPRINT==='cur'||ACT_SPRINT==='all') ? ev.filter(e=>ACT_ISSUE==='all'||e.key===ACT_ISSUE) : [];
+  const running = shown.filter(e=>e.now), past = shown.filter(e=>!e.now);
+  const line = e => { const id = RUNS.push(e)-1; return `<div class="ev${e.now?' running':''}"><span class="tm">${e.now?e.s+'–':e.e}</span><span class="k"><a href="#/issue/${e.key}">${e.key}</a></span><span class="txt">${sentence(e)}</span><span class="res">${e.run?`<button class="run btn quiet" style="padding:0;font-size:var(--text-mono);text-decoration:underline" onclick="openRun(${id})">${e.now?'follow':'open run'}</button>`:''}</span></div>`; };
+  return `${lostNote()}<div class="stack"><div><h1>Activity</h1><p class="muted" style="margin-top:4px">Every agent run in this sprint, newest first.</p></div>
+  ${why('<b>Answers:</b> following the work as it happens: what is running, what just finished and with what result, what the agent said. This replaces reading raw logs; the raw log stays one click inside a run. <b>Without it:</b> the only way to follow the agents is the raw output.')}
+  <div class="filters"><label>Sprint <select class="f" id="act-sprint"><option value="cur" ${ACT_SPRINT==='cur'?'selected':''}>This sprint: ${esc(SPRINT.purpose)}</option>${PAST.map(p=>`<option value="${p.id}" ${ACT_SPRINT===p.id?'selected':''}>${p.range}: ${esc(p.purpose)}</option>`).join('')}<option value="all" ${ACT_SPRINT==='all'?'selected':''}>All sprints</option></select></label>
+   <label>Issue <select class="f" id="act-issue"><option value="all">All issues</option>${ORDER.map(k=>`<option value="${k}" ${ACT_ISSUE===k?'selected':''}>${k} ${esc(ISSUES[k].title)}</option>`).join('')}</select></label></div>
+  <section class="grp" aria-labelledby="h-run"><h2 id="h-run">Under way</h2><div class="rows list">${running.length?running.map(line).join(''):'<div class="empty">Nothing is running for this filter.</div>'}</div></section>
+  <section class="grp" aria-labelledby="h-past"><h2 id="h-past">Earlier</h2>${past.length?hours(past).map(([hr,evs])=>`<h3 class="subh hour">${hr}:00</h3><div class="rows list">${evs.map(line).join('')}</div>`).join(''):`<div class="empty">${ACT_SPRINT==='cur'||ACT_SPRINT==='all'?'Nothing has happened yet.':'(This prototype holds runs of the current sprint only.)'}</div>`}</section></div>`;
+}
+
+function hours(evs){ const out=[]; evs.forEach(e=>{ const h=(e.e||e.s).slice(0,2); if(!out.length||out[out.length-1][0]!==h) out.push([h,[]]); out[out.length-1][1].push(e); }); return out; }
+/* ---- sprints and goal */
+function viewSprints(){
+  const s = situation(); const done = doneCount(s);
+  return `${lostNote()}<h1>Sprints</h1>
+  ${s.sprint?`<section class="grp" aria-labelledby="h-cur"><h2 id="h-cur">This sprint</h2>
+   <p style="font-weight:600">${esc(SPRINT.purpose)}</p>
+   <p class="small muted">Started ${SPRINT.started} · ${done} of ${ORDER.length} issues ended</p>
+   <h3 class="subh">Cost so far, by role</h3>
+   <dl class="kv">${sprintCost()}</dl>
+   <p class="small muted">Only Claude Code reports cost. Codex and OpenCode runs are counted without it. </p>
+   <p class="links"><a href="#/now">See the issues on Now</a><a href="#/activity">See its runs in Activity</a></p>
+   ${dlPanel('sprint:20261123-1002', "this sprint's records")}</section>`:''}
+  <section class="grp" aria-labelledby="h-past2"><h2 id="h-past2">Ended sprints</h2>
+  ${why('<b>Answers:</b> what each sprint reached, judged per key result with its evidence; what merged, was dropped or held; what changed in the working agreements; and the records to give an agent or an auditor.')}
+  <div class="list">${PAST.map(p=>`<details class="past"><summary><span class="muted small">${p.range}</span><span>${esc(p.purpose)}</span><span class="small">${p.met} of ${p.of} key results met</span></summary>
+   <div class="body"><ul class="kr">${p.krs.map(k=>`<li><b class="${k.met?'ok':'fail'}">${k.met?'Met':'Not met'}</b> ${esc(k.t)}<div class="muted small">${esc(k.ev)}</div></li>`).join('')}</ul>
+   <div class="facts"><span>${p.merged} merged</span><span>${p.dropped} dropped</span><span>${p.held} held</span></div>
+   <div class="facts muted"><span>Working agreements changed: ${p.agreements.length?p.agreements.map(a=>'<code>'+a+'</code>').join(', '):'none'}</span><span>${p.runs} runs · ${p.cost}${p.uncosted?` (${p.uncosted} on a CLI that reports no cost)`:''}</span></div>
+   ${dlPanel('sprint:'+p.id, "this sprint's records")}</div></details>`).join('')}</div></section>`;
+}
+function sprintCost(){
+  const by={};
+  ORDER.forEach(k=>allSteps(ISSUES[k]).forEach(st=>{ if(!st.run||st.now) return; const role=st.who; const b=by[role]=by[role]||{cli:st.run.cli,n:0,c:0,none:0}; b.n++; if(st.run.cost!=null) b.c+=st.run.cost; else b.none++; }));
+  return ['Lead','Executor','Reviewer','Analyzer'].filter(r=>by[r]).map(r=>{const b=by[r]; return `<dt>${r}</dt><dd>${b.n} run${b.n===1?'':'s'} on ${b.cli} · ${b.none===b.n?'<span class="muted">no cost reported</span>':'$'+b.c.toFixed(2)}</dd>`;}).join('');
+}
+/* The goal is set as setup's last step, so this page only rewrites it. */
+function viewGoal(){
+  return `<h1>Rewrite the product goal</h1>
+  <section class="grp" aria-labelledby="h-gc"><h2 id="h-gc">What changes when you save</h2>
+   <ul class="plain"><li>Agent runs from then on get the new goal, in the sprint under way too.</li>
+   <li>The sprint under way keeps its purpose and issues.</li>
+   <li>The next sprint is proposed toward the new goal.</li>
+   </ul>
+   ${why('<b>Answers:</b> the goal is what every proposal and every run is measured against, so changing it has its own page that says what changes before you save. The current goal stays in the band above while you write.')}</section>
+  <section class="grp" aria-labelledby="h-gn"><h2 id="h-gn">New goal</h2>
+   <label class="field"><span class="sr">New goal</span><span class="help">Where the product is heading, as the state of the product or its users, not the work to do.</span><textarea class="prose" id="goal-new" rows="3">${esc(GOAL.text)}</textarea></label>
+   <div class="actions"><button class="btn primary" id="goal-save" disabled>Save the new goal</button><a class="btn" href="#/now">Cancel</a><span class="small muted" id="goal-note">Change the text to save.</span></div></section>
+`;
+}
+function bindGoal(){
+  const t=$('#goal-new'), b=$('#goal-save'), n=$('#goal-note');
+  t.addEventListener('input',()=>{ const v=t.value.trim(); b.disabled = !v || v===GOAL.text; n.textContent = !v ? 'A goal cannot be empty.' : (v===GOAL.text?'Change the text to save.':''); });
+  b.addEventListener('click',()=>{ GOAL.text=t.value.trim(); location.hash='#/now'; render(); });
+}
+
+/* ---- prototype page */
+function viewPrototype(key){
+  const i = ISSUES[key];
+  return `${lostNote()}<p class="crumbs"><a href="#/now">Now</a> / <a href="#/issue/${key}">${key}</a> / Prototype</p>
+  <div class="ihead"><h1>Prototype: ${esc(i.title)}</h1></div>
+  <p class="strength">Binding: the build follows this page as drawn, unless the UI Spec says otherwise.</p>
+  <p class="approve">${ext(SLACK,'Approve or reply in Slack')} <span class="small muted">You approve it in Slack.</span></p>
+  ${why('<b>Answers:</b> you arrive here from the approval message in Slack: what you are approving, and how closely the build will follow it. <b>Without the strength line:</b> you cannot tell whether you are approving a layout or only a direction.')}
+  <iframe class="proto-frame" title="Prototype of ${key}" sandbox="allow-scripts" srcdoc="${esc(`<html><body style='font:15px system-ui;margin:24px;color:#222'><p style='color:#888;font-size:var(--text-small)'>(the lead's own page, shown as it is)</p><h2>Results for “waterproof”</h2><div style='display:flex;gap:16px'><div style='flex:1;border:1px solid #ddd;padding:12px'><b>Trail jacket</b><p><mark>Waterproof</mark> · breathable</p><button>Compare</button></div><div style='flex:1;border:1px solid #ddd;padding:12px'><b>Rain boots</b><p><mark>Waterproof</mark> · insulated</p><button>Compare</button></div></div></body></html>`)}"></iframe>`;
+}
+
+/* ---- settings */
+const CFG = {
+  github:{repo:'acme/acme-shop', as:'acme-factory-bot', token:'entered', checked:'Nov 21, 09:14'},
+  base:'main', mergeBy:'factory',
+  tracker:{kind:'linear', team:'ACME', key:true, found:'Team ACME, 9 open issues.', checked:'Nov 21, 09:14'},
+  slack:{channel:'C07ACMEFACT', owners:['U01MINA0042'], bot:true, app:true, found:'Connected to channel #acme-factory, as Oven Spring.', checked:'Nov 21, 09:14'},
+  roles:{
+   lead:{cli:'claude', model:'claude-opus-5-5', effort:'high', skills:['payments-domain'], append:''},
+   executor:{cli:'codex', model:'gpt-6-luna', effort:'max', skills:[], append:'Prefer the existing helpers in src/lib before writing new ones. Never edit generated files under src/generated.'},
+   reviewer:{cli:'codex', model:'gpt-6.1-sol', effort:'high', skills:[], append:''},
+   analyzer:{cli:'codex', model:'gpt-6.1-terra', effort:'high', skills:[], append:''}},
+  perm:'auto', mcp:['playwright'],
+  held:{schema:['db/migrations/**','**/schema.prisma'], 'external-connection':[], infrastructure:['infra/**','Dockerfile'], ci:['.github/workflows/**'], 'external-contract':['api/openapi.yaml']},
+  bots:['ai-reviewer[bot]'], deny:['kubectl * --context *prod*','terraform apply *'], atOnce:3, reviewRounds:null, ciRounds:null,
+  app:{setup:'pnpm install --frozen-lockfile', start:'pnpm dev --port $PORT', ready:'http://localhost:$PORT/health', none:false},
+  lang:'English'
+};
+const CLI_NAME = {claude:'Claude Code', codex:'Codex', opencode:'OpenCode'};
+const SKILLS = {claude:[{n:'payments-domain', d:'How this shop talks to its payment provider and what must never change.'},{n:'release-notes', d:'Writes release notes in the team\'s format.'}],
+  codex:[{n:'payments-domain', d:'How this shop talks to its payment provider and what must never change.'},{n:'storybook-conventions-for-the-acme-design-system-components', d:'How components and their stories are written here.'}]};
+SKILLS.opencode = SKILLS.claude.concat(SKILLS.codex.filter(s=>!SKILLS.claude.find(c=>c.n===s.n)));
+const ROLE_DOES = {lead:'Proposes sprints, plans each issue, writes the documents, judges findings and talks with you in Slack.',
+  executor:'Writes test skeletons and code, runs the quality checks, fixes CI failures and conflicts.',
+  reviewer:'Reviews documents, code, security, and what a sprint review changes.',
+  analyzer:'Collects a sprint\'s facts for its review.'};
+const HELD = {schema:['Schema changes','Database migrations and schema files.','db/migrations/**'], 'external-connection':['External connections','A new service the product calls or is called by.','src/clients/**'],
+  infrastructure:['Infrastructure','Deployment and hosting files.','terraform/**'], ci:['CI changes','The checks that guard merging.','.github/workflows/**'], 'external-contract':['External contracts','Interfaces others depend on.','openapi/**']};
+const SNAV = [['connections','Connections'],['agents','Agents'],['merging','Merging'],['safety','Safety and limits'],['product','Running the product'],['messages','Messages']];
+let EDIT = null;
+/* Leaving a section with a typed-in form open drops the change; the next section says so. */
+let EDIT_TYPED = false, DISCARDED = null;
+document.addEventListener('input', e=>{ if (EDIT && e.target.closest && e.target.closest('.edit')) EDIT_TYPED = true; });
+function editName(){ const row=document.getElementById('row-'+EDIT); if(!row) return EDIT; const n=row.querySelector('.lbl,.rname'); return n ? (n.firstChild.textContent.trim().replace(/^./,c=>c.toUpperCase())) : EDIT; }
+
+function srow(id, label, what, val, opts={}){
+  const editing = EDIT===id;
+  return `<div class="srow" id="row-${id}"><div class="lbl">${label}<span class="what">${what}</span></div>
+   <div class="val">${val}</div>
+   <div>${opts.fixed?'':(editing?'':`<button class="btn" onclick="edit('${id}')">${opts.btn||'Change'}</button>`)}</div>
+   ${editing?`<div class="edit" role="group" aria-label="Change ${label}">${EDITORS[id]()}<div class="actions"><button class="btn primary" onclick="save('${id}')">${opts.check?'Check and save':'Save'}</button><button class="btn" onclick="cancelEdit()">Cancel</button><span class="applies">${opts.applies||'Applies from the next run.'}</span></div><div class="err" id="err-${id}" role="alert"></div></div>`:''}</div>`;
+}
+function viewSettings(sec){
+  if (SIT.startsWith('setup')) return viewSetup();
+  let body='';
+  if (sec==='connections') body = secConnections();
+  else if (sec==='agents') body = secAgents();
+  else if (sec==='merging') body = secMerging();
+  else if (sec==='safety') body = secLimits();
+  else if (sec==='product') body = secProduct();
+  else body = secMessages();
+  return `<div><h1 style="margin-bottom:16px">Settings</h1>
+  ${why('<b>Grouped by what you come to do,</b> not by the configuration file: connect services, choose agents, decide what waits for you at merge, set safety limits, let agents run the product, choose your language. Each row says what it changes, shows the whole current value, and changes one thing at a time. Everything here is saved to <code>.ovenspring/config.toml</code> (credentials outside the repository) and applies from the next run.')}
+  <div class="settings"><nav class="snav" aria-label="Settings sections">${SNAV.map(([k,l])=>`<a href="#/settings/${k}" ${k===sec?'aria-current="page"':''}>${l}</a>`).join('')}</nav><div>${DISCARDED?`<p class="small" role="status" style="margin-bottom:var(--space-3)">Your unsaved change to ${esc(DISCARDED)} was not saved.</p>`:''}<section class="grp sgrp">${body}</section></div></div></div>`;
+}
+function secConnections(){
+  const g=CFG.github, t=CFG.tracker, s=CFG.slack;
+  return `<h2>Connections</h2><p class="small muted" style="margin:4px 0 10px">Each connection is checked when you save it. A failed check saves nothing.</p>
+  ${srow('github','GitHub','Where the factory pushes, opens pull requests and merges.',`<div class="line">Repository <b>${g.repo}</b> (this folder's <code>origin</code>)</div><div class="line">Acting as <b>${g.as}</b>, with the token you entered</div><div class="state ok">Connected when last saved</div>`,{check:true, applies:'Checked before saving.'})}
+  ${srow('tracker','Issue tracker','Where the issues come from, and where the factory marks them started and done.',t.kind==='linear'?`<div class="line">Linear, team <b>${t.team}</b></div><div class="line">API key set</div><div class="state ok">Connected when last saved</div>`:`<div class="line">GitHub Issues of this repository</div><div class="state ok">Connected when last saved</div>`,{check:true, applies:'Checked before saving.'})}
+  ${srow('slack','Slack','Where every decision reaches you and where you talk with the lead.',`<div class="line">Channel <code>${s.channel}</code></div><div class="line">Bot token and app-level token set</div><div class="state ok">Connected when last saved</div>`,{check:true, applies:'Checked before saving.'})}
+  ${srow('owners','Who the factory answers','Only these Slack members can approve, answer and pause.',s.owners.map(o=>`<div class="line"><code>${o}</code></div>`).join(''),{applies:'Applies at once.'})}`;
+}
+function secAgents(){
+  const r = CFG.roles;
+  return `<h2>Agents</h2>
+  <h3 class="subh">Roles</h3><p class="small muted">Each role runs on its own agent.</p>
+  ${Object.keys(r).map(roleBlock).join('')}
+  ${srow('perm','Permission mode','How much the agents may do without the CLI\'s own permission checks.', CFG.perm==='auto'?'<div class="line"><b>Auto</b> (default): each CLI\'s auto mode decides which actions need review.</div>':'<div class="line fail"><b>Bypass</b>: the CLIs\' permission checks are skipped.</div>')}
+  ${srow('mcp','MCP servers agents may use','Every run gets these servers and no others.', CFG.mcp.length?CFG.mcp.map(m=>`<div class="line"><b>${m}</b> <span class="muted small">from this repository's .mcp.json</span></div>`).join(''):'<span class="muted">None</span>')}`;
+}
+function roleBlock(k){
+  const v = CFG.roles[k], id='role-'+k, editing = EDIT===id;
+  return `<div class="role" id="row-${id}"><div class="rh"><p class="rname">${k}</p>${editing?'':`<button class="btn" onclick="edit('${id}')">Change</button>`}</div>
+   <p class="does">${ROLE_DOES[k]}</p>
+   <dl><dt>Agent</dt><dd>${CLI_NAME[v.cli]}</dd><dt>Model</dt><dd>${v.model?`<code>${v.model}</code>`:'<span class="muted">the CLI\'s default</span>'}</dd><dt>Effort</dt><dd>${v.effort||'<span class="muted">the CLI\'s default</span>'}</dd>
+   <dt>Skills from this repository</dt><dd>${v.skills.length?v.skills.map(s=>`<code>${s}</code>`).join(' '):'<span class="muted">None (the factory\'s own skills always load)</span>'}</dd>
+   <dt>Additional instructions</dt><dd>${v.append?`<span class="clamp">${esc(v.append)}</span>`:'<span class="muted">None</span>'}</dd></dl>
+   ${editing?`<div class="edit">${roleEditor(k)}<div class="actions"><button class="btn primary" onclick="save('${id}')">Save</button><button class="btn" onclick="cancelEdit()">Cancel</button><span class="applies">Applies from this role's next run.</span></div></div>`:''}</div>`;
+}
+/* What each CLI accepts. Claude Code: `claude --help` (2.1.330). Codex: the levels every model
+   offers (`codex debug models`, 0.171.0; ultra, which only some offer, is left out). OpenCode:
+   `--variant`, provider-specific. */
+const CLAUDE_EFFORTS=['low','medium','high','xhigh','max'];
+const CODEX_EFFORTS=['low','medium','high','xhigh','max'];
+const LEVEL={low:'lighter reasoning, faster',medium:'balanced',high:'deeper reasoning',xhigh:'extra-high reasoning',max:'maximum reasoning'};
+let DRAFT=null;
+function draftOf(k){ if(!DRAFT||DRAFT.role!==k){ const v=CFG.roles[k]; DRAFT={role:k,cli:v.cli,model:v.model||'',effort:v.effort||'',note:null}; } return DRAFT; }
+function setDraft(field,val){
+  const d=DRAFT, was=d.cli;
+  if(field==='cli'&&val!==was){ d.note=(d.model||d.effort)?`The model and effort set for ${CLI_NAME[was]} do not apply to ${CLI_NAME[val]}, so they are cleared.`:null; d.cli=val; d.model=''; d.effort=''; }
+  else d[field]=val;
+  render();
+}
+function roleEditor(k){
+  const v = CFG.roles[k]; const d = draftOf(k); const cli = d.cli;
+  const lost = v.skills.filter(s=>!SKILLS[cli].find(x=>x.n===s));
+  const opt=(val,label,cur)=>`<option value="${val}" ${val===cur?'selected':''}>${label}</option>`;
+  let model, effort;
+  if (cli==='claude'){
+    model=`<label class="field"><span>Model</span><span class="help">As Claude Code names it, such as <code>claude-opus-5-5</code>. Leave empty for Claude Code's default.</span><input type="text" value="${esc(d.model)}" oninput="DRAFT.model=this.value"></label>`;
+    effort=`<label class="field"><span>Effort</span><span class="help">The levels Claude Code's <code>--effort</code> takes.</span><select onchange="setDraft('effort',this.value)">${opt('',"Claude Code's default",d.effort)}${CLAUDE_EFFORTS.map(e=>opt(e,`${e}: ${LEVEL[e]}`,d.effort)).join('')}</select></label>`;
+  } else if (cli==='codex'){
+    model=`<label class="field"><span>Model</span><span class="help">As Codex names it, such as <code>gpt-6-luna</code>. Leave empty for Codex's default.</span><input type="text" value="${esc(d.model)}" oninput="DRAFT.model=this.value"></label>`;
+    effort=`<label class="field"><span>Effort</span><span class="help">The levels every Codex model offers, as <code>model_reasoning_effort</code> takes them.</span><select onchange="setDraft('effort',this.value)">${opt('',"The model's default",d.effort)}${CODEX_EFFORTS.map(e=>opt(e,`${e}: ${LEVEL[e]}`,d.effort)).join('')}</select></label>`;
+  } else {
+    model=`<label class="field"><span>Model</span><span class="help">As <code>provider/model</code>, the way OpenCode names it. Leave empty for OpenCode's default.</span><input type="text" value="${esc(d.model)}" oninput="DRAFT.model=this.value"></label>`;
+    effort=`<label class="field"><span>Effort</span><span class="help">The provider's variant, such as <code>high</code>, <code>max</code> or <code>minimal</code>. Leave empty for the default.</span><input type="text" value="${esc(d.effort)}" oninput="DRAFT.effort=this.value"></label>`;
+  }
+  return `<fieldset><legend style="font-weight:600;font-size:var(--text-small)">Agent</legend><div class="choices">
+   ${['claude','codex','opencode'].map(c=>`<label class="choice"><input type="radio" name="cli" value="${c}" ${c===cli?'checked':''} onchange="setDraft('cli','${c}')"><span>${CLI_NAME[c]}</span>
+   <span class="note">${c==='claude'?'Reports cost per run.':c==='codex'?'Does not report cost.':'Reports cost per run for models it has prices for.'}</span></label>`).join('')}</div></fieldset>
+   ${d.note?`<p class="warn"><b>Note:</b> ${d.note}</p>`:''}
+   ${lost.length?`<p class="warn"><b>Note:</b> ${lost.map(s=>'<code>'+s+'</code>').join(', ')} is not in ${cli==='claude'?'.claude/skills':cli==='codex'?'.agents/skills':'.agents/skills or .claude/skills'}, where ${CLI_NAME[cli]} loads skills, so it is unselected.</p>`:''}
+   ${model}${effort}
+   <fieldset class="field"><legend style="font-weight:600;font-size:var(--text-small)">Skills from this repository</legend><span class="help">Found in ${cli==='claude'?'<code>.claude/skills</code>':cli==='codex'?'<code>.agents/skills</code>':'<code>.agents/skills</code> and <code>.claude/skills</code>'}. The ones you check load with the factory's own.</span>
+   ${SKILLS[cli].length?`<div class="choices">${SKILLS[cli].map(s=>`<label class="choice"><input type="checkbox" value="${s.n}" ${v.skills.includes(s.n)?'checked':''}><span><code>${s.n}</code></span><span class="note">${esc(s.d)}</span></label>`).join('')}</div>`:`<p class="small muted">No skills there yet.</p>`}</fieldset>
+   <label class="field"><span>Additional instructions</span><span class="help">Added as written to the end of this role's prompts. For what AGENTS.md does not say.</span><textarea class="prose" rows="4">${esc(v.append)}</textarea></label>`;
+}
+function secMerging(){
+  const h=CFG.held;
+  return `<h2>Merging</h2><p class="small muted" style="margin:4px 0 10px">GitHub's required checks and approvals still apply. These settings add what only you approve.</p>
+  ${srow('base','Base branch','Issue branches start from it and merge into it.',`<code>${CFG.base}</code>`,{check:true, applies:'Checked on GitHub before saving.'})}
+  ${srow('mergeby','Who merges','When every condition holds, who presses merge.',CFG.mergeBy==='factory'?'<b>The factory</b>, once checks and every approval are in.':'<b>You</b>. The factory tells you in Slack when a pull request is ready.')}
+  <div class="srow"><div class="lbl">Always held for you<span class="what">Whatever you set below, these wait for your approval in Slack before the factory merges.</span></div>
+   <div class="val"><div class="line">Changes to <code>.ovenspring/</code>, the working agreements, <code>AGENTS.md</code> or <code>CLAUDE.md</code></div><div class="line">Anything a design said it adds: schema, external connections, infrastructure, CI or external contracts</div></div><div></div></div>
+  ${srow('bots','Review bots','Their comments are judged like a write-access reviewer\'s. Comments from other accounts without write access never reach an agent.',CFG.bots.map(b=>`<div class="line"><code>${b}</code></div>`).join(''))}
+  <h3 class="subh">Also held when a pull request changes these files</h3><p class="small muted" style="margin-bottom:6px">Even if no design said so.</p>
+  ${Object.keys(HELD).map(c=>srow('held-'+c, HELD[c][0], HELD[c][1], h[c].length?h[c].map(p=>`<div class="line"><code>${p}</code></div>`).join(''):'<span class="muted">No paths: held only when a design declares it</span>')).join('')}
+  ${CFG.mergeBy==='owner'?'<p class="small muted">You merge every pull request yourself, so nothing is held separately.</p>':''}`;
+}
+function secLimits(){
+  return `<h2>Safety and limits</h2>
+  ${srow('deny','Denied commands','Agents are stopped when they try to run these.',`<div class="line muted small">Always denied: <code>git push</code>, <code>git commit</code>, <code>gh pr merge</code>, approving a pull request, and GitHub's merge and review endpoints. </div>${CFG.deny.map(d=>`<div class="line"><code>${esc(d)}</code></div>`).join('')}`)}
+  ${srow('atonce','Issues at once','How many issues are under way at the same time; the others wait to start.',`<b>${CFG.atOnce}</b>`)}
+  ${srow('rounds','Round limits','After this many review rounds or CI fixes on one issue, the lead takes it as a problem instead of trying again.',`<div class="line">Review rounds: ${CFG.reviewRounds||'<span class="muted">no limit</span>'}</div><div class="line">CI fixes: ${CFG.ciRounds||'<span class="muted">no limit</span>'}</div>`)}`;
+}
+function secProduct(){
+  const a = CFG.app;
+  return `<h2>Running the product</h2><p class="small muted" style="margin:4px 0 10px">Each issue runs its own copy of the product, for agents to check their changes and for Slack's Preview button. Each copy gets its own port (<code>$PORT</code>) and data folder.</p>
+  ${why('<b>Set during setup,</b> where the lead found them and the factory started the product once to make sure. A change here is checked the same way: the factory starts the product once before saving. There is no button to ask the lead again: when the product starts differently, the change that made it so is where to update this.')}
+  ${srow('run','Commands','Checked by starting the product once.', a.none?'<b>Nothing to run.</b> <span class="muted">Agents check their changes with the tests only, and Slack offers no preview.</span>':`<div class="line">Prepare: <code>${a.setup}</code></div><div class="line">Start: <code>${a.start}</code></div><div class="line">Ready when this answers: <code>${a.ready}</code></div>`, {check:true, applies:'Starts the product once to check. Applies from the next start.'})}`;
+}
+function secMessages(){
+  return `<h2>Messages</h2>
+  ${srow('lang','Language of messages to you','The lead writes its questions, proposals, reviews and replies to you in this language. Buttons, the dashboard, and everything that goes into the repository stay in English.',`<b>${CFG.lang}</b>`)}
+  ${why('<b>Needs API:</b> new setting, as you asked; the factory changes one line of its prompt.')}`;
+}
+const EDITORS = {
+  github:()=>`<div class="field"><span>Token</span><span class="help">Pull requests are opened as this token's account. If your branch rules need an approval from someone other than the author, use another account's token.</span><span class="help">Saved, ending in k3Pq.</span><button type="button" class="btn" style="justify-self:start">Replace</button></div>`,
+  tracker:()=>`<fieldset class="field" style="border:0;padding:0"><legend style="font-weight:600;font-size:var(--text-small)">Tracker</legend><div class="choices"><label class="choice"><input type="radio" name="tk" checked onchange="trk(1)"><span>Linear</span><span class="note">Todo and In Progress issues are read.</span></label><label class="choice"><input type="radio" name="tk" onchange="trk(0)"><span>GitHub Issues</span><span class="note">This repository's issues. Nothing to enter.</span></label></div></fieldset>
+   <div id="trk-linear"><label class="field"><span>Team key</span><span class="help">The letters before an issue's number, such as ACME in ACME-141.</span><input type="text" value="${CFG.tracker.team}"></label>
+   <div class="field"><span>API key</span><span class="help">Create one in Linear: Settings → Security &amp; access → Personal API keys.</span><span class="help">Saved, ending in fj39.</span><button type="button" class="btn" style="justify-self:start">Replace</button></div></div>`,
+  slack:()=>`<label class="field"><span>Channel ID</span><span class="help">At the bottom of the channel's details (starts with C). Invite the app to the channel first.</span><input type="text" value="${CFG.slack.channel}"></label>
+   <div class="field"><span>Bot token</span><span class="help">Slack app → OAuth &amp; Permissions → Bot User OAuth Token (<code>xoxb-</code>).</span><span class="help">Saved, ending in Q7mT.</span><button type="button" class="btn" style="justify-self:start">Replace</button></div>
+   <div class="field"><span>App-level token</span><span class="help">Slack app → Basic Information → App-Level Tokens, with <code>connections:write</code> (<code>xapp-</code>).</span><span class="help">Saved, ending in c2Vb.</span><button type="button" class="btn" style="justify-self:start">Replace</button></div>`,
+  owners:()=>`<label class="field"><span>Slack member IDs, one per line</span><span class="help">In Slack, open a person's profile → ⋯ → Copy member ID (starts with U). If you remove yourself, the factory stops answering you and your approvals stop counting.</span><textarea rows="3">${CFG.slack.owners.join('\n')}</textarea></label>`,
+  perm:()=>`<div class="choices"><label class="choice"><input type="radio" name="pm" ${CFG.perm==='auto'?'checked':''} onchange="document.getElementById('bypass-w').hidden=true"><span><b>Auto</b> (default)</span><span class="note">Each CLI's auto mode checks risky actions. When it refuses one, the lead finds another way or asks you.</span></label>
+   <label class="choice"><input type="radio" name="pm" ${CFG.perm==='bypass'?'checked':''} onchange="document.getElementById('bypass-w').hidden=false"><span><b>Bypass</b></span><span class="note">Skips the CLIs' permission checks for every run.</span></label></div>
+   <p class="warn" id="bypass-w" ${CFG.perm==='bypass'?'':'hidden'}><b>Warning:</b> with Bypass, agents can delete files, rewrite history in their worktree and run any command your denied commands do not name. Pushes, merges, approvals and your denied commands are still stopped.</p>`,
+  mcp:()=>`<div class="choices">${[['playwright','this repository\'s .mcp.json',''],['github','your Claude Code','Reaches GitHub: agents could push, merge or approve through it.'],['linear','your Codex','Reaches Linear: agents could change issues through it.']].map(([n,src,w])=>`<label class="choice"><input type="checkbox" ${CFG.mcp.includes(n)?'checked':''}><span><b>${n}</b> <span class="muted small">from ${src}</span></span>${w?`<span class="note fail">${w}</span>`:''}</label>`).join('')}</div>`,
+  base:()=>`<label class="field"><span>Branch</span><input type="text" value="${CFG.base}"></label>`,
+  mergeby:()=>`<div class="choices"><label class="choice"><input type="radio" name="mb" checked><span><b>The factory</b></span><span class="note">It merges the exact commit that passed.</span></label><label class="choice"><input type="radio" name="mb"><span><b>You</b></span><span class="note">The factory tells you in Slack when a pull request is ready.</span></label></div>`,
+  bots:()=>`<label class="field"><span>Bot accounts, one per line</span><span class="help">As GitHub shows the author, such as <code>ai-reviewer[bot]</code>.</span><textarea rows="3">${CFG.bots.join('\n')}</textarea></label>`,
+  deny:()=>`<label class="field"><span>Your denied commands, one pattern per line</span><span class="help"><code>*</code> matches any text. Each command of a chained line is checked on its own. This catches mistakes. To keep agents out of production, keep production credentials off this computer.</span><textarea rows="4">${CFG.deny.join('\n')}</textarea></label>`,
+  atonce:()=>`<label class="field"><span>Issues at once</span><span class="help">1 or more. More finishes sooner and uses your agents' plans faster.</span><input type="text" inputmode="numeric" value="${CFG.atOnce}" style="max-width:120px"></label>`,
+  rounds:()=>`<label class="field"><span>Review rounds</span><span class="help">Empty for no limit.</span><input type="text" inputmode="numeric" style="max-width:120px"></label><label class="field"><span>CI fixes</span><span class="help">Empty for no limit.</span><input type="text" inputmode="numeric" style="max-width:120px"></label>`,
+  run:()=>appEditor(CFG.app.none),
+  app:()=>[['setup','Prepare','Runs before each start of a copy, such as installing its dependencies.',true],['start','Start','Starts the product on <code>$PORT</code>.'],['ready','Ready when this answers','A URL that answers once the product is up, with the port as <code>$PORT</code>.']]
+    .map(([k,label,help,optional])=>sfield('app-'+k, `${label}${optional?' <span class="muted opt">(optional)</span>':''}`, help, `<input type="text" id="app-${k}" value="${esc(CFG.app[k]||'')}" spellcheck="false" ${described('app-'+k)} oninput="if(this.value.trim()) fieldError(this.id,'')">`)).join(''),
+  lang:()=>`<label class="field"><span>Language</span><select><option>English</option><option>日本語</option><option>Deutsch</option><option>Français</option><option>Español</option></select></label>`
+};
+Object.keys(HELD).forEach(c=>{ EDITORS['held-'+c] = ()=>`<label class="field"><span>Path patterns, one per line</span><span class="help"><code>*</code> within a folder name, <code>**</code> across folders, such as <code>${HELD[c][2]}</code>.</span><textarea rows="3">${CFG.held[c].join('\n')}</textarea></label>`; });
+function trk(lin){ $('#trk-linear').hidden = !lin; }
+function edit(id){ EDIT=id; EDIT_TYPED=false; DISCARDED=null; DRAFT=null; render(); const el=document.getElementById('row-'+id); el && el.querySelector('input,textarea,select') && el.querySelector('input,textarea,select').focus(); }
+function cancelEdit(){ EDIT=null; DRAFT=null; render(); }
+function save(id){
+  if (id==='slack'){ const e=$('#err-slack'); const ch=document.querySelector('#row-slack input'); if(!/^[CG][A-Z0-9]{8,}$/.test(ch.value.trim())){ e.textContent=`${ch.value} is not a channel ID; channel IDs start with C, such as C0123456789.`; return; } }
+  if (id==='atonce'){ const v=document.querySelector('#row-atonce input').value.trim(); if(!/^\d+$/.test(v)){ $('#err-atonce').textContent='Enter a whole number.'; return; } if(+v===0){ $('#err-atonce').textContent='Enter 1 or more.'; return; } CFG.atOnce=+v; }
+  if (id==='lang'){ CFG.lang=document.querySelector('#row-lang select').value; }
+  if (id==='perm'){ CFG.perm=document.querySelector('#row-perm input[name=pm]:checked').parentElement.textContent.includes('Bypass')?'bypass':'auto'; }
+  if (id.startsWith('role-')){ const k=id.slice(5), d=DRAFT, r=CFG.roles[k]; r.cli=d.cli; r.model=d.model.trim()||null; r.effort=d.effort.trim()||null; r.skills=[...document.querySelectorAll('#row-'+id+' .edit input[type=checkbox]:checked')].map(c=>c.value); r.append=document.querySelector('#row-'+id+' textarea').value.trim(); }
+  if (id==='run'){
+    const none = document.querySelectorAll('#row-run input[name=runs]')[1].checked;
+    if (!none){
+      if (!document.getElementById('app-start').value.trim()){ fieldError('app-start','Enter the command that starts the product.'); document.getElementById('app-start').focus(); return; }
+      ['setup','start','ready'].forEach(k=>{ CFG.app[k]=document.getElementById('app-'+k).value.trim(); });
+    }
+    CFG.app.none=none; EDIT=null; render(); return; }
+  EDIT=null; DRAFT=null; render();
+}
+
+/* ---- setup */
+/* ---- setup
+   Three steps, each ending in one decision, then the factory starts:
+   1 Connect       facts about your tools, each checked where it is entered;
+   2 Run the product  the lead finds how the product starts, the factory starts it once, you decide;
+   3 Set the goal  your intent, and the start.
+   A block is checked by connecting with its values once they are all entered; the result shows
+   under the block, with what the service answered when it fails. Empty fields are pointed out only
+   when you press Continue. Buttons stay enabled and answer with what is missing; only a running
+   check disables one. The agent is chosen, not checked: a run that fails shows its own error. A change repaints its own region, never the page, so focus
+   stays where it is. */
+const SETUP_STEPS = ['Connect', 'Run the product', 'Set the goal'];
+function setupHead(step){
+  return `<div><h1>Set up Oven Spring for acme-shop</h1>
+  <ol class="stepper" aria-label="Setup steps">${SETUP_STEPS.map((n,i)=>`<li ${step===i+1?'aria-current="step"':''}><span class="n">${i+1}</span>${n}${step>i+1?' <span class="ok" aria-hidden="true">✓</span><span class="sr"> (done)</span>':''}</li>`).join('')}</ol></div>`;
+}
+function setSit(v){ SIT=v; $('#sit').value=v; render(); }
+
+/* -- shared field parts */
+const EYE = '<svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M1.5 8s2.4-4.5 6.5-4.5S14.5 8 14.5 8 12.1 12.5 8 12.5 1.5 8 1.5 8z"/><circle cx="8" cy="8" r="2"/></svg>';
+const EYE_OFF = '<svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M1.5 8s2.4-4.5 6.5-4.5S14.5 8 14.5 8 12.1 12.5 8 12.5 1.5 8 1.5 8z"/><circle cx="8" cy="8" r="2"/><path d="M2.5 13.5l11-11"/></svg>';
+/* One labelled field: label, help, control, and its error line. `control` gets the id, the
+   descriptions and the handlers from `attrs`. */
+function sfield(id, label, help, control){
+  return `<div class="field"><label for="${id}">${label}</label>${help?`<span class="help" id="${id}-help">${help}</span>`:''}${control}<span class="err" id="${id}-err"></span></div>`;
+}
+const described = id => `aria-describedby="${id}-help ${id}-err"`;
+function secretInput(id, label, attrs){
+  return `<span class="secret"><input type="password" id="${id}" autocomplete="off" spellcheck="false" ${described(id)} ${attrs}><button type="button" class="reveal" aria-controls="${id}" aria-label="Show ${label}" aria-pressed="false" onclick="reveal(this,'${label}')">${EYE}</button></span>`;
+}
+function reveal(btn, label){ const i=document.getElementById(btn.getAttribute('aria-controls')), show=i.type==='password'; i.type=show?'text':'password'; btn.setAttribute('aria-pressed', String(show)); btn.setAttribute('aria-label', (show?'Hide ':'Show ')+label); btn.innerHTML = show?EYE_OFF:EYE; }
+function fieldError(id, text){
+  const err=document.getElementById(id+'-err'), el=document.getElementById(id);
+  if (err) err.textContent = text || '';
+  if (el && /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName)) { if (text) el.setAttribute('aria-invalid','true'); else el.removeAttribute('aria-invalid'); }
+}
+/* What is missing, above the button that was pressed: each item links to its field, and leaves the
+   list once that field is filled in. */
+function settled(boxId, id){
+  const box=document.getElementById(boxId); if (!box || box.hidden) return;
+  box.querySelectorAll(`a[href="#${id}"]`).forEach(a=>a.closest('li').remove());
+  if (!box.querySelector('li')) { box.hidden=true; box.innerHTML=''; }
+}
+function summary(boxId, items){
+  const box=document.getElementById(boxId);
+  if (!items.length){ box.hidden=true; box.innerHTML=''; return; }
+  box.hidden=false;
+  box.innerHTML = `<h3 class="es-t">Before you continue</h3><ul>${items.map(([id,text])=>`<li><a href="#${id}" onclick="document.getElementById('${id}').focus();return false">${text}</a></li>`).join('')}</ul>`;
+  box.focus();
+}
+
+/* -- step 1: connect */
+const CLIS = [{k:'claude', name:'Claude Code'}, {k:'codex', name:'Codex'}, {k:'opencode', name:'OpenCode'}];
+/* Each field: its block, and the message when it is left empty. A value is checked by connecting
+   with it, not by its form: a wrong one fails the block's check. */
+const SU_FIELDS = {
+  base:{block:'github', empty:'Enter the base branch.'},
+  token:{block:'github', optional:true},
+  team:{block:'tracker', empty:'Enter the Linear team key.'},
+  key:{block:'tracker', empty:'Enter the Linear API key.'},
+  bot:{block:'slack', empty:'Enter the bot token.'},
+  app:{block:'slack', empty:'Enter the app-level token.'},
+  channel:{block:'slack', empty:'Enter the channel ID.'},
+  member:{block:'slack', empty:'Enter your Slack member ID.'}};
+const BLOCKS = {github:'GitHub', tracker:'Issues', slack:'Slack'};
+function freshSU(){
+  return {v:{base:'main', token:'', merge:'factory', tracker:'github', team:'', key:'', bot:'', app:'', channel:'', member:'', cli:null},
+    github:{s:'ok', msg:githubMsg('','main')}, tracker:{s:'ok', msg:'This repository, 9 open issues.'}, slack:{s:null},
+    seq:{}, wait:{}, checked:{github:'["github","main",""]', tracker:'["github"]'}, slackTries:0};
+}
+let SU = freshSU();
+/* What the GitHub check answers: the account pull requests are opened as. */
+function githubMsg(token, base){ return token ? 'Signed in as acme-factory-bot.' : 'Using the token of your signed-in gh, as mina.'; }
+function fieldsOf(block){ return Object.keys(SU_FIELDS).filter(f=>SU_FIELDS[f].block===block && !(block==='tracker' && SU.v.tracker!=='linear')); }
+/* The values a block's result is about; a result about other values is not shown. */
+function snap(block){ return JSON.stringify(block==='tracker' ? [SU.v.tracker, ...fieldsOf(block).map(f=>SU.v[f])] : [block, ...fieldsOf(block).map(f=>SU.v[f])]); }
+function complete(block){ return fieldsOf(block).every(f=>SU_FIELDS[f].optional || SU.v[f].trim()!==''); }
+/* A remote check: the newest wins, so an answer about an older value is dropped. */
+function check(block){
+  const n=(SU.seq[block]||0)+1; SU.seq[block]=n; SU.checked[block]=snap(block);
+  SU[block]={s:'checking'}; paintBlock(block);
+  setTimeout(()=>{ if (SU.seq[block]!==n) return; SU[block]=answer(block); paintBlock(block); }, 800);
+}
+function answer(block){
+  const v=SU.v;
+  if (block==='github') return {s:'ok', msg:githubMsg(v.token, v.base)};
+  if (block==='tracker') return v.tracker==='github' ? {s:'ok', msg:'This repository, 9 open issues.'} : {s:'ok', msg:`Team ${esc(v.team.trim())} (Acme), 9 open issues.`};
+  SU.slackTries++;
+  return SU.slackTries===1
+    ? {s:'fail', msg:`The app is not in channel ${esc(v.channel)}; invite it there. <button type="button" class="btn quiet inline" onclick="check('slack')">Check again</button>`}
+    : {s:'ok', msg:`Connected to channel ${esc(v.channel)}, as Mina.`};
+}
+function settle(block){
+  clearTimeout(SU.wait[block]);
+  if (!complete(block)) { SU.seq[block]=(SU.seq[block]||0)+1; SU.checked[block]=null; SU[block]={s:null}; paintBlock(block); }
+  else if (SU.checked[block]!==snap(block)) check(block);
+}
+function suInput(id, value){
+  SU.v[id]=value;
+  const d=SU_FIELDS[id];
+  if (value.trim()) { fieldError('su-'+id, ''); settled('su-summary', 'su-'+id); }
+  if (SU.checked[d.block]!==snap(d.block) && SU[d.block].s) { SU.seq[d.block]=(SU.seq[d.block]||0)+1; SU[d.block]={s:null}; paintBlock(d.block); }
+  clearTimeout(SU.wait[d.block]); SU.wait[d.block]=setTimeout(()=>settle(d.block), 700);
+}
+function suLeave(id){ settle(SU_FIELDS[id].block); }
+function suTracker(kind){
+  SU.v.tracker=kind; document.getElementById('su-linear').hidden = kind!=='linear';
+  fieldsOf('tracker').forEach(f=>fieldError('su-'+f,'')); settle('tracker');
+}
+function blockStatus(block){
+  const r=SU[block];
+  if (!r || !r.s) return '';
+  if (r.s==='checking') return `<p class="small"><span class="accent" aria-hidden="true">●</span> Checking…</p>`;
+  return `<p class="small"><span class="${r.s==='ok'?'ok':'fail'}" aria-hidden="true">${r.s==='ok'?'✓':'✗'}</span> ${r.msg}</p>`;
+}
+function paintBlock(block){ const el=document.getElementById('st-'+block); if (el) el.innerHTML=blockStatus(block); }
+function suAgent(k){ SU.v.cli=k; fieldError('su-agent',''); settled('su-summary', 'su-cli-'+CLIS[0].k); }
+/* Continue: what is missing is listed; checks still answering are waited for, and setup goes on
+   once they pass. */
+function suContinue(){
+  const items=[]; let pending=false;
+  Object.keys(BLOCKS).forEach(block=>{
+    let fieldIssue=false;
+    fieldsOf(block).forEach(f=>{ const d=SU_FIELDS[f];
+      if (!d.optional && !SU.v[f].trim()){ fieldError('su-'+f, d.empty); items.push(['su-'+f, `${BLOCKS[block]}: ${d.empty}`]); fieldIssue=true; } });
+    if (fieldIssue) return;
+    if (SU.checked[block]!==snap(block)) { check(block); pending=true; }
+    else if (SU[block].s==='checking') pending=true;
+    else if (SU[block].s==='fail') items.push([`st-${block}-anchor`, `${BLOCKS[block]}: the check failed.`]);
+  });
+  if (!SU.v.cli){ fieldError('su-agent','Choose the agent.'); items.push(['su-cli-'+CLIS[0].k,'Agents: choose the agent.']); }
+  summary('su-summary', items);
+  if (items.length) return;
+  if (!pending){ stopFind(); setSit('setup-run'); startFind(); window.scrollTo(0,0); return; }
+  const go=document.getElementById('su-go'); go.disabled=true; go.textContent='Checking…';
+  const wait=setInterval(()=>{ if (Object.keys(BLOCKS).some(b=>SU[b].s==='checking')) return;
+    clearInterval(wait); go.disabled=false; go.textContent='Continue'; suContinue(); }, 150);
+}
+function suFill(){
+  const sample={bot:'xoxb-7012-acme', app:'xapp-1-A07ACME', channel:'C07ACMEFACT', member:'U01MINA0042'};
+  Object.entries(sample).forEach(([k,val])=>{ SU.v[k]=val; const el=document.getElementById('su-'+k); if (el) el.value=val; fieldError('su-'+k,''); });
+  settle('slack');
+}
+function suText(id, label, help, width){
+  return sfield('su-'+id, label, help, `<input type="text" id="su-${id}" value="${esc(SU.v[id])}" spellcheck="false" ${described('su-'+id)} oninput="suInput('${id}',this.value)" onblur="suLeave('${id}')" ${width?`style="max-width:${width}"`:''}>`);
+}
+function suSecret(id, name, help, optional){
+  return sfield('su-'+id, `${name}${optional?' <span class="muted opt">(optional)</span>':''}`, help, secretInput('su-'+id, name, `value="${esc(SU.v[id])}" oninput="suInput('${id}',this.value)" onblur="suLeave('${id}')"`));
+}
+const statusRegion = block => `<div class="su-status" id="st-${block}-anchor" tabindex="-1"><div id="st-${block}" aria-live="polite">${blockStatus(block)}</div></div>`;
+function viewSetup(){
+  if (SIT!=='setup') return viewSetupRun();
+  const v=SU.v;
+  return `<div class="stack setup" style="max-width:760px">${setupHead(1)}
+  <div><h2>Connect</h2><p style="margin-top:6px">Each connection is checked once its values are in, and nothing is saved until all pass. Only <code>.ovenspring/config.toml</code> goes into the repository. Tokens stay outside it.</p></div>
+  ${why('<b>Checked by connecting:</b> the repository when the page opens, the tracker and Slack once their values are complete, so a wrong value fails with what the service answered. The agent is not checked: it runs as set up on this computer, and a run that fails stops the factory with the agent\'s own error.')}
+  <section class="su-block" aria-labelledby="su-h-github"><h3 id="su-h-github">GitHub</h3>
+   <p class="small">This folder's <code>origin</code>: <b>github.com/acme/acme-shop</b></p>
+   ${suText('base','Base branch','Issue branches start from it and merge into it.','240px')}
+   <fieldset class="field"><legend>Who merges</legend><div class="choices">
+    <label class="choice"><input type="radio" name="su-merge" ${v.merge==='factory'?'checked':''} onchange="SU.v.merge='factory'"><span><b>The factory</b></span><span class="note">Once checks and every approval are in.</span></label>
+    <label class="choice"><input type="radio" name="su-merge" ${v.merge==='you'?'checked':''} onchange="SU.v.merge='you'"><span><b>You</b></span><span class="note">The factory tells you in Slack when a pull request is ready.</span></label></div></fieldset>
+   ${suSecret('token','GitHub token','Leave empty to use the signed-in gh. Pull requests are opened as the token\'s account.',true)}
+   ${statusRegion('github')}</section>
+  <section class="su-block" aria-labelledby="su-h-tracker"><h3 id="su-h-tracker">Issues</h3>
+   <p class="small">Where the factory takes its work from.</p>
+   <fieldset class="field"><legend class="sr">Issue tracker</legend><div class="choices">
+    <label class="choice"><input type="radio" name="su-tracker" ${v.tracker==='github'?'checked':''} onchange="suTracker('github')"><span><b>GitHub Issues</b></span><span class="note">This repository's issues. Nothing more to enter.</span></label>
+    <label class="choice"><input type="radio" name="su-tracker" ${v.tracker==='linear'?'checked':''} onchange="suTracker('linear')"><span><b>Linear</b></span><span class="note">A Linear team's Todo and In Progress issues, read with an API key.</span></label>
+    <div id="su-linear" class="choice-more" ${v.tracker==='linear'?'':'hidden'}>${suText('team','Team key','The letters before an issue\'s number, such as ACME in ACME-141.','240px')}${suSecret('key','API key','Linear: Settings → Security &amp; access → Personal API keys.')}</div></div></fieldset>
+   ${statusRegion('tracker')}</section>
+  <section class="su-block" aria-labelledby="su-h-slack"><h3 id="su-h-slack">Slack</h3>
+   <p class="small">Every decision that is yours reaches you here. Create the app once:</p>
+   <ol class="how"><li>${ext('https://api.slack.com/apps?new_app=1','Create a Slack app')} “From a manifest”, and paste this app's manifest: <button type="button" class="btn quiet inline" onclick="toast('Manifest copied.')">copy the manifest</button></li><li>Install it to your workspace, then copy the <b>Bot User OAuth Token</b> (OAuth &amp; Permissions).</li><li>Under Basic Information → App-Level Tokens, create one with <code>connections:write</code>.</li><li>Invite the app to the channel the factory will use.</li></ol>
+   ${suSecret('bot','Bot token','Starts with <code>xoxb-</code>.')}
+   ${suSecret('app','App-level token','Starts with <code>xapp-</code>.')}
+   ${suText('channel','Channel ID','Channel details, at the bottom (starts with C).','240px')}
+   ${suText('member','Your Slack member ID','Your profile → ⋯ → Copy member ID (starts with U). Only you can approve until you add others in Settings.','240px')}
+   ${statusRegion('slack')}</section>
+  <section class="su-block" aria-labelledby="su-h-agents" id="su-agents"><h3 id="su-h-agents">Agents</h3>
+   <p class="small">The agent every role runs on, as set up on this computer. You can change it for each role in Settings later.</p>
+   <fieldset class="field" id="su-agent" aria-describedby="su-agent-err"><legend class="sr">Agent</legend><div class="choices">${CLIS.map(c=>`<label class="choice"><input type="radio" name="su-cli" id="su-cli-${c.k}" ${v.cli===c.k?'checked':''} onchange="suAgent('${c.k}')"><span><b>${c.name}</b></span></label>`).join('')}</div><span class="err" id="su-agent-err"></span></fieldset></section>
+  <div class="err-summary" id="su-summary" tabindex="-1" role="alert" hidden></div>
+  <div class="actions"><button type="button" class="btn primary" id="su-go" onclick="suContinue()">Continue</button></div></div>`;
+}
+
+/* -- step 2: run the product. The lead finds how it starts; the factory starts it once; you decide. */
+const FOUND = {setup:'pnpm install --frozen-lockfile', start:'pnpm dev --port $PORT', ready:'http://localhost:$PORT/health'};
+const LEAD_SAID = [
+  'Reading README.md and package.json to see how the shop runs on a laptop.',
+  'The dev script starts Next.js; it takes --port, so the start command passes $PORT.',
+  'GET /health answers 200 once the server is up, so that is the ready check.',
+  'pnpm-lock.yaml is committed, so the copy is prepared with pnpm install --frozen-lockfile.'];
+let FIND = null, FIND_T = [], RUN = null, FIRST_RUN = false;
+function stopFind(){ FIND_T.forEach(clearTimeout); FIND_T=[]; }
+function startFind(){
+  stopFind();
+  FIND={said:[], stage:'reading', check:null};
+  const at=(ms,f)=>FIND_T.push(setTimeout(()=>{ f(); if (SIT==='setup-run') paintFind(); }, ms));
+  LEAD_SAID.forEach((m,n)=>at(900*(n+1), ()=>FIND.said.push(m)));
+  at(4600, ()=>{ FIND.stage='checking'; FIND.check='prepare'; });
+  at(6400, ()=>{ FIND.check='start'; });
+  at(8200, ()=>{ stopFind(); setSit('setup-started'); });
+}
+function findProgress(f){
+  const reading=f.stage==='reading';
+  const mark=s=>s==='done'?'<span class="m ok" aria-hidden="true">✓</span>':s==='now'?'<span class="m accent" aria-hidden="true">●</span>':'<span class="m muted" aria-hidden="true">○</span>';
+  return `<ol class="progress" aria-label="Progress">
+    <li>${mark(reading?'now':'done')}<span>${reading?'<b>The lead is reading the repository</b>':'The lead found the commands'}</span></li>
+    <li>${mark(reading?'wait':'now')}<span>${reading?'Start it once to check':'<b>Starting it once to check</b>'}</span>${reading?'':`<span class="sub"><code>${FOUND.start}</code>, waiting for <code>${FOUND.ready}</code> to answer</span>`}</li></ol>
+   ${reading?`<section aria-labelledby="su-said"><h3 class="subh" id="su-said">What the lead has said so far</h3>
+    ${f.said.length?`<ul class="msgs">${f.said.map(m=>`<li>${esc(m)}</li>`).join('')}</ul>`:'<p class="small muted">Nothing yet.</p>'}</section>`:''}`;
+}
+function paintFind(){ const el=document.getElementById('su-find'); if (el) el.innerHTML=findProgress(FIND); }
+function runIntro(){
+  return `<div><h2>Run the product</h2>
+  <p style="margin-top:6px">Each issue gets its own running copy of the product, for agents to check their changes and for you to preview. Confirm how it starts, or say there is nothing to run.</p></div>
+  ${why('<b>Settled here, while you wait:</b> without it agents cannot check the running product and previews are refused, and nobody notices until a held merge. Waiting here means “not known yet” never reaches Now, and a failure is met before any work has begun. The lead\'s commands are checked by starting the product, not by you reading them.')}`;
+}
+/* The outcome the form opens on; RUN keeps what you did since. */
+const OUTCOME = {'setup-started':'started','setup-nothing':'nothing','setup-failed':'failed'};
+function runStatus(){
+  if (RUN.edited) return '<p class="small muted">Changed. The factory starts it once when you continue.</p>';
+  if (RUN.outcome==='started') return '<p class="small"><span class="ok" aria-hidden="true">✓</span> Started on port 4101 and answered after 1 min 12 s.</p>';
+  if (RUN.outcome==='failed') return `<p class="small"><span class="fail" aria-hidden="true">✗</span> <b class="fail">Did not start.</b> Fix what it needs on this computer or change the commands, then Continue.</p>
+   <pre class="out">the app did not answer http://localhost:4101/health within 120s; its log ends with:
+▲ Next.js 15.2.0
+- Local: http://localhost:4101
+Error: connect ECONNREFUSED 127.0.0.1:5432
+PrismaClientInitializationError: Can't reach database server at localhost:5432</pre>`;
+  return '';
+}
+function runField(k, label, help, optional){
+  const id='su-run-'+k, value=RUN.outcome==='nothing'?'':FOUND[k];
+  return sfield(id, `${label}${optional?' <span class="muted opt">(optional)</span>':''}`, help, `<input type="text" id="${id}" value="${esc(value)}" spellcheck="false" ${described(id)} oninput="runEdited('${k}',this.value)">`);
+}
+function runEdited(k, value){
+  RUN.edited=true; if (value.trim()) fieldError('su-run-'+k,'');
+  document.getElementById('su-run-status').innerHTML=runStatus();
+}
+function runChoose(choice){ RUN.choice=choice; document.getElementById('su-cmds').hidden = choice!=='cmds'; }
+function runsForm(){
+  const nothingNote = RUN.outcome==='nothing' ? 'The lead\'s reading: <q>package.json has no start or dev script, and README.md describes the package as a library other projects install.</q> ' : '';
+  return `<form class="su-form" onsubmit="runContinue();return false" novalidate aria-labelledby="su-run-q">
+   <fieldset class="field"><legend id="su-run-q" class="sr">How the product runs</legend><div class="choices">
+    <label class="choice"><input type="radio" name="su-runs" ${RUN.choice==='cmds'?'checked':''} onchange="runChoose('cmds')"><span><b>It runs with these commands</b></span></label>
+    <div id="su-cmds" class="choice-more" ${RUN.choice==='cmds'?'':'hidden'}>
+     <div id="su-run-status" aria-live="polite">${runStatus()}</div>
+     ${runField('setup','Prepare','Runs before each start of a copy, such as installing its dependencies.',true)}
+     ${runField('start','Start','Starts the product on <code>$PORT</code>.')}
+     ${runField('ready','Ready when this answers','A URL that answers once the product is up, with the port as <code>$PORT</code>.')}</div>
+    <label class="choice"><input type="radio" name="su-runs" ${RUN.choice==='none'?'checked':''} onchange="runChoose('none')"><span><b>There is nothing to run</b></span><span class="note">${nothingNote}Agents check their changes with the tests only, and Slack offers no preview.</span></label></div></fieldset>
+   <div class="actions"><button type="submit" class="btn primary" id="su-run-go">Continue</button></div></form>`;
+}
+function runContinue(){
+  const toGoal=()=>{ setSit('setup-goal'); window.scrollTo(0,0); };
+  if (RUN.choice==='none') return toGoal();
+  /* Only the start command is needed; its field says so. */
+  if (!document.getElementById('su-run-start').value.trim()){ fieldError('su-run-start','Enter the command that starts the product.'); document.getElementById('su-run-start').focus(); return; }
+  if (!RUN.edited && RUN.outcome==='started') return toGoal();
+  const form=document.querySelector('.su-form');
+  form.querySelectorAll('input,button').forEach(el=>{ el.disabled=true; });
+  document.getElementById('su-run-status').innerHTML='<p class="small"><span class="accent" aria-hidden="true">●</span> <b>Starting it once to check</b> <span class="muted">· Prepare, then Start, then waiting for the ready address</span></p>';
+  document.getElementById('su-run-go').textContent='Checking…';
+  setTimeout(toGoal, 1800);
+}
+function viewSetupRun(){
+  if (SIT==='setup-goal') return viewSetupGoal();
+  const head=`<div class="stack setup" style="max-width:760px">${setupHead(2)}${runIntro()}`;
+  if (SIT==='setup-run'){
+    const f=FIND || {said:LEAD_SAID.slice(0,2), stage:'reading'};
+    return `${head}<div id="su-find" aria-live="polite">${findProgress(f)}</div>
+    <p class="small muted">This takes a few minutes. Closing this page does not stop it.</p></div>`;
+  }
+  /* The lead's agent failed to run: its error as the agent wrote it, and how the factory goes on. */
+  if (SIT==='setup-stopped'){
+    stopFind();
+    return `${head}<div role="status"><p><span class="fail" aria-hidden="true">✗</span> <b class="fail">The lead's agent stopped with an error.</b> What it wrote:</p>
+    <pre class="out">Codex: 401 Unauthorized. Your access token could not be refreshed; please log in again.</pre>
+    <p class="small" style="margin-top:6px">The factory is paused. When it can run, resume with <kbd>@Oven Spring !resume</kbd> in Slack, and the lead reads the repository again.</p></div></div>`;
+  }
+  const outcome=OUTCOME[SIT];
+  if (!RUN || RUN.outcome!==outcome) RUN={outcome, choice: outcome==='nothing'?'none':'cmds', edited:false};
+  return `${head}${runsForm()}</div>`;
+}
+/* Settings › Running the product: the same choice, saved after the same check. */
+function appEditor(nothing){
+  return `<fieldset class="field"><legend class="sr">How the product runs</legend><div class="choices">
+   <label class="choice"><input type="radio" name="runs" ${nothing?'':'checked'} onchange="$('#app-cmds').hidden=false"><span><b>It runs with these commands</b></span></label>
+   <div id="app-cmds" class="choice-more" ${nothing?'hidden':''}>${EDITORS.app()}</div>
+   <label class="choice"><input type="radio" name="runs" ${nothing?'checked':''} onchange="$('#app-cmds').hidden=true"><span><b>There is nothing to run</b></span><span class="note">Agents check their changes with the tests only, and Slack offers no preview.</span></label></div></fieldset>`;
+}
+
+/* -- step 3: set the goal, and start */
+function viewSetupGoal(){
+  return `<div class="stack setup" style="max-width:760px">${setupHead(3)}
+  <div><h2>Set the goal</h2>
+  <p style="margin-top:6px">Where the product is heading. When you start, the lead proposes the first sprint toward it in Slack. Nothing is worked on until you approve it there.</p></div>
+  ${why('<b>Last, because it is what starts the factory.</b> Connecting and running the product are facts about your tools; the goal is your intent, and every sprint is proposed toward it. It stays in the band at the top of every screen, where you rewrite it later.')}
+  <form class="su-form" onsubmit="goalStart();return false" novalidate>
+   ${sfield('su-goal','Goal','As the state of the product or its users, in a sentence or two, not a list of work. For example: “Shoppers find and buy the right product without having to ask support.”',`<textarea class="prose" rows="3" id="su-goal" ${described('su-goal')} oninput="if(this.value.trim()) fieldError('su-goal','')"></textarea>`)}
+   <div class="actions"><button type="submit" class="btn primary">Start</button></div></form></div>`;
+}
+function goalStart(){
+  const text=document.getElementById('su-goal').value.trim();
+  if (!text){ fieldError('su-goal','Enter the goal.'); document.getElementById('su-goal').focus(); return; }
+  GOAL.text=text; FIRST_RUN=true; setSit('proposing'); location.hash='#/now';
+}
+
+/* ---- process page */
+function viewProcess(){
+  return `<div class="proc"><div><h1>How this was designed</h1><p style="margin-top:6px">In this order, each step's result checked by the next. The working notes behind each step are summarised here; nothing below was added after the screens were made.</p></div>
+  <section><h2>1. What was set aside</h2><p>The earlier dashboards, their UI Spec and their prototypes were not opened. What was known of them from the earlier sessions was written down and not used as a starting point: a goal band on every screen, a status headline, "2 of 6 merged", one state word per issue row, stage dots or segmented tracks per row, grouping headings, a "Latest runs" panel, Settings tabs mirroring the configuration file, a six-column role table, a numbered explanation layer.</p></section>
+  <section><h2>2. Facts used</h2><p>From the PRD, the Design Docs, the work plan and the backend code: the objects (factory, goal, sprint, issue, agent run, decision, finding, prerequisite, settings), their states (25 issue stages, 12 sprint stages), what the API returns and what it does not, and limits no design can remove: cost is known only for Claude Code runs; a running agent's messages exist only as raw output; OpenCode's sign-in cannot be read; decisions are made only in Slack.</p>
+  <p style="margin-top:6px">And your own words from the earlier sessions: you read the logs because they were the only place showing what is happening now; a silent stop is fatal; dependencies and the parallel limit must be visible; one element, one meaning; changing the goal is heavy; Settings is the dashboard's own job; [app] commands should be collected by an agent; the lead should write to you in your language.</p></section>
+  <section><h2>3. Situations and what success is</h2><div class="scroll"><table><tr><th>Situation</th><th>Your questions</th><th>Success</th><th>Where</th></tr>
+   <tr><td>Glance (most often)</td><td>Moving? Anything mine? What is each piece doing now; did the last thing go well? How far?</td><td>Answered without a click; leave, or go to Slack</td><td>Now</td></tr>
+   <tr><td>Unease</td><td>Stopped, waiting or working? On what, since when? Is someone on it?</td><td>Reassured with the reason, or know what to do and where</td><td>Now status line, rows</td></tr>
+   <tr><td>Following the work</td><td>What runs now, what just finished, what did the agent say?</td><td>Follow without raw logs</td><td>Activity, run</td></tr>
+   <tr><td>From Slack</td><td>What is this issue for, what was decided, how close will the build be to the prototype?</td><td>Enough to answer in Slack</td><td>Issue, Prototype</td></tr>
+   <tr><td>Tuning</td><td>What does this change, when does it apply?</td><td>One change saved, its effect known</td><td>Settings</td></tr>
+   <tr><td>Something broke</td><td>What is missing; the exact fix and where?</td><td>Fixed, seen resolved</td><td>Now status line → Settings or terminal</td></tr>
+   <tr><td>Paused</td><td>Why; how to resume?</td><td>Resume in Slack after fixing the cause</td><td>Now status line</td></tr>
+   <tr><td>Sprint end</td><td>What did it reach; what did it cost; records?</td><td>Understood; records downloaded</td><td>Sprints</td></tr>
+   <tr><td>Direction change</td><td>What changes if I rewrite the goal?</td><td>Done deliberately</td><td>The goal band → Rewrite</td></tr>
+   <tr><td>First start</td><td>Where does each value come from? Does it work? How will the product be run? What happens next?</td><td>Connected, the way the product runs settled, the goal set, and the factory started</td><td>Setup: Connect, Run the product, Set the goal</td></tr></table></div></section>
+  <section><h2>4. Perspectives from similar tools</h2><ul style="margin:0;padding-left:18px">
+   <li>Linear's agent sessions have a "stale" state for an agent that has gone quiet: being alive is its own state, apart from working. Here: stopped, out of reach and lost contact are never shown as working.</li>
+   <li>GitHub's agent sessions make the session log the place to follow progress, with length and usage per session. Here: Activity and the run view, with the raw log one click further.</li>
+   <li>Renovate's documentation warns that approvals kept in a dashboard are forgotten ("out of sight means out of mind") and keeps closed or ignored work visible. Here: decisions only link to Slack; dropped and held issues stay listed with why.</li></ul></section>
+  <section><h2>5. Three frameworks compared</h2>
+   <div class="minis">
+    <div class="mini"><h3>A. One sentence, exceptions only</h3><div class="b">Working. Nothing needs you.</div><div class="b">Waiting for you (1)</div><div class="b">[Show the work]</div></div>
+    <div class="mini"><h3>B. Activity stream first</h3><div class="b">Working</div><div class="b">Waiting for you (1)</div><div class="b">Latest: 14:16 pushed · 14:14 3 findings · …</div></div>
+    <div class="mini chosen"><h3>C. Work by who has it (chosen)</h3><div class="b">Working</div><div class="b">Waiting for you</div><div class="b">In progress: who · what · for how long · last result</div><div class="b">Waiting to start: why</div><div class="b">Done: how it ended</div></div></div>
+   <div class="scroll" style="margin-top:10px"><table><tr><th></th><th>A</th><th>B</th><th>C</th></tr>
+    <tr><td>What each piece does now, at a glance</td><td>One click away</td><td>Only pieces that just produced an event</td><td>Every issue, once</td></tr>
+    <tr><td>Stuck or waiting, on what, since when</td><td>Not on the first screen</td><td><b>Fails:</b> stuck work produces no events, so the stream hides exactly it</td><td>Wait reason and time in the activity, per issue</td></tr>
+    <tr><td>Follow the work</td><td>Other screen</td><td>Yes</td><td>Last result per issue; full stream on Activity</td></tr>
+    <tr><td>Same fact in two places</td><td>No</td><td>An issue is in Running and Latest</td><td>No</td></tr></table></div>
+   <p style="margin-top:6px">C was chosen; B's strength became the Activity screen. Settings: grouping by the configuration file (makes you translate your task into file sections) and one page per role (scatters factory-wide settings) were compared with grouping by what you come to do, which was chosen.</p></section>
+  <section><h2>6. Rules every screen follows</h2>
+   <h3 class="subh" style="padding:0">Two layers, two ways of writing</h3>
+   <p>Changed after you found Now too wordy to glance at. One way of writing had been used for every screen.</p>
+   <ol style="margin:6px 0 0;padding-left:20px">
+   <li><b>Glance layer (Now):</b> position, a fixed set of short words and numbers. Five phases (Requirements, Design, Build, Review, Merge) and one list of activities of three words or fewer (Reading the issue, Writing the design, Task 2 of 3, Judging findings, Waiting for CI, …). No sentences, no explanations.</li>
+   <li><b>Marks go with their word, only where attention is needed:</b> ● with what is yours, ▲ with a problem the lead is handling. Earlier rule "no mark that repeats a word" mixed up saying a fact twice in two places (bad) with pairing a mark and its word in one place (helps the eye find it).</li>
+   <li><b>Read layer (Issue, Activity, a run, Settings, Setup):</b> sentences, naming who acts.</li>
+   <li><b>Time by format:</b> a duration ("3 min") is how long an issue has been in its current activity; a clock time ("12:48") is when it ended. Waiting for you and waiting to start show none: neither tells you to do anything different.</li></ol>
+   <h3 class="subh" style="padding:0">Groups you can see</h3>
+   <p>Changed after you found the issue page pouring everything in at once. Spacing had no hierarchy: the gap between items, between groups and under a heading were about the same, and every line weighed the same.</p>
+   <ol style="margin:6px 0 0;padding-left:20px">
+   <li>Distances step up and never overlap: inside an item 4–8 px; between items 12 px with a hairline; heading to its list 24 px; between subgroups 24 px; between groups 40 px; between page regions 64 px.</li>
+   <li>Hairlines only between items of a list, never around or between groups.</li>
+   <li>Heading sizes step up: subgroup 17, group 22, page 30, the factory's state 32. A heading is always bigger than anything in its group.</li>
+   <li>A group heading starts at the edge; everything in the group, list or not, starts 8 px in.</li>
+   <li>Read pages are one column, ordered by the reason you most often come: the issue page is Now, Path, What it is, Review findings, Runs and cost.</li></ol>
+   <h3 class="subh" style="padding:0">The goal is always in view</h3>
+   <p>Every screen shows the product goal in the same band under the header, with Rewrite next to it. This is the product's core, not a layout choice: the factory chooses issues, judges how far to take each one and proposes every sprint against the goal, so the owner keeps it in mind wherever they are. (Taking it off Now in an earlier revision, as rarely changing, was wrong for that reason.)</p>
+   <h3 class="subh" style="padding:0">Kept from before</h3>
+   <ol style="margin:6px 0 0;padding-left:20px">
+   <li>One fact, one place per screen.</li>
+   <li>Decisions are never made here: every one opens in Slack. Commands say where to run them.</li>
+   <li>A cost is never shown without what it covers.</li>
+   <li>Heavy changes get their own page with their consequences; settings change one row at a time.</li>
+   <li>One signal per state; rounded corners only on buttons and fields; code in the mono face; colours, sizes and spaces from the dashboard's tokens.</li>
+   <li>External links open in a new tab and say so; every list says when it is empty.</li></ol></section>
+  <section><h2>7. Checked before handing over</h2><p>Each key path walked step by step with four questions: will you want to do this step, notice where, understand that the control does it, and see that it worked. A "no" fails the step. Results:</p>
+   <div class="scroll"><table id="walk"><tr><th>Path</th><th>Result</th></tr>${WALK.map(w=>`<tr><td>${w[0]}</td><td>${w[1]}</td></tr>`).join('')}</table></div>
+   <p style="margin-top:10px">Then every screen was looked at as components, at 1280 and 390 px, light and dark. Found and fixed: the issue page said "waiting for you" three times and the phase twice; the rows of Waiting to start and Done began their text on a different line from In progress; on a phone, second lines began at the left edge; Activity scrolled sideways at 390 px; read-only rows were labelled "Fixed"; the held-paths explanation was repeated in five rows; OpenCode's effort was described as a flag it does not have; the status line said "3 issues under way" while two rows were in progress.</p></section>
+  <section><h2>8. Against the code: what the backend needs, and what it can drop</h2>
+   <p>Compared with the dashboard and the API in the repository. Each item is kept only when a situation in 3 needs it for what the owner is there to do; how it is built is chosen for maintenance, not for the smallest change to today's code.</p>
+   <h3 class="subh" style="padding:0">Brought in from the old dashboard</h3>
+   <ul class="plain" style="padding-left:18px">
+   <li>An empty goal: "No goal yet. The factory proposes no sprint until there is one." with Set the goal.</li>
+   <li>A configuration file that cannot be used. The old screen said "no work starts"; a running daemon in fact goes on with the last configuration it read without an error (it logs <code>config-refused</code>), and starts no work only when it starts with a broken file. The status says what is true.</li>
+   <li>Several missing prerequisites at once, each with its fix and the setting that fixes it.</li>
+   <li>What a download holds, that secrets are masked, and its preparing and failed states.</li>
+   <li>A run that failed and why.</li>
+   <li>The Activity sprint filter with ended sprints and All sprints.</li>
+   <li>Setup: a failed connection check said where that connection is entered.</li>
+   <li>Kept for the build, not drawn here: "Fill this in." on empty setup fields; an allowed MCP server that is no longer defined; "This run could not be read".</li></ul>
+   <h3 class="subh" style="padding:0">Backend work this design needs</h3>
+   <div class="scroll"><table><tr><th>What</th><th>Why the owner needs it</th><th>Built as</th></tr>
+   <tr><td>Each issue's phase, activity, when it entered it, and a problem flag</td><td>Glance: what each piece of work is doing (what the owner read the logs for)</td><td>Phase is an attribute of the step type in Rust; the API returns phase and activity as codes; the dashboard words them</td></tr>
+   <tr><td>Why a queued issue has not started (an issue it depends on, or the limit and the issues holding it)</td><td>"I need to know what it depends on"</td><td>The scheduler's own reason, returned by the backend, not recomputed in the dashboard</td></tr>
+   <tr><td>The sprint's stage, and a service out of reach since when</td><td>A silent stop is fatal; Working during the sprint review is wrong</td><td>Part of the overview's status</td></tr>
+   <tr><td>Each decision's kind</td><td>Glance: what is asked of me</td><td>Returned from the decision record</td></tr>
+   <tr><td>The issue's size, and the evidence it was judged from</td><td>Its path depends on it; the owner has asked why an issue was Medium</td><td>Scale from the issue state; the reason from the requirements output's <code>costEvidence.drivers</code> (no prompt change)</td></tr>
+   <tr><td>The issue's path: phases done, now and ahead, with the runs in each</td><td>How far along, what remains</td><td>Built by the backend from the flow's route for the size and the issue's runs</td></tr>
+   <tr><td>Each run's cost</td><td>Tuning roles by cost</td><td>In the runs list; the dashboard sums by role</td></tr>
+   <tr><td>A running agent's messages</td><td>Following the work without raw logs</td><td>Read from the run's output stream</td></tr>
+   <tr><td>Claude Code's and Codex's effort levels as fixed lists</td><td>Choosing effort without looking values up</td><td>In the dashboard (Codex: the levels every model offers; ultra on request later)</td></tr></table></div>
+   <p class="small muted" style="margin-top:6px">Asked for, but waiting on a prompt change that this round leaves alone: the lead finding the product's commands (setup's second step), and the language of messages to the owner.</p>
+   <h3 class="subh" style="padding:0">What the API returns that nothing here uses (to remove)</h3>
+   <ul class="plain" style="padding-left:18px">
+   <li><code>status.last_merge_at</code>; <code>status.state = waiting</code> (what waits for you is its own list).</li>
+   <li>State words built on the server (<code>issues[].state</code>, <code>kind</code>, <code>IssueDetail.progress</code>) and <code>now</code>'s raw step, round and role: replaced by phase, activity and the path.</li>
+   <li><code>sprint.merged</code> alone (the screen counts everything that ended), the <code>return</code> finding disposition, and the <code>headline</code> text token.</li></ul></section></div>`;
+}
+let WALK = [
+ ['Glance: is it moving, is anything mine, what is each piece doing, how far','Pass. Status line, Waiting for you, In progress rows and the sprint line answer all four without a click.'],
+ ['Answer a decision','Pass. The row says what is asked about which issue and how long ago; "Answer in Slack" opens Slack in a new tab.'],
+ ['Why has ACME-147 not started?','Pass. The reason names the three issues under way and links the limit in Settings.'],
+ ['Follow what an agent is doing (what you read the logs for)','<b class="fail">Failed in the first build:</b> it took Now → issue → follow, and nothing on Now showed the way. Fixed: what an agent is doing on Now opens its run. Pass after the fix.'],
+ ['A stop only you can resolve','Pass. Listed under Waiting for you with what failed; the button goes to Slack, where Resolved is.'],
+ ['Codex is signed out','Pass. The status line names the roles that wait, the command, and where to run it.'],
+ ['Paused','Pass. Cause, since when, and the resume command with where to send it.'],
+ ['Change the executor\'s model','Pass. The field says what empty means; after saving, the value shows and the note says it applies from the next run.'],
+ ['Move a role to another agent CLI','Pass. Model and effort for the old CLI are cleared with a note; skills not in the new CLI\'s folder are unchecked with a note; OpenCode\'s missing guard hooks are stated before saving.'],
+ ['Rewrite the goal','Pass. The band on every screen leads there; consequences are shown before saving; Save works only after a change.'],
+ ['Enter a wrong Slack channel ID','Pass. Refused with the reason; nothing saved.'],
+ ['First start','Pass. Each connection is checked where it is entered, and a failure says why in that block; the way the product runs is settled by starting it before any work begins; the goal is set last, and Start begins the first sprint proposal.'],
+ ['Arrive from the prototype approval in Slack','Pass. What is approved, how closely the build follows it, and that the approval itself is in Slack.'],
+ ['Get a sprint\'s records','Pass. Each sprint has its download.'],
+ ['See what the running sprint costs, and which role spends it (to decide what to change)','<b class="fail">Missed in the first two builds:</b> cost was only on each issue, each run and ended sprints, so the tuning situation had no place to start from. Added: cost so far by role on the running sprint, with what it covers and a link to change the role. Pass after the fix.'],
+ ['Open a run\'s full log','<b class="fail">Missed:</b> the link went nowhere in the prototype. Now it opens the raw output in a new tab, as the API\'s log endpoint serves it.']
+];
+
+/* ------------------------------------------------------------------ router */
+function dl(scope){ toast(`Downloading ovenspring-${scope.replace(':','-')}.jsonl (secrets masked).`); }
+function dlPanel(scope, label){
+  return `<details class="steps dl"><summary>Download ${label}</summary>
+   <p class="small" style="margin-top:var(--space-2)">One JSONL file of every record, for an agent to read or for an audit. Secrets are masked.</p>
+   <div class="actions"><button class="btn" onclick="dlRun(this,'${scope}')">Download (.jsonl)</button><span class="small muted dl-state" role="status"></span></div></details>`;
+}
+function dlRun(btn, scope){ const st=btn.parentElement.querySelector('.dl-state'); btn.disabled=true; st.textContent='Preparing…'; setTimeout(()=>{ btn.disabled=false; st.textContent=''; dl(scope); },600); }
+function goalBand(){
+  return `<div class="gb-in"><span class="gb-l">Goal</span><p class="gb-t">${esc(GOAL.text)}</p><a class="gb-a" href="#/goal">Rewrite…</a></div>`;
+}
+function render(){
+  RUNS = [];
+  const h = location.hash || '#/now';
+  const [, page, arg] = h.split('/');
+  document.querySelectorAll('[data-nav]').forEach(a=>a.removeAttribute('aria-current'));
+  const navKey = page==='issue'||page==='prototype'?'now':page;
+  const cur = document.querySelector(`[data-nav="${navKey}"]`); if(cur) cur.setAttribute('aria-current','page');
+  /* Before setup is saved, the header shows only the wordmark and the version. */
+  document.querySelectorAll('[data-nav-only]').forEach(el=>{ el.hidden = SIT.startsWith('setup') && page!=='process'; });
+  const band = document.getElementById('goalband'); band.style.display = (SIT.startsWith('setup') || page==='process') ? 'none' : ''; band.innerHTML = goalBand();
+  let html;
+  switch(page){
+    case 'issue': html=viewIssue(arg); break;
+    case 'activity': html=viewActivity(); break;
+    case 'sprints': html=viewSprints(); break;
+    case 'goal': html=viewGoal(); break;
+    case 'settings': html=viewSettings(arg||'connections'); break;
+    case 'prototype': html=viewPrototype(arg); break;
+    case 'process': html=viewProcess(); break;
+    default: html=viewNow();
+  }
+  if (SIT.startsWith('setup') && page!=='process') html = viewSetup();
+  document.getElementById('su-fill').hidden = !(SIT==='setup' && page!=='process');
+  $('#app').innerHTML = html;
+  if (page==='goal' && !SIT.startsWith('setup')) bindGoal();
+  const ai = $('#act-issue'); if(ai) ai.addEventListener('change',e=>{ACT_ISSUE=e.target.value;render();});
+  const as = $('#act-sprint'); if(as) as.addEventListener('change',e=>{ACT_SPRINT=e.target.value;ACT_ISSUE='all';render();});
+}
+let lastPage=null;
+window.addEventListener('hashchange',()=>{ DISCARDED = (EDIT && EDIT_TYPED && location.hash.startsWith('#/settings/')) ? editName() : null; if(EDIT){ EDIT=null; DRAFT=null; EDIT_TYPED=false; } closeRun(); render(); $('#app').focus({preventScroll:true}); window.scrollTo(0,0); });
+$('#sit').addEventListener('change',e=>{ SIT=e.target.value; FIRST_RUN=false; EDIT=null; stopFind(); FIND=null; RUN=null; if(SIT==='setup') SU=freshSU(); if(SIT.startsWith('setup')) location.hash='#/now'; if(SIT==='setup-run') startFind(); render(); });
+$('#explain').addEventListener('change',e=>document.body.classList.toggle('explain',e.target.checked));
+const th=$('#theme'); try{ th.value=localStorage.getItem('os-theme')||'auto'; }catch(e){}
+function applyTheme(){ const v=th.value; if(v==='auto') document.documentElement.removeAttribute('data-theme'); else document.documentElement.setAttribute('data-theme',v); try{localStorage.setItem('os-theme',v)}catch(e){} }
+th.addEventListener('change',applyTheme); applyTheme();
+render();
+</script>
+</body>
+</html>

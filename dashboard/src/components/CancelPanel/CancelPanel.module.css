@@ -1,0 +1,23 @@
+/* Under the header's button that opens it, so it reads as opened from there; as wide as a
+   reason takes to write, with the text above wrapping to it. */
+.panel {
+  width: min(100%, 62ch);
+  margin: var(--space-4) 0 0 auto;
+  padding: var(--space-3) var(--space-4) var(--space-4);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-control);
+}
+
+@media (max-width: 759px) {
+  .panel {
+    margin-left: 0;
+  }
+}
+
+.why {
+  flex-basis: 100%;
+}
+
+.why > textarea {
+  width: 100%;
+}

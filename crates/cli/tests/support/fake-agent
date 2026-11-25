@@ -1,0 +1,201 @@
+#!/usr/bin/env python3
+"""Stands in for an agent CLI (installed as `claude`, `codex` and `opencode`) in integration tests.
+
+It records how it was launched, then does what a well-behaved agent does for its item: change
+files in the worktree (the factory commits; agents do not), write the step's output to the item's
+`out`, append a result, and finish through `ovenspring item set`.
+
+Without a script it handles an `implement` item with a fixed change. With `agent-script.json`
+next to its directory, it follows the script: for each step, a list of runs used in order per
+issue (a `step@issue` key overrides `step` for that issue), each
+`{"change": {"path", "content"}?, "files": [{"path", "content"}]?, "git": [[args]]?, "output": {...},
+"status"?}` (a change appends to a worktree file; `files` writes files anywhere), or
+`{"fail": "overloaded" | "fatal"}` to exit as the CLI does on those errors, or `{"crash": true}` to exit
+with an error and record nothing (as a CLI does when it cannot continue a session), recording the error
+in the session where the real CLI keeps it (under `home/` next to its directory), or `{"hang": true,
+"app": bool}` to start a child process (and the worktree app) and wait to be killed, or
+`{"leave": true, ...}` to leave a background process running when it finishes. With
+`"wait": true` a run waits for `release-<issue>-<step>` next to its directory before doing its work. In the output,
+"$STATE" becomes the state directory, "$SHA" the head after the run, and "$COMMENT_n" the key of
+the n-th comment in the latest comments source the item names.
+
+A preparation turn's item (`turn: prepare`) follows `prepare:<step>@<issue>` or `prepare:<step>` in
+the script, and without one answers that nothing is for the owner.
+
+Records go to FAKE_AGENT_RECORD, or `records/` next to its directory.
+"""
+import json
+import os
+import re
+import subprocess
+import sys
+import time
+
+here = os.path.dirname(os.path.abspath(sys.argv[0]))
+root = os.path.dirname(here)
+cli = os.path.basename(sys.argv[0])
+
+# The version check before an OpenCode launch, answered as OpenCode 1 answers it.
+if sys.argv[1:] == ["--version"]:
+    print("1.18.20")
+    sys.exit(0)
+
+prompt = sys.argv[-1] if cli == "opencode" else sys.stdin.read()
+
+record_dir = os.environ.get("FAKE_AGENT_RECORD") or os.path.join(root, "records")
+os.makedirs(record_dir, exist_ok=True)
+with open(os.path.join(record_dir, f"{time.time_ns()}-{cli}.json"), "w") as f:
+    json.dump({"cli": cli, "argv": sys.argv[1:], "cwd": os.getcwd(), "env": dict(os.environ), "prompt": prompt}, f)
+
+match = re.search(r"^- Your item: (.+)$", prompt, re.M)
+if not match:
+    print(json.dumps({"type": "result", "is_error": True, "result": "no item in the prompt"}))
+    sys.exit(1)
+item = match.group(1).strip()
+text = open(item).read()
+out = re.search(r"^out: (.+)$", text, re.M).group(1).strip()
+step = re.search(r"^step: (.+)$", text, re.M).group(1).strip()
+issue_match = re.search(r"^issue: (.+)$", text, re.M)
+issue = issue_match.group(1).strip() if issue_match else "none"
+prepare = re.search(r"^turn: prepare$", text, re.M) is not None
+nothing_for_the_owner = {"output": {"message": None, "question": False}}
+git = ["git", "-c", "user.name=agent", "-c", "user.email=agent@example.com"]
+
+
+state = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(item))))
+
+
+def change(path, content):
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+    with open(path, "a") as f:
+        f.write(content)
+
+
+script_path = os.path.join(root, "agent-script.json")
+status = "done"
+if prepare or os.path.exists(script_path):
+    script = json.load(open(script_path)) if os.path.exists(script_path) else {}
+    key = f"prepare:{step}" if prepare else step
+    counters = os.path.join(root, "counters")
+    os.makedirs(counters, exist_ok=True)
+    counter = os.path.join(counters, f"{issue}-{key}")
+    n = int(open(counter).read()) if os.path.exists(counter) else 0
+    with open(counter, "w") as f:
+        f.write(str(n + 1))
+    runs = script.get(f"{key}@{issue}", script.get(key, [nothing_for_the_owner] if prepare else []))
+    run = runs[min(n, len(runs) - 1)] if runs else {"status": "blocked", "output": None}
+    if run.get("crash"):
+        sys.exit(1)
+    if run.get("fail"):
+        # The error the CLI records in its session: an overloaded provider, or the account's limit.
+        kind, message = {
+            "overloaded": ("server_overloaded" if cli == "codex" else "overloaded_error",
+                           "We're currently experiencing high demand"),
+            "fatal": ("rate_limit", "Claude AI usage limit reached"),
+        }[run["fail"]]
+        home = os.path.join(root, "home")
+        if cli == "codex":
+            session = f"fake-{time.time_ns()}"
+            path = os.path.join(home, ".codex", "sessions", "2026", "11", "21",
+                                f"rollout-2026-11-21T10-00-00-{session}.jsonl")
+            record = {"type": "event_msg", "payload": {"error": {"codex_error_info": kind, "message": message}}}
+            print(json.dumps({"type": "thread.started", "thread_id": session}))
+        else:
+            flag = "--resume" if "--resume" in sys.argv else "--session-id"
+            session = sys.argv[sys.argv.index(flag) + 1]
+            project = re.sub(r"[^A-Za-z0-9]", "-", os.getcwd())
+            path = os.path.join(home, ".claude", "projects", project, f"{session}.jsonl")
+            record = {"isApiErrorMessage": True, "error": kind,
+                      "message": {"content": [{"type": "text", "text": message}]}}
+            print(json.dumps({"type": "system", "session_id": session}))
+            print(json.dumps({"type": "result", "is_error": True, "result": message}))
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "a") as f:
+            f.write(json.dumps(record) + "\n")
+        sys.exit(1)
+    if run.get("hang"):
+        if cli == "codex":
+            # What Codex has recorded when it is stopped mid-turn: its session and the tokens so
+            # far, whose input includes what was read from and written to the cache.
+            session = f"fake-{time.time_ns()}"
+            path = os.path.join(root, "home", ".codex", "sessions", "2026", "11", "21",
+                                f"rollout-2026-11-21T10-00-00-{session}.jsonl")
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            total = {"input_tokens": 1000000, "cached_input_tokens": 400000,
+                     "cache_write_input_tokens": 100000, "output_tokens": 100000}
+            with open(path, "a") as f:
+                f.write(json.dumps({"type": "turn_context", "payload": {"model": "gpt-6.2-sol"}}) + "\n")
+                f.write(json.dumps({"type": "event_msg", "payload": {"type": "token_count",
+                                    "info": {"total_token_usage": total}}}) + "\n")
+            print(json.dumps({"type": "thread.started", "thread_id": session}), flush=True)
+        child = subprocess.Popen(["sleep", "600"])
+        if run.get("app"):
+            subprocess.run(["ovenspring", "app", "run", "--", "true"], check=True)
+        with open(os.path.join(root, f"pids-{issue}-{step}.json"), "w") as f:
+            json.dump({"agent": os.getpid(), "child": child.pid}, f)
+        time.sleep(600)
+        sys.exit(0)
+    if run.get("leave"):
+        # A background process the agent starts and leaves running when it finishes.
+        child = subprocess.Popen(["sleep", "600"])
+        with open(os.path.join(root, f"pids-{issue}-{step}.json"), "w") as f:
+            json.dump({"child": child.pid}, f)
+    if run.get("wait"):
+        # Runs on only once the test writes `release-<issue>-<step>` next to its directory.
+        with open(os.path.join(root, f"pids-{issue}-{step}.json"), "w") as f:
+            json.dump({"agent": os.getpid()}, f)
+        while not os.path.exists(os.path.join(root, f"release-{issue}-{step}")):
+            time.sleep(0.05)
+    for args in run.get("git", []):
+        subprocess.run(git + args, check=True)
+    sha = subprocess.run(["git", "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()
+    if run.get("change"):
+        change(run["change"]["path"], run["change"]["content"])
+    for f in run.get("files", []):
+        change(f["path"].replace("$STATE", state), f["content"])
+    output = json.dumps(run.get("output")).replace("$SHA", sha).replace("$STATE", state)
+    refs = re.search(r"^refs: (.*)$", text, re.M)
+    sources = [r.strip() for r in (refs.group(1).split(",") if refs else []) if "/sources/comments/" in r]
+    if sources:
+        keys = re.findall(r"^## (\S+)$", open(sources[-1]).read(), re.M)
+        for i, key in enumerate(keys, 1):
+            output = output.replace(f"$COMMENT_{i}", key)
+    if run.get("output") is not None:
+        with open(out, "w") as f:
+            f.write(output)
+    status = run.get("status", "done")
+else:
+    change("CHANGES.md", "Export order history as CSV.\n")
+    with open(out, "w") as f:
+        json.dump({"status": "completed", "taskName": "export", "changeSummary": "Add the export entry",
+                   "requiresTestReview": False}, f)
+
+with open(item, "a") as f:
+    f.write(f"Finished {step} for {issue}.\n")
+args = ["ovenspring", "item", "set", item, f"status={status}"]
+done = subprocess.run(args, capture_output=True, text=True)
+sys.stderr.write(done.stderr)
+
+session = "fake-session"
+said = f"Finished {step} for {os.path.basename(item)}."
+if cli == "claude":
+    print(json.dumps({"type": "system", "session_id": session}))
+    print(json.dumps({"type": "result", "is_error": done.returncode != 0, "total_cost_usd": 0.01,
+                      "result": said, "usage": {"input_tokens": 10, "output_tokens": 5}}))
+elif cli == "codex":
+    # Codex names the model only in its session record, and counts cached input inside its input.
+    session = f"fake-{time.time_ns()}"
+    model = sys.argv[sys.argv.index("-m") + 1] if "-m" in sys.argv else "gpt-6.2-sol"
+    path = os.path.join(root, "home", ".codex", "sessions", "2026", "11", "21",
+                        f"rollout-2026-11-21T10-00-00-{session}.jsonl")
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "a") as f:
+        f.write(json.dumps({"type": "turn_context", "payload": {"model": model}}) + "\n")
+    print(json.dumps({"type": "thread.started", "thread_id": session}))
+    print(json.dumps({"type": "item.completed", "item": {"type": "agent_message", "text": said}}))
+    print(json.dumps({"type": "turn.completed", "usage": {"input_tokens": 1000000,
+                      "cached_input_tokens": 400000, "output_tokens": 100000}}))
+else:
+    print(json.dumps({"type": "text", "part": {"type": "text", "text": said}}))
+    print(json.dumps({"type": "step_finish", "sessionID": session}))
+sys.exit(done.returncode)
