@@ -46,10 +46,13 @@ fn running_pid(repo: &Path) -> Option<u32> {
     fs::read_to_string(pid_file(repo)).ok()?.trim().parse().ok()
 }
 
-/// Where a daemon records how to open its dashboard: `{pid, url}`. It outlives the daemon, so the
-/// next one serves on the same port and the owner's address keeps working.
+/// Where a daemon records how to open its dashboard: `{pid, url}`, in the isolated directory. It
+/// outlives the daemon, so the next one serves on the same port and the owner's address keeps
+/// working.
+const DASHBOARD_RECORD: &str = "dashboard.json";
+
 fn dashboard_file(repo: &Path) -> PathBuf {
-    isolated_dir_for(repo).join("dashboard.json")
+    isolated_dir_for(repo).join(DASHBOARD_RECORD)
 }
 
 /// The port the last dashboard of this repository served on, or 0 for none.
@@ -200,8 +203,8 @@ pub fn run(repo: &Path) -> Result<()> {
     )
     .context("starting the dashboard")?;
     let record = serde_json::json!({"pid": std::process::id(), "url": server.url()});
-    fs::create_dir_all(store.isolated())?;
-    fs::write(dashboard_file(repo), record.to_string())
+    store
+        .write_isolated(DASHBOARD_RECORD, &record)
         .context("recording the dashboard address")?;
     eprintln!("ovenspring: dashboard on http://{}", server.addr);
     let paths = Paths {

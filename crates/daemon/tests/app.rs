@@ -12,9 +12,9 @@
 )]
 
 use std::fs;
-use std::net::TcpStream;
+use std::net::{TcpListener, TcpStream};
 use std::path::Path;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use ovenspring_core::config::AppConfig;
 use ovenspring_daemon::app::{App, AppError};
@@ -48,6 +48,20 @@ impl Drop for Stopping<'_> {
 
 fn answers(port: u16) -> bool {
     TcpStream::connect(("127.0.0.1", port)).is_ok()
+}
+
+/// Another program listening on `port`.
+fn answer_on(port: u16) -> TcpListener {
+    let deadline = Instant::now() + WAIT;
+    loop {
+        match TcpListener::bind(("127.0.0.1", port)) {
+            Ok(listener) => return listener,
+            Err(e) => {
+                assert!(Instant::now() < deadline, "port {port} stayed taken: {e}");
+                std::thread::sleep(Duration::from_millis(50));
+            }
+        }
+    }
 }
 
 fn worktree(state: &Path, issue: &str) -> std::path::PathBuf {
@@ -105,6 +119,28 @@ fn starting_a_running_app_again_keeps_its_port_and_runs_setup_once() {
         fs::read_to_string(app.data_dir().join("setup.log")).unwrap(),
         "setup\n"
     );
+}
+
+#[test]
+fn an_app_whose_port_another_process_took_starts_on_another_port() {
+    let state = tempfile::tempdir().unwrap();
+    let config = server_config();
+    let tree = worktree(state.path(), "ACME-1");
+    let app = App {
+        state: state.path(),
+        issue: "ACME-1",
+        worktree: &tree,
+        config: &config,
+    };
+    let _stop = Stopping(&app);
+    let kept = app.start(WAIT).unwrap();
+    app.stop().unwrap();
+    let _other = answer_on(kept);
+
+    let port = app.start(WAIT).unwrap();
+
+    assert_ne!(port, kept);
+    assert!(answers(port));
 }
 
 #[test]

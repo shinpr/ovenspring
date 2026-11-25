@@ -60,7 +60,8 @@ impl App<'_> {
         self.dir().join("app.pid")
     }
 
-    /// The issue's port, chosen once from the ports free at that moment and kept.
+    /// The issue's port, chosen from the ports free at that moment and kept until a start finds
+    /// something other than this app answering on it.
     pub fn port(&self) -> std::io::Result<u16> {
         let file = self.dir().join("port");
         if let Some(port) = fs::read_to_string(&file)
@@ -73,6 +74,11 @@ impl App<'_> {
         let port = TcpListener::bind(("127.0.0.1", 0))?.local_addr()?.port();
         fs::write(&file, format!("{port}\n"))?;
         Ok(port)
+    }
+
+    fn new_port(&self) -> std::io::Result<u16> {
+        fs::remove_file(self.dir().join("port"))?;
+        self.port()
     }
 
     /// `PORT` and `OVENSPRING_DATA_DIR` for the app and for commands run against it.
@@ -104,16 +110,21 @@ impl App<'_> {
         alive(pid).then_some(pid)
     }
 
-    /// Starts the app unless it already answers, and waits until it does. Returns its port.
+    /// Starts the app unless it already runs and answers, and waits until it does. Returns its
+    /// port, which is another one when something other than this app answers on the kept port.
     pub fn start(&self, wait: Duration) -> Result<u16, AppError> {
         let start = self
             .config
             .start
             .as_deref()
             .ok_or(AppError::NotConfigured("start"))?;
-        let port = self.port()?;
-        if self.ready(port) {
+        let mut port = self.port()?;
+        let ours = self.running().is_some();
+        if ours && self.ready(port) {
             return Ok(port);
+        }
+        while !ours && TcpStream::connect(("127.0.0.1", port)).is_ok() {
+            port = self.new_port()?;
         }
         // A child this call started is polled with `try_wait`: until reaped, an exited child
         // still answers `kill -0`.

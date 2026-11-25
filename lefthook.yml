@@ -18,7 +18,9 @@ pre-commit:
 pre-push:
   jobs:
     - name: rust tests
-      run: cargo test --workspace
+      # A push from a linked worktree hands its hooks GIT_DIR, which would point the tests' own git
+      # commands at this repository.
+      run: env -u GIT_DIR -u GIT_WORK_TREE -u GIT_INDEX_FILE cargo test --workspace
     - name: rust dependencies
       glob: ["*Cargo.toml", "Cargo.lock", "deny.toml"]
       run: cargo deny check && cargo machete

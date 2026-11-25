@@ -217,7 +217,7 @@ impl Daemon {
         let Some(called) = state.stage.calls_for() else {
             return Ok(());
         };
-        for path in self.active_items()? {
+        for path in self.store.active_items()? {
             let front = self.store.read_item(&path)?.front;
             if front.sprint.as_deref() == Some(state.id.as_str()) && front.step == called.step() {
                 return Ok(());
@@ -251,7 +251,7 @@ impl Daemon {
         if state.resume.is_none() {
             return Ok(());
         }
-        for path in self.active_items()? {
+        for path in self.store.active_items()? {
             let item = self.store.read_item(&path)?;
             if item.front.sprint.as_deref() == Some(state.id.as_str())
                 && item.front.step == Step::Exception
@@ -276,14 +276,9 @@ impl Daemon {
 
     /// The outputs of this sprint's finished `step` items, oldest first.
     fn sprint_outputs(&self, sprint: &str, step: Step) -> Vec<String> {
-        let mut paths: Vec<_> = fs::read_dir(self.store.archive_dir())
-            .into_iter()
-            .flatten()
-            .flatten()
-            .map(|e| e.path())
-            .collect();
-        paths.sort();
-        paths
+        self.store
+            .archived_items()
+            .unwrap_or_default()
             .iter()
             .filter_map(|p| self.store.read_item(p).ok())
             .filter(|i| i.front.step == step && i.front.sprint.as_deref() == Some(sprint))

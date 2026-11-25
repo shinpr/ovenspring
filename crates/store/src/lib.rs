@@ -188,6 +188,16 @@ impl Store {
         self.root.join("board/archive")
     }
 
+    /// The items on the board, sorted by name.
+    pub fn active_items(&self) -> Result<Vec<PathBuf>, StoreError> {
+        item_files(&self.active_dir())
+    }
+
+    /// The finished items, sorted by name.
+    pub fn archived_items(&self) -> Result<Vec<PathBuf>, StoreError> {
+        item_files(&self.archive_dir())
+    }
+
     /// The file whose presence means the factory is paused; it holds the reason.
     pub fn halt_file(&self) -> PathBuf {
         self.root.join("HALT")
@@ -446,6 +456,18 @@ fn json_names(path: &Path) -> Result<Vec<String>, StoreError> {
         .collect();
     names.sort();
     Ok(names)
+}
+
+/// The `.md` files in `dir`, sorted: an item another process is rewriting has its `.tmp` beside it.
+fn item_files(dir: &Path) -> Result<Vec<PathBuf>, StoreError> {
+    let mut items: Vec<PathBuf> = fs::read_dir(dir)
+        .map_err(StoreError::io(dir))?
+        .filter_map(Result::ok)
+        .map(|e| e.path())
+        .filter(|p| p.extension().is_some_and(|x| x == "md"))
+        .collect();
+    items.sort();
+    Ok(items)
 }
 
 fn write_atomic(path: &Path, text: &str) -> Result<(), StoreError> {

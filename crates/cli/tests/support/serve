@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Serves a directory on 127.0.0.1 for the tests: `serve <port> <directory>`.
+"""Serves a directory on 127.0.0.1 for the tests: `serve <port> <directory>`. It prints the port
+once it listens, so a test that passes 0 learns the one the system chose.
 
 `python3 -m http.server` looks up its host's name before it listens, which stalls for half a minute
 on runners whose reverse DNS lookups time out, as GitHub's macOS runners do.
@@ -17,4 +18,6 @@ class Server(socketserver.ThreadingTCPServer):
 
 port, directory = int(sys.argv[1]), sys.argv[2]
 handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=directory)
-Server(("127.0.0.1", port), handler).serve_forever()
+server = Server(("127.0.0.1", port), handler)
+print(server.server_address[1], flush=True)
+server.serve_forever()

@@ -29,6 +29,7 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 import time
 
 here = os.path.dirname(os.path.abspath(sys.argv[0]))
@@ -44,8 +45,10 @@ prompt = sys.argv[-1] if cli == "opencode" else sys.stdin.read()
 
 record_dir = os.environ.get("FAKE_AGENT_RECORD") or os.path.join(root, "records")
 os.makedirs(record_dir, exist_ok=True)
-with open(os.path.join(record_dir, f"{time.time_ns()}-{cli}.json"), "w") as f:
+# Written beside the directory and moved in whole: tests read the records while agents still run.
+with tempfile.NamedTemporaryFile("w", dir=os.path.dirname(record_dir), delete=False) as f:
     json.dump({"cli": cli, "argv": sys.argv[1:], "cwd": os.getcwd(), "env": dict(os.environ), "prompt": prompt}, f)
+os.replace(f.name, os.path.join(record_dir, f"{time.time_ns()}-{cli}.json"))
 
 match = re.search(r"^- Your item: (.+)$", prompt, re.M)
 if not match:

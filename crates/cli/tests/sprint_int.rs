@@ -319,19 +319,33 @@ fn assert_dependencies_and_the_held_merge(env: &Env, d: &Daemon, gh: &FakeGitHub
         "ACME-124 starts after ACME-123 merges"
     );
     assert!(begun_125 < merged_123, "ACME-125 runs alongside ACME-123");
-    let approval = d
+    // ACME-125's head changes when ACME-123 merges while it waits, which asks for approval again.
+    let approved: Vec<String> = d
         .decisions()
         .unwrap()
         .into_iter()
-        .find(|x| x.kind == DecisionKind::Merge && x.issue.as_deref() == Some("ACME-125"))
-        .unwrap();
+        .filter(|x| {
+            x.kind == DecisionKind::Merge
+                && x.issue.as_deref() == Some("ACME-125")
+                && x.status == DecisionStatus::Answered
+        })
+        .filter_map(|x| x.sha)
+        .collect();
     let pr = d.issue("ACME-125").unwrap().unwrap().flow.pr.unwrap();
     let merges: Vec<String> = gh
         .calls()
         .into_iter()
         .filter(|c| c.starts_with(&format!("merge {pr} ")))
         .collect();
-    assert_eq!(merges, [format!("merge {pr} {}", approval.sha.unwrap())]);
+    let [merge] = merges.as_slice() else {
+        panic!("ACME-125 merges once: {merges:?}");
+    };
+    assert!(
+        approved
+            .iter()
+            .any(|sha| *merge == format!("merge {pr} {sha}")),
+        "{merge} is a commit the owner approved: {approved:?}"
+    );
 }
 
 // AC: docs/design/factory-core-design.md § Acceptance Criteria > Sprint: "When no sprint is running,

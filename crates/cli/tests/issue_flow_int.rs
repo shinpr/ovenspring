@@ -91,13 +91,11 @@ fn script() -> Value {
 }
 
 fn active_items_of(d: &ovenspring_daemon::Daemon, issue: &str) -> usize {
-    std::fs::read_dir(d.store().active_dir())
+    d.store()
+        .active_items()
         .unwrap()
-        .filter(|e| {
-            std::fs::read_to_string(e.as_ref().unwrap().path())
-                .unwrap_or_default()
-                .contains(&format!("issue: {issue}\n"))
-        })
+        .iter()
+        .filter(|p| d.store().read_item(p).unwrap().front.issue.as_deref() == Some(issue))
         .count()
 }
 
@@ -503,9 +501,12 @@ fn assert_the_answer_reaches_the_leads_next_item(env: &Env, d: &ovenspring_daemo
         .filter(|e| e["event"] == "decision-answered")
         .collect();
     assert_eq!(answered.len(), 1);
-    let item = std::fs::read_dir(d.store().active_dir())
+    let item = d
+        .store()
+        .active_items()
         .unwrap()
-        .map(|e| std::fs::read_to_string(e.unwrap().path()).unwrap())
+        .into_iter()
+        .map(|p| std::fs::read_to_string(p).unwrap())
         .find(|t| t.contains("issue: ACME-123\n"))
         .unwrap();
     let refs = item.lines().find(|l| l.starts_with("refs: ")).unwrap();
@@ -1219,9 +1220,11 @@ fn a_test_review_receives_the_tests_a_task_changed_whatever_their_naming() {
         |d| stage(d, "ACME-150") == Stage::running(Step::TestReview),
     );
 
-    let item = std::fs::read_dir(d.store().active_dir())
+    let item = d
+        .store()
+        .active_items()
         .unwrap()
-        .map(|e| e.unwrap().path())
+        .into_iter()
         .find(|p| p.to_string_lossy().contains("-test-review-ACME-150"))
         .unwrap();
     let text = std::fs::read_to_string(item).unwrap();
@@ -1280,9 +1283,11 @@ fn a_test_review_after_a_correction_receives_the_files_the_correction_changed() 
         |d| stage(d, "ACME-151") == Stage::running(Step::TestReview),
     );
 
-    let item = std::fs::read_dir(d.store().active_dir())
+    let item = d
+        .store()
+        .active_items()
         .unwrap()
-        .map(|e| e.unwrap().path())
+        .into_iter()
         .find(|p| p.to_string_lossy().contains("-test-review-ACME-151"))
         .unwrap();
     let text = std::fs::read_to_string(item).unwrap();
@@ -1501,16 +1506,19 @@ fn the_design_is_given_the_issues_ui_spec() {
         button: Button::Approve,
         user: OWNER.into(),
     });
-    let design = |env: &Env| {
-        ["board/active", "board/archive"]
-            .iter()
-            .flat_map(|dir| std::fs::read_dir(env.state().join(dir)).unwrap())
-            .map(|e| std::fs::read_to_string(e.unwrap().path()).unwrap())
+    let design = |d: &ovenspring_daemon::Daemon| {
+        let store = d.store();
+        store
+            .active_items()
+            .unwrap()
+            .into_iter()
+            .chain(store.archived_items().unwrap())
+            .map(|p| std::fs::read_to_string(p).unwrap())
             .find(|t| t.contains("step: design\n"))
     };
-    run_until(&mut d, 60, |_| {}, |_| design(&env).is_some());
+    run_until(&mut d, 60, |_| {}, |d| design(d).is_some());
 
-    let item = design(&env).unwrap();
+    let item = design(&d).unwrap();
     assert!(
         item.lines().any(|l| l == format!("ui_spec: {spec}")),
         "{item}"
