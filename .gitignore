@@ -1,6 +1,9 @@
 # The work plan and its reports stay local
 /docs/plans/
 
+# Local notes, such as release notes being drafted
+/tmp/
+
 # OS
 .DS_Store
 /target/
