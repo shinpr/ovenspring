@@ -25,8 +25,10 @@ The orchestrator records one disposition for every actionable finding:
 
 | Disposition | Use when |
 |---|---|
-| `apply` | Leaving the current deliverable unchanged would prevent the outcome, violate a binding requirement, design decision, or repository rule, leave required correctness or verification unsupported, or commit downstream work to added design surface whose total complexity lacks current evidence. Otherwise, apply only when the material effect exceeds the response cost. |
+| `apply` | Leaving the current deliverable unchanged would prevent the outcome, violate a binding requirement, accepted decision, or repository rule, leave correctness or verification the value boundaries require unsupported, or commit downstream work to added design surface whose total complexity lacks current evidence. Otherwise, apply only when the material effect exceeds the response cost. |
 | `decline` | No material effect is established; the finding is outside the value boundaries or the reviewer's declared artifact boundary, or reverses an exclusion; or the response cost equals or exceeds the material effect. |
+
+A guarantee, quality level, or mechanism the deliverable chose for itself is a means, not a value boundary: a finding about a gap in it is corrected by narrowing or removing it wherever the value boundaries hold without it.
 
 A confirmed exploitable gap in a relied-upon trust boundary, implementation divergence, or governing-source contradiction receives `apply` when correction preserves the value boundaries; cost alone leaves that classification unchanged. Technical design, contract, or implementation changes are correction work rather than user decisions when those boundaries remain true.
 
@@ -34,6 +36,6 @@ For each finding record:
 
 - stable finding ID;
 - disposition;
-- governing basis and concrete evidence;
+- governing basis and concrete evidence of the defect, leaving the correction to its owner;
 - the reason when `decline`.
 

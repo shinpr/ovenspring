@@ -327,7 +327,7 @@ Verification Strategy defines what correctness means and how to prove it at desi
 
 ### Correctness Proof Method
 
-- **Correctness definition**: [What "correct" means for this change — e.g., "output matches existing behavior", "generated queries execute without error on target DB"]
+- **Correctness definition**: [What "correct" means for this change, as strong as the requirements make it and no stronger — e.g., "output matches existing behavior", "generated queries execute without error on target DB"]
 - **Verification method**: [Specific technique — e.g., "compare new implementation output against existing implementation", "contract test with real API"]
 - **Verification timing**: [When verification occurs — e.g., "after first vertical slice", "per repository", "at integration phase"]
 

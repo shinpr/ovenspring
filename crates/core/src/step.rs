@@ -335,7 +335,7 @@ impl Document {
             Document::Prd => Check::PrdReview,
             Document::UiSpec => Check::UiSpecReview,
             Document::Adr => Check::AdrReview,
-            Document::Design => Check::DesignVerify,
+            Document::Design => Check::DesignReview,
             Document::WorkPlan => Check::PlanReview,
         }
     }

@@ -395,9 +395,9 @@ Each step receives what its source agent's input contract declares, as `field: v
 | `ui-spec-review` | reviewer | document-reviewer (`doc_type: UISpec`) | document-reviewer's result | `verdict.decision`, `issues` | `resolution`, or `adr` / `design` |
 | `adr` | lead | technical-designer's ADR batch part, for the decision points the owner answered; the ADRs are `Accepted` | technical-designer's ADR batch result | `status` | `adr-review` |
 | `adr-review` | reviewer | document-reviewer (`doc_type: ADRBatch`); no owner approval: the owner already made the decision | document-reviewer's result | `verdict.decision`, `issues` | `resolution`, or `design` |
-| `design` | lead | technical-designer's Design Doc part, given the issue's UI Spec as `ui_spec` when it has one | technical-designer's result; factory: `approvals[]`, the held categories the change adds (AC-028) and the kinds of change a person reviews it falls under (`[person_reviews]`, listed in the design and code-review prompts; AC-069) | `status`, `approvals` | `design-verify` |
-| `design-verify` | reviewer | code-verifier | code-verifier's result | `summary.status`, `discrepancies` | `resolution` when discrepancies, else `design-review` |
-| `design-review` | reviewer | document-reviewer (`doc_type: DesignDoc`, with `verification_evidence`) | document-reviewer's result | `verdict.decision`, `issues` | `resolution`, or `design-sync` |
+| `design` | lead | technical-designer's Design Doc part, given the issue's UI Spec as `ui_spec` when it has one | technical-designer's result; factory: `approvals[]`, the held categories the change adds (AC-028) and the kinds of change a person reviews it falls under (`[person_reviews]`, listed in the design and code-review prompts; AC-069) | `status`, `approvals` | `design-review` |
+| `design-review` | reviewer | document-reviewer (`doc_type: DesignDoc`): whether the design needs what it adds is judged before its claims are verified, while it is smallest | document-reviewer's result | `verdict.decision`, `issues` | `resolution`, or `design-verify` |
+| `design-verify` | reviewer | code-verifier | code-verifier's result | `summary.status`, `discrepancies` | `resolution` when discrepancies, else `design-sync` |
 | `design-sync` | reviewer | design-sync: the new or corrected Design Doc against every other Design Doc in the repository, so no earlier design is left contradicting it (it returns `SKIPPED` when there is none) | its `[SUMMARY]` fields and its conflicts as `findings` | `sync_status`, `findings` | `resolution` when conflicts; else design approval (M-03) when `approvals` holds a category approved with the design (any but the owner's named kinds), else `test-design` |
 | `test-design` | executor | acceptance-test-generator | acceptance-test-generator's result | `status`, `generatedFiles` | `work-plan` |
 | `work-plan` | lead | work-planner | technical-designer's result shape with `documentType: WorkPlan` | `status` | `plan-review` |
@@ -434,7 +434,7 @@ State Definition:
   - Initial State: queued
   - Possible States: queued, requirements, asking, prd, prd-review, analysis, scope-check,
     prototyping, awaiting-approval, ui-analysis, ui-spec, ui-spec-review, adr, adr-review,
-    designing, verifying, design-review, design-sync, test-design, planning, plan-review,
+    designing, design-review, verifying, design-sync, test-design, planning, plan-review,
     decomposing, implementing, test-review, quality, reviewing {pending reviews, findings},
     resolution, responding, rerun-check, pushing, ci, fixing-ci, waiting-bots,
     committing, waiting-review, gate, held-for-owner, ready-for-owner, blocked-on-github, held,
@@ -448,7 +448,7 @@ State Transitions:
   prd → prd-review → PRD approval → analysis | small → implementing
   analysis → scope-check → small → implementing | large without an approved PRD → prd | ui spec → prototyping → prototype approval → ui-analysis → ui-spec → ui-spec-review
   scope-check | ui-spec-review → (owner-answered decision points) adr → adr-review → designing
-  designing → verifying → design-review → design-sync → (approvals) awaiting-approval → test-design → planning → plan-review → decomposing → implementing(task 1..n)
+  designing → design-review → verifying → design-sync → (approvals) awaiting-approval → test-design → planning → plan-review → decomposing → implementing(task 1..n)
   implementing → (test review) → next task | quality → commit → reviewing {code-review per unit, security-review}
   reviewing → each review ends → pending empty → findings → resolution | none → pushing → ci
   any document review → findings → resolution → responding (author) → the review again

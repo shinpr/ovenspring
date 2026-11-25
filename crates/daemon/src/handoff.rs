@@ -526,11 +526,7 @@ impl Ctx<'_> {
             Step::UiSpecReview => self.review("UISpec", Step::UiSpec),
             Step::AdrReview => self.review("ADRBatch", Step::Adr),
             Step::PlanReview => self.review("WorkPlan", Step::WorkPlan),
-            Step::DesignReview => {
-                let mut v = self.review("DesignDoc", Step::Design);
-                v.push(("verification_evidence", output(r, Step::DesignVerify)));
-                v
-            }
+            Step::DesignReview => self.review("DesignDoc", Step::Design),
             Step::CodebaseAnalysis | Step::UiAnalysis => vec![
                 (
                     "prd_path",

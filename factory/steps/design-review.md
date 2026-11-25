@@ -19,12 +19,11 @@ Before acting, map the preloaded skills to concrete rules for this task. Follow 
 - **requirement_context**: Exact approved PRD path, or the orchestrator's unchanged convergence record only when no approved PRD exists
 - **codebase_analysis**: Compact codebase analysis JSON used by the author, when supplied
 - **ui_analysis**: UI analysis JSON used by the author, when supplied
-- **verification_evidence**: Latest code verification evidence when verification ran
 - **prior_feedback**: Applied corrections and orchestrator-declined findings with reasons and evidence on a rerun
 
 Verify each target exists. Follow a cited source only when it can change an in-scope finding or approval decision.
 
-For a creation review, use `requirements_verbatim`, `requirement_context`, and `review_context: creation`. Treat a supported declined verification discrepancy in `verification_evidence` as evidence, not duplicate correction work; reopen it only when current governing evidence invalidates its recorded basis. An update review may receive unresolved verification discrepancies as evidence for its first review.
+For a creation review, use `requirements_verbatim`, `requirement_context`, and `review_context: creation`.
 
 ## Review Order and Boundary
 

@@ -46,6 +46,8 @@ Inspect only gaps that can change reuse, option validity, a selected decision, a
 
 ## Design Doc — Create Mode
 
+Give the users the outcome in full, and include nothing whose removal leaves that outcome, the boundaries, and the required proof intact. Pay for what keeps the code maintainable. A mechanism, state, guarantee, or quality level beyond what the requirements set is an addition: it stays only when the outcome cannot be reached without it. This holds for every update as well.
+
 Create the complete end-to-end technical design for the scope of the requirements. Apply ovenspring-implementation-approach Design Convergence in active analysis, then record only the Selected Design and the evidence that justifies any added design surface. Create mode limits evidence collection to supplied artifacts, read-only repository inspection, and authoritative read-only sources. When a specific decision-changing premise remains unresolved, record it for verification; capability probes are reserved for the fresh review-triggered update gate below.
 
 Follow `references/design-template.md` in the ovenspring-documentation-criteria skill. Preserve these downstream guarantees whenever applicable:
@@ -65,7 +67,7 @@ Use diagrams only when they make a material relationship easier to judge than pr
 
 Acceptance criteria use the smallest representative set that proves the outcome and material failure boundaries. Verification uses the narrowest repository operation or test lane that can observe each required boundary.
 
-Derive each acceptance criterion from one behavior in the requirements. Add another boundary case when the same promise can fail independently there, such as a distinct state transition, persistence/publication boundary, compatibility path, or mode interacting with an existing branch. Consolidate cases that exercise the same failure and correction; generic happy/unhappy/edge categories create requirements only when they expose an independent failure.
+Derive each acceptance criterion from one behavior in the requirements; generic happy/unhappy/edge categories create requirements only when they expose an independent failure.
 
 Verify a current external technology, compatibility, performance, or security fact from an authoritative source only when its truth can change option selection, implementation, or verification. Record unresolved decision-changing facts for the verification loop.
 
@@ -87,7 +89,7 @@ When existing evidence resolves the premise, update from that evidence without a
 
 ## Update Mode
 
-Update requested sections and dependent statements. For `correction_findings`, resolve the received defects at the cause they share, within the requirements, using existing responsibilities. Treat a finding's proposed correction as one candidate. Accepted design decisions record the current means, so removing or narrowing one is valid when the outcome, desired-future requirements, and non-goals stay true. If the outcome cannot otherwise be achieved, return the failing condition and evidence before changing that design. Preserve unaffected decisions, historical safeguards, and update history. Re-check only identifiers or contracts whose meaning the update changes.
+Update requested sections and dependent statements. For `correction_findings`, resolve the received defects at the cause they share, within the requirements, using existing responsibilities. Treat a finding's proposed correction as one candidate. Accepted design decisions record the current means: apply Factory Rules, Change course before patching, to the mechanisms and guarantees a finding touches, removing or narrowing them first and adding only when the outcome, desired-future requirements, and non-goals cannot hold without the addition. If the outcome cannot otherwise be achieved, return the failing condition and evidence before changing that design. Preserve unaffected decisions, historical safeguards, and update history. Re-check only identifiers or contracts whose meaning the update changes.
 
 ## Output
 

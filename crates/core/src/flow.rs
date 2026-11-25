@@ -1148,9 +1148,11 @@ fn check_cleared(s: &mut IssueState, cleared: Check) -> Vec<Action> {
         Check::UiSpecReview => commit_then(s, CommitPoint::UiSpecReview),
         Check::AdrReview => commit_then(s, CommitPoint::AdrReview),
         Check::DesignSync => commit_then(s, CommitPoint::DesignSync),
-        Check::DesignVerify => check(s, Check::DesignReview),
+        // Whether the design needs what it adds is judged before its claims are checked, while it is
+        // smallest; checking first would have a correction make sound what it should have removed.
+        Check::DesignReview => check(s, Check::DesignVerify),
         // The Design Doc is compared with every other Design Doc, so none is left contradicting it.
-        Check::DesignReview => check(s, Check::DesignSync),
+        Check::DesignVerify => check(s, Check::DesignSync),
         Check::PlanReview => run(s, Step::Decompose),
         Check::TestReview => match s.after.take() {
             Some(After::Correction(origin)) => {
@@ -1971,9 +1973,9 @@ mod tests {
                 (requirements("medium"), vec!["codebase-analysis"]),
                 (done("codebase-analysis", json!({})), vec!["scope-check"]),
                 (scope_check("medium", false, false), vec!["design"]),
-                (document("design"), vec!["design-verify"]),
-                (verified(false), vec!["design-review"]),
-                (doc_pass("design-review"), vec!["design-sync"]),
+                (document("design"), vec!["design-review"]),
+                (doc_pass("design-review"), vec!["design-verify"]),
+                (verified(false), vec!["design-sync"]),
                 (
                     synced("SKIPPED"),
                     vec!["commit after design-sync", "test-design"],
@@ -2141,10 +2143,10 @@ mod tests {
                         json!({"status": "completed", "documentType": "DesignDoc",
                         "path": "docs/design/x.md", "approvals": ["schema"]}),
                     ),
-                    vec!["design-verify"],
+                    vec!["design-review"],
                 ),
-                (verified(false), vec!["design-review"]),
-                (doc_pass("design-review"), vec!["design-sync"]),
+                (doc_pass("design-review"), vec!["design-verify"]),
+                (verified(false), vec!["design-sync"]),
                 (
                     synced("NO_CONFLICTS"),
                     vec!["commit after design-sync", "RequestApproval"],
@@ -2191,10 +2193,10 @@ mod tests {
                         json!({"status": "completed", "documentType": "DesignDoc",
                         "path": "docs/design/x.md", "approvals": ["payments"]}),
                     ),
-                    vec!["design-verify"],
+                    vec!["design-review"],
                 ),
-                (verified(false), vec!["design-review"]),
-                (doc_pass("design-review"), vec!["design-sync"]),
+                (doc_pass("design-review"), vec!["design-verify"]),
+                (verified(false), vec!["design-sync"]),
                 (
                     synced("NO_CONFLICTS"),
                     vec!["commit after design-sync", "test-design"],
@@ -2335,8 +2337,9 @@ mod tests {
                 (document("design"), vec!["design-review"]),
                 (
                     doc_reconciled("design-review", "resolved"),
-                    vec!["design-sync"],
+                    vec!["design-verify"],
                 ),
+                (verified(false), vec!["design-sync"]),
                 (
                     synced("NO_CONFLICTS"),
                     vec!["commit after design-sync", "code-review/1", "rerun-check"],
@@ -2380,8 +2383,7 @@ mod tests {
         drive(
             at(running("design")),
             vec![
-                (document("design"), vec!["design-verify"]),
-                (verified(false), vec!["design-review"]),
+                (document("design"), vec!["design-review"]),
                 (doc_issues("design-review"), vec!["resolution"]),
                 (resolution(&json!([apply("I001", None)])), vec!["design"]),
                 (document("design"), vec!["design-review"]),
@@ -2404,17 +2406,17 @@ mod tests {
         drive(
             at(running("design")),
             vec![
-                (document("design"), vec!["design-verify"]),
-                (verified(true), vec!["resolution"]),
-                (
-                    resolution(&json!([decline("D001", "code-review/1")])),
-                    vec!["design-review"],
-                ),
+                (document("design"), vec!["design-review"]),
                 (doc_issues("design-review"), vec!["resolution"]),
                 (resolution(&json!([apply("I001", None)])), vec!["design"]),
                 (document("design"), vec!["design-review"]),
                 (
                     doc_reconciled("design-review", "resolved"),
+                    vec!["design-verify"],
+                ),
+                (verified(true), vec!["resolution"]),
+                (
+                    resolution(&json!([decline("D001", "code-review/1")])),
                     vec!["design-sync"],
                 ),
                 (synced("CONFLICTS_FOUND"), vec!["resolution"]),
