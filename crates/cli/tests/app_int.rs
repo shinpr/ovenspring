@@ -21,11 +21,13 @@ use ovenspring_core::item::Status;
 use ovenspring_store::Store;
 use support::Env;
 
-const APP: &str = r#"
-[app]
-start = "exec python3 -m http.server \"$PORT\" --bind 127.0.0.1 --directory \"$OVENSPRING_DATA_DIR\""
-ready = "http://127.0.0.1:$PORT/"
-"#;
+fn app() -> String {
+    let start = support::serve("\"$OVENSPRING_DATA_DIR\"");
+    format!(
+        "\n[app]\nstart = {}\nready = \"http://127.0.0.1:$PORT/\"\n",
+        serde_json::to_string(&start).unwrap()
+    )
+}
 
 /// Fetches `/` from the app on `$PORT` and prints the status.
 const PROBE: &str = "import os, urllib.request; print(urllib.request.urlopen('http://127.0.0.1:' + os.environ['PORT'] + '/').status)";
@@ -65,7 +67,7 @@ fn an_agent_runs_its_check_against_its_own_issues_app() {
     let text = std::fs::read_to_string(&config)
         .unwrap()
         .replace("[app]\nnothing_to_run = true\n", "");
-    std::fs::write(&config, format!("{text}\n{APP}")).unwrap();
+    std::fs::write(&config, format!("{text}\n{}", app())).unwrap();
     let state = env.state();
     let store = Store::open(&state).unwrap();
     let worktree =
@@ -100,7 +102,7 @@ fn an_agent_runs_its_check_against_its_own_issues_app() {
 #[test]
 fn only_a_launch_of_the_issue_runs_its_app() {
     let env = Env::new();
-    env.configure(APP);
+    env.configure(&app());
     let state = env.state();
     let store = Store::open(&state).unwrap();
     let worktree =
@@ -139,7 +141,7 @@ fn only_a_launch_of_the_issue_runs_its_app() {
 #[test]
 fn the_daemons_stop_ends_the_apps_it_started() {
     let env = Env::new();
-    env.configure(APP);
+    env.configure(&app());
     let store = Store::open(env.state()).unwrap();
     let worktree =
         ovenspring_daemon::worktree::ensure(&env.repo, &store, "ACME-1", "main").unwrap();

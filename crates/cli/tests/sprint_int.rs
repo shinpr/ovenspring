@@ -1416,7 +1416,7 @@ fn how_the_product_runs_is_found_and_started_once_before_any_sprint() {
     let script = json!({"run-commands": [{"output": {
         "runs": "commands",
         "setup": "mkdir -p \"$OVENSPRING_DATA_DIR/www\" && touch \"$OVENSPRING_DATA_DIR/www/ready\"",
-        "start": "exec python3 -m http.server \"$PORT\" --bind 127.0.0.1 --directory \"$OVENSPRING_DATA_DIR/www\"",
+        "start": support::serve("\"$OVENSPRING_DATA_DIR/www\""),
         "ready": "http://127.0.0.1:$PORT/ready",
         "reason": "README.md says the shop runs with its dev server."
     }}]});
@@ -1477,7 +1477,7 @@ fn a_start_check_the_daemon_stopped_during_runs_again_on_the_next_start() {
     let found: ovenspring_core::output::RunCommandsOutput = serde_json::from_value(json!({
         "runs": "commands",
         "setup": "mkdir -p \"$OVENSPRING_DATA_DIR/www\"",
-        "start": "exec python3 -m http.server \"$PORT\" --bind 127.0.0.1 --directory \"$OVENSPRING_DATA_DIR/www\"",
+        "start": support::serve("\"$OVENSPRING_DATA_DIR/www\""),
         "ready": null,
         "reason": "README.md says the shop runs with its dev server."
     }))

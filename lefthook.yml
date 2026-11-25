@@ -1,5 +1,28 @@
-# Git hooks for this repository: `lefthook install` sets them up once per clone.
+# Git hooks for this repository: `lefthook install` sets them up once per clone. They run CI's
+# checks before a change leaves the machine: the quick ones on each commit, the tests before a push.
 pre-commit:
   jobs:
     - name: gitleaks
       run: gitleaks git --pre-commit --staged --redact --no-banner --verbose
+    - name: rust format
+      glob: ["*.rs", "rustfmt.toml", "rust-toolchain.toml"]
+      run: cargo fmt --check
+    - name: clippy
+      glob: ["*.rs", "*Cargo.toml", "Cargo.lock", "clippy.toml", "rust-toolchain.toml"]
+      run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+    - name: dashboard lint and format
+      root: dashboard/
+      glob: "*.{ts,tsx,js,mjs,json,jsonc,css}"
+      run: pnpm exec biome check --error-on-warnings --no-errors-on-unmatched {staged_files}
+
+pre-push:
+  jobs:
+    - name: rust tests
+      run: cargo test --workspace
+    - name: rust dependencies
+      glob: ["*Cargo.toml", "Cargo.lock", "deny.toml"]
+      run: cargo deny check && cargo machete
+    - name: dashboard checks
+      root: dashboard/
+      glob: "*"
+      run: pnpm run check:all
