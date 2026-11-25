@@ -4,6 +4,9 @@
 # Local notes, such as release notes being drafted
 /tmp/
 
+# Oven Spring's own configuration for developing this repository stays on each machine
+/.ovenspring/
+
 # OS
 .DS_Store
 /target/

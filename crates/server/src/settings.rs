@@ -162,6 +162,8 @@ pub struct GeneralSection {
     held: BTreeMap<Approval, Vec<String>>,
     /// The owner's name for each kind of change a person reviews → the words that describe it.
     person_reviews: BTreeMap<String, String>,
+    /// The folder the working agreements are kept in, relative to the repository's root.
+    agreements_path: String,
     /// The folder the factory keeps its knowledge in, relative to the repository's root.
     knowledge_path: String,
     /// Empty to keep the token already held, or to use the signed-in `gh`.
@@ -222,6 +224,39 @@ fn lines(values: Vec<String>) -> Vec<String> {
 }
 
 /// Saves `section` from `body`, checking a changed connection before anything is written.
+/// Returns the GitHub token the section carries, if one was entered.
+fn apply_general(config: &mut Config, general: GeneralSection) -> Option<String> {
+    general
+        .base_branch
+        .trim()
+        .clone_into(&mut config.repo.base_branch);
+    config.merge.by = general.merge_by;
+    config.held = general
+        .held
+        .into_iter()
+        .map(|(category, paths)| {
+            let paths = paths
+                .into_iter()
+                .map(|p| p.trim().to_owned())
+                .filter(|p| !p.is_empty())
+                .collect();
+            (category, ovenspring_core::config::HeldCategory { paths })
+        })
+        .collect();
+    config.person_reviews = general
+        .person_reviews
+        .into_iter()
+        .map(|(name, words)| (name.trim().to_owned(), words.trim().to_owned()))
+        .collect();
+    for (entered, path) in [
+        (&general.agreements_path, &mut config.agreements.path),
+        (&general.knowledge_path, &mut config.knowledge.path),
+    ] {
+        entered.trim().trim_end_matches('/').clone_into(path);
+    }
+    entered(general.github_token)
+}
+
 pub(crate) fn save(
     context: &Context,
     section: SettingsSection,
@@ -235,34 +270,7 @@ pub(crate) fn save(
     match section {
         SettingsSection::General => {
             let general: GeneralSection = parse(body)?;
-            general
-                .base_branch
-                .trim()
-                .clone_into(&mut config.repo.base_branch);
-            config.merge.by = general.merge_by;
-            config.held = general
-                .held
-                .into_iter()
-                .map(|(category, paths)| {
-                    let paths = paths
-                        .into_iter()
-                        .map(|p| p.trim().to_owned())
-                        .filter(|p| !p.is_empty())
-                        .collect();
-                    (category, ovenspring_core::config::HeldCategory { paths })
-                })
-                .collect();
-            config.person_reviews = general
-                .person_reviews
-                .into_iter()
-                .map(|(name, words)| (name.trim().to_owned(), words.trim().to_owned()))
-                .collect();
-            general
-                .knowledge_path
-                .trim()
-                .trim_end_matches('/')
-                .clone_into(&mut config.knowledge.path);
-            if let Some(token) = entered(general.github_token) {
+            if let Some(token) = apply_general(&mut config, general) {
                 held.github.token = Some(token);
             }
         }

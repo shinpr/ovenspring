@@ -15,6 +15,8 @@ use std::process::Command;
 use ovenspring_agents::prompt::read_agreements;
 use ovenspring_core::config::Role;
 
+const FOLDER: &str = "docs/factory/agreements";
+
 fn git(dir: &Path, args: &[&str]) {
     let out = Command::new("git")
         .args(args)
@@ -29,7 +31,7 @@ fn git(dir: &Path, args: &[&str]) {
 }
 
 #[test]
-fn agreements_come_from_the_base_branch_not_the_working_tree() {
+fn agreements_come_from_their_folder_on_the_base_branch_not_the_working_tree() {
     let dir = tempfile::tempdir().unwrap();
     let origin = dir.path().join("origin.git");
     let work = dir.path().join("work");
@@ -48,9 +50,9 @@ fn agreements_come_from_the_base_branch_not_the_working_tree() {
         dir.path(),
         &["init", "-q", "-b", "main", work.to_str().unwrap()],
     );
-    std::fs::create_dir_all(work.join(".ovenspring/agreements")).unwrap();
+    std::fs::create_dir_all(work.join("docs/factory/agreements")).unwrap();
     std::fs::write(
-        work.join(".ovenspring/agreements/common.md"),
+        work.join("docs/factory/agreements/common.md"),
         "- Name the precedent a design follows.\n",
     )
     .unwrap();
@@ -75,24 +77,24 @@ fn agreements_come_from_the_base_branch_not_the_working_tree() {
     git(&work, &["push", "-q", "-u", "origin", "main"]);
 
     std::fs::write(
-        work.join(".ovenspring/agreements/common.md"),
+        work.join("docs/factory/agreements/common.md"),
         "- An uncommitted edit.\n",
     )
     .unwrap();
     std::fs::write(
-        work.join(".ovenspring/agreements/executor.md"),
+        work.join("docs/factory/agreements/executor.md"),
         "- An unmerged role file.\n",
     )
     .unwrap();
 
-    let agreements = read_agreements(&work, "main", Role::Executor).unwrap();
+    let agreements = read_agreements(&work, "main", FOLDER, Role::Executor).unwrap();
     assert_eq!(
         agreements.common.as_deref(),
         Some("- Name the precedent a design follows.\n")
     );
     assert_eq!(agreements.role, None);
     assert!(
-        read_agreements(&work, "release", Role::Executor).is_err(),
+        read_agreements(&work, "release", FOLDER, Role::Executor).is_err(),
         "a base branch that cannot be read is an error, not an empty agreement"
     );
 }

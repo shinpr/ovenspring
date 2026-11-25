@@ -15,6 +15,12 @@ export type AgentsConfig = { permissions: Permissions,
  */
 mcp?: Array<string>, };
 
+export type AgreementsConfig = { 
+/**
+ * Relative to the repository's root.
+ */
+path: string, };
+
 /**
  * Every refused or failed call answers this: why, by the field or section it concerns, or by
  * `request` when it concerns the request as a whole.
@@ -71,7 +77,7 @@ held: { [key in Approval]?: HeldCategory },
  * Kinds of change a person reviews before they merge, by the owner's name for each, described
  * in the owner's words; the design and the code review judge which a change falls under.
  */
-person_reviews: { [key in string]: string }, agents: AgentsConfig, roles: Roles, tracker: TrackerConfig, slack: SlackConfig, app: AppConfig, guard: GuardConfig, review: ReviewConfig, limits: Limits, knowledge: KnowledgeConfig, };
+person_reviews: { [key in string]: string }, agents: AgentsConfig, roles: Roles, tracker: TrackerConfig, slack: SlackConfig, app: AppConfig, guard: GuardConfig, review: ReviewConfig, limits: Limits, agreements: AgreementsConfig, knowledge: KnowledgeConfig, };
 
 export type Credential = "slack-bot-token" | "slack-app-token" | "linear-api-key" | "github-token";
 
@@ -121,6 +127,10 @@ held: { [key in Approval]?: Array<string> },
  * The owner's name for each kind of change a person reviews → the words that describe it.
  */
 personReviews: { [key in string]: string }, 
+/**
+ * The folder the working agreements are kept in, relative to the repository's root.
+ */
+agreementsPath: string, 
 /**
  * The folder the factory keeps its knowledge in, relative to the repository's root.
  */

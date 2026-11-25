@@ -1523,21 +1523,22 @@ fn app_guard_and_review_settings_are_saved_to_the_configuration() {
     assert_eq!(config.review.bots, ["ai-reviewer[bot]"]);
 }
 
-// AC: PRD AC-069 (the owner names kinds of change a person reviews) and AC-070 (the knowledge
-//     folder follows the repository's layout), both set in Settings.
-// Behavior: `PUT /api/v1/settings/general` with a kind of change and a folder -> the configuration
-//     holds both, the folder without its trailing slash; a folder outside the repository and a
-//     kind with no words are refused with the field to correct.
+// AC: PRD AC-069 (the owner names kinds of change a person reviews) and AC-070 (the working
+//     agreements and knowledge folders follow the repository's layout), both set in Settings.
+// Behavior: `PUT /api/v1/settings/general` with a kind of change and the folders -> the
+//     configuration holds them, each folder without its trailing slash; a folder outside the
+//     repository and a kind with no words are refused with the field to correct.
 // @lane: integration
 // @dependency: dashboard API, settings, configuration validation
 #[test]
-fn what_a_person_reviews_and_the_knowledge_folder_are_saved_from_settings() {
+fn what_a_person_reviews_and_the_agreements_and_knowledge_folders_are_saved_from_settings() {
     let env = Env::new();
     env.configure("");
     let dash = Dashboard::start(&env, Checks { refuse: None });
     let general = |reviews: Value, folder: &str| {
         json!({"baseBranch": "main", "mergeBy": "factory", "held": {}, "githubToken": null,
-               "personReviews": reviews, "knowledgePath": folder})
+               "personReviews": reviews, "agreementsPath": "docs/factory/agreements/",
+               "knowledgePath": folder})
     };
 
     let saved = dash.put(
@@ -1555,6 +1556,7 @@ fn what_a_person_reviews_and_the_knowledge_folder_are_saved_from_settings() {
 
     assert_eq!(saved.status, 200, "{}", saved.body);
     let config = Config::load(&env.repo).unwrap();
+    assert_eq!(config.agreements.path, "docs/factory/agreements");
     assert_eq!(config.knowledge.path, "docs/knowledge");
     assert_eq!(
         config.person_reviews.get("payments").map(String::as_str),

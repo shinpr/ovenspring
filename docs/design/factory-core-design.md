@@ -114,7 +114,7 @@ PRD R4 to R8, R10, R11, AC-002 (the factory's skills), AC-014 and AC-057.
 - [x] **While** required approving reviews are missing, the system shall hold the issue in `waiting-review` and keep other issues running (AC-024)
 - [x] **When** the merge setting is `factory`, the system shall merge only the head commit whose required checks passed, when the branch contains the base head, every required approval is present and every owner approval for that commit is recorded (AC-026, AC-028)
 - [x] The gate shall judge the pull request's current head, whoever pushed it; **if** the base moved after checks, **then** the system shall return the issue to push, which brings the base in (AC-026)
-- [x] **When** a pull request changes `.ovenspring/` or the repository's agent instructions file (`AGENTS.md`, `CLAUDE.md`), the system shall hold it for the owner whatever its design declared; the agreements pull request passes the same gate as an issue's, its `factory-configuration` hold met by the owner's closing of the sprint review rather than a request per commit; under `owner` the factory waits for the merge without posting M-06 (AC-014, AC-042)
+- [x] **When** a pull request changes `.ovenspring/`, the agreements or knowledge folder, or the repository's agent instructions file (`AGENTS.md`, `CLAUDE.md`), the system shall hold it for the owner whatever its design declared; the agreements pull request passes the same gate as an issue's, its `factory-configuration` hold met by the owner's closing of the sprint review rather than a request per commit; under `owner` the factory waits for the merge without posting M-06 (AC-014, AC-042)
 - [x] **When** the merge setting is `owner` and the gate's conditions other than owner approvals hold, the system shall notify the owner that the pull request is ready and mark the issue merged once GitHub reports it merged (AC-027)
 
 ### Launching and guard
@@ -174,7 +174,7 @@ PRD R4 to R8, R10, R11, AC-002 (the factory's skills), AC-014 and AC-057.
 |------|-------------|
 | Skills reach agents as files written into each worktree, loaded by each CLI | Keep |
 | Every reported check must finish and succeed, and every required one; with none reported, the gate waits the silent-bot interval (3 minutes) after the push | Keep |
-| Changes to `.ovenspring/` at the repository root and to `AGENTS.md`/`CLAUDE.md` at any depth are held as `factory-configuration` | Keep (AC-014) |
+| Changes to `.ovenspring/` at the repository root, the agreements and knowledge folders, and `AGENTS.md`/`CLAUDE.md` at any depth are held as `factory-configuration` | Keep (AC-014) |
 | The agreements pull request goes through the gate and the same observation and failure handling as an issue's | Keep |
 | Decisions, approvals, recoveries and cancel requests sit in an isolated directory no launch is given | Keep |
 | The guard's rules catch honest mistakes; they do not follow `eval`, nested `sh -c` or wrappers | Keep |
@@ -191,7 +191,7 @@ Direct Impact:
   - factory/ prompt set
   - issue worktrees: the factory's skills, ignored by git
 Indirect Impact:
-  - target repository: .ovenspring/config.toml, .ovenspring/agreements/, the `[knowledge] path` folder, issue branches, pull requests
+  - target repository: .ovenspring/config.toml, the `[agreements] path` and `[knowledge] path` folders, issue branches, pull requests
 No Ripple Effect:
   - people's own agent sessions in the target repository (hooks and skills apply only to factory launches)
 ```
@@ -320,7 +320,7 @@ Every issue moves through five phases the owner reads: `requirements`, `design`,
 
 - **Responsibility**: build the exact text each launch receives.
 - **Interface**: `fn assemble(ctx: &PromptContext) -> Result<String, PromptError>`.
-- **Dependencies**: the embedded `factory/` files; agreements read with `git show origin/<base>:.ovenspring/agreements/<file>`.
+- **Dependencies**: the embedded `factory/` files; agreements read with `git show origin/<base>:<agreements folder>/<file>`.
 
 #### Worktrees and apps (`crates/daemon::worktree`)
 
@@ -485,8 +485,8 @@ Each launch's prompt is, in order:
 1. `factory/rules.md`: how to judge work (boundaries and evidence), who decides what (the owner's decisions and their sources), the roles' authority, the board contract (`item set`, outputs, `## Result`), the harm order of the repository's agent instructions file.
 2. `factory/roles/<role>.md`, only for the steps without a source agent's definition (`requirements`, `scope-check`, `prototype`, `resolution`, `rerun-check`, `exception`, `run-commands`, `sprint-plan`, `sprint-review` and `conversation`: the lead's steps without a source agent). The only role file is `factory/roles/lead.md`. `facts` and `agreements-check` define their own work whole and take no role prompt. A step with one is its source agent's definition, which is the role it plays; a role prompt beside it would be a second, differing instruction for the same work. The role still selects the CLI, model, repository skills and working agreements of every step.
 3. `factory/steps/<step>.md`: its source agent's definition, with its `Required skills` and `Preparation`; then one line naming the role's selected repository skills. Steps that play one source agent with the same text share its file (`review-response` reads `implement.md`; `fix-ci` and `merge-base` read `quality.md`), and what differs between them is in the item's request.
-4. Working agreements: `common.md` and `<role>.md` from `origin/<base>:.ovenspring/agreements/`.
-5. Context: the role; `turn: prepare` on a preparation turn; product goal; sprint purpose (not while proposing); the item's path; the worktree; the issue key; the knowledge folder (`[knowledge] path` in the worktree); the current time.
+4. Working agreements: `common.md` and `<role>.md` from `origin/<base>:<[agreements] path>/`.
+5. Context: the role; `turn: prepare` on a preparation turn; product goal; sprint purpose (not while proposing); the item's path; the worktree; the issue key; the working agreements folder (`[agreements] path` in the worktree) for facts, sprint-review and agreements-check, the steps that judge every agreement; the knowledge folder (`[knowledge] path` in the worktree); the current time.
 6. For `design` and `code-review`, the kinds of change a person reviews (`[person_reviews]`), with their words.
 7. The role's additional instructions under `# Additional instructions`, when set.
 
@@ -548,7 +548,7 @@ Runs after required checks finish on the pushed commit, and again on every relev
 
 1. Read the branch rules for the base (rulesets from `rules/branches/{base}` and classic branch protection, merged) for required checks and required approving reviews. The gate decides in this order: the branch contains the base and has no conflict (else push); checks (else CI); reviews (else wait for approvals); GitHub not `BLOCKED` (else `blocked-on-github`); `merge.by = owner` (ready for the owner); the held categories approved for the sha (else hold for the owner); merge. A merge state GitHub has not computed yet skips the poll.
 2. Read the pull request's current head, whoever pushed it, and fetch it. Require: every check reported on that head finished and succeeded, every required check among them (a commit with no check passes once a silent review bot's wait has passed since the push); the branch contains the base head; GitHub's review decision on the pull request reports no required approval missing (it accounts for classic protection, rulesets and code owners, which a token with write access cannot read), no reviewer's latest deciding review requests changes, and GitHub's merge state for the pull request is not `BLOCKED` (a required check not reported yet or a rule the token cannot read; the issue waits in `blocked-on-github`, and the gate looks again each poll); an owner approval recorded for that sha for every held category, when `merge.by = factory`.
-3. Held categories are the union of what the design declared and what path rules in `held.<category>.paths` match in the diff from base (files changed, added or deleted). A change to `.ovenspring/` at the repository root, or to `AGENTS.md` or `CLAUDE.md` at any depth, is always held as `factory-configuration` (AC-014); listing that category under `[held]` is an error. The agreements pull request goes through these same steps.
+3. Held categories are the union of what the design declared and what path rules in `held.<category>.paths` match in the diff from base (files changed, added or deleted). A change to `.ovenspring/` at the repository root, in the `[agreements] path` or `[knowledge] path` folder, or to `AGENTS.md` or `CLAUDE.md` at any depth, is always held as `factory-configuration` (AC-014); listing that category under `[held]` is an error. The agreements pull request goes through these same steps.
 4. `merge.by = factory`: the factory merges one pull request at a time. Immediately before calling merge it reads the base head again and the pull request's head again; if the base moved, the issue returns to push, which brings the base in; if the head moved, the gate decides again on the new head at the next poll. It then merges with the `sha` parameter. A repository whose branch rules require branches to be up to date gets the same protection from GitHub as well; the factory does not require that rule. `merge.by = owner`: post M-06 and poll until merged.
 
 An owner approval is tied to the sha shown in its request; a later push requests it again. For the agreements pull request, the owner's closing of the sprint review is the approval of its `factory-configuration` hold, with no request per commit; under `owner` the factory waits for the merge without posting M-06.

@@ -31,6 +31,8 @@ pub struct PromptContext<'a> {
     /// The kinds of change a person reviews before they merge, by the owner's name and words;
     /// the steps that judge which a change falls under receive them.
     pub person_reviews: &'a std::collections::BTreeMap<String, String>,
+    /// The working agreements folder, relative to the worktree.
+    pub agreements_folder: &'a str,
     /// The knowledge folder, relative to the worktree.
     pub knowledge: &'a str,
 }
@@ -50,10 +52,15 @@ pub enum PromptError {
     Git(String),
 }
 
-/// Reads `.ovenspring/agreements/<file>` from `origin/<base>`, never from the working tree: agents
-/// work by the agreements the owner approved and merged. `None` when the base has no such file.
-pub fn read_agreement(repo: &Path, base: &str, file: &str) -> Result<Option<String>, PromptError> {
-    let path = format!(".ovenspring/agreements/{file}");
+/// Reads `<folder>/<file>` from `origin/<base>`, never from the working tree: agents work by the
+/// agreements the owner approved and merged. `None` when the base has no such file.
+fn read_agreement(
+    repo: &Path,
+    base: &str,
+    folder: &str,
+    file: &str,
+) -> Result<Option<String>, PromptError> {
+    let path = format!("{folder}/{file}");
     let listed = git(
         repo,
         &[
@@ -86,10 +93,15 @@ fn git(repo: &Path, args: &[&str]) -> Result<String, PromptError> {
     Ok(String::from_utf8_lossy(&out.stdout).into_owned())
 }
 
-pub fn read_agreements(repo: &Path, base: &str, role: Role) -> Result<Agreements, PromptError> {
+pub fn read_agreements(
+    repo: &Path,
+    base: &str,
+    folder: &str,
+    role: Role,
+) -> Result<Agreements, PromptError> {
     Ok(Agreements {
-        common: read_agreement(repo, base, AgreementName::Common.as_str())?,
-        role: read_agreement(repo, base, AgreementName::of(role).as_str())?,
+        common: read_agreement(repo, base, folder, AgreementName::Common.as_str())?,
+        role: read_agreement(repo, base, folder, AgreementName::of(role).as_str())?,
     })
 }
 
@@ -174,23 +186,7 @@ pub fn assemble(ctx: &PromptContext<'_>) -> Result<String, PromptError> {
         }
     }
 
-    out.push_str("# Context\n\n");
-    let _ = writeln!(out, "- Product goal: {}", one_line(ctx.product_goal));
-    if let Some(p) = ctx.sprint_purpose {
-        let _ = writeln!(out, "- Sprint purpose: {}", one_line(p));
-    }
-    let _ = writeln!(out, "- Your role: {}", ctx.role.as_str());
-    let _ = writeln!(out, "- Your item: {}", ctx.item.display());
-    if ctx.prepare {
-        out.push_str("- Your turn: prepare (Factory Rules, Talking with the owner)\n");
-    }
-    let _ = writeln!(out, "- Worktree: {}", ctx.worktree.display());
-    let _ = writeln!(out, "- Knowledge: `{}` in the worktree", ctx.knowledge);
-    if let Some(issue) = ctx.issue {
-        let _ = writeln!(out, "- Issue: {issue}");
-    }
-    let _ = writeln!(out, "- Current time: {}", ctx.now);
-    out.push('\n');
+    push_context(&mut out, ctx);
 
     if matches!(ctx.step, Step::Design | Step::CodeReview) && !ctx.person_reviews.is_empty() {
         out.push_str(
@@ -212,6 +208,38 @@ The owner names these kinds of change; a person reviews a change of one of them 
         out.push('\n');
     }
     Ok(out)
+}
+
+fn push_context(out: &mut String, ctx: &PromptContext<'_>) {
+    out.push_str("# Context\n\n");
+    let _ = writeln!(out, "- Product goal: {}", one_line(ctx.product_goal));
+    if let Some(p) = ctx.sprint_purpose {
+        let _ = writeln!(out, "- Sprint purpose: {}", one_line(p));
+    }
+    let _ = writeln!(out, "- Your role: {}", ctx.role.as_str());
+    let _ = writeln!(out, "- Your item: {}", ctx.item.display());
+    if ctx.prepare {
+        out.push_str("- Your turn: prepare (Factory Rules, Talking with the owner)\n");
+    }
+    let _ = writeln!(out, "- Worktree: {}", ctx.worktree.display());
+    // Every launch receives its agreements above; only the steps that judge them all read the
+    // folder.
+    if matches!(
+        ctx.step,
+        Step::Facts | Step::SprintReview | Step::AgreementsCheck
+    ) {
+        let _ = writeln!(
+            out,
+            "- Working agreements: `{}` in the worktree",
+            ctx.agreements_folder
+        );
+    }
+    let _ = writeln!(out, "- Knowledge: `{}` in the worktree", ctx.knowledge);
+    if let Some(issue) = ctx.issue {
+        let _ = writeln!(out, "- Issue: {issue}");
+    }
+    let _ = writeln!(out, "- Current time: {}", ctx.now);
+    out.push('\n');
 }
 
 /// The next turn of a resumed session: the work turn's item, which the session reads again.
@@ -250,6 +278,7 @@ mod tests {
             repo_skills,
             append,
             person_reviews: &NO_PERSON_REVIEWS,
+            agreements_folder: ".ovenspring/agreements",
             knowledge: ".ovenspring/knowledge",
         }
     }
@@ -312,5 +341,21 @@ mod tests {
         ctx.step = Step::Resolution;
         let text = assemble(&ctx).unwrap();
         assert!(text.find("# Lead").unwrap() < text.find("# Step: resolution").unwrap());
+    }
+
+    #[test]
+    fn only_the_steps_that_judge_the_agreements_are_told_their_folder() {
+        let line = "- Working agreements: `.ovenspring/agreements` in the worktree";
+        for (step, told) in [
+            (Step::Facts, true),
+            (Step::SprintReview, true),
+            (Step::AgreementsCheck, true),
+            (Step::Implement, false),
+        ] {
+            let mut ctx = context(Path::new("/w"), Agreements::default(), &[], "");
+            ctx.step = step;
+            ctx.role = step.role();
+            assert_eq!(assemble(&ctx).unwrap().contains(line), told, "{step}");
+        }
     }
 }

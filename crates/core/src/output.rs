@@ -696,7 +696,7 @@ impl AgreementName {
         }
     }
 
-    /// The file's name under `.ovenspring/agreements/`.
+    /// The file's name in the working agreements folder (`[agreements] path`).
     pub fn as_str(self) -> &'static str {
         match self {
             AgreementName::Common => "common.md",
@@ -708,8 +708,8 @@ impl AgreementName {
     }
 }
 
-/// A working-agreements file as it should read after the review, `.ovenspring/agreements/<file>`;
-/// a file left with nothing (empty `content`) is deleted.
+/// A working-agreements file as it should read after the review, `<agreements folder>/<file>`; a
+/// file left with nothing (empty `content`) is deleted.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct AgreementFile {

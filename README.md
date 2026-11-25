@@ -101,7 +101,7 @@ Agent usage is billed by your CLIs' providers, as it is when you use them yourse
 ## What it adds to your repository
 
 - `.ovenspring/config.toml`, written by setup and edited from the dashboard's Settings
-- the working agreements in `.ovenspring/agreements/` and the factory's knowledge (`.ovenspring/knowledge/` unless you choose another folder), which reach the base branch through the pull request each sprint review opens
+- the working agreements and the factory's knowledge, in `.ovenspring/agreements/` and `.ovenspring/knowledge/` unless you choose other folders, which reach the base branch through the pull request each sprint review opens
 - the design documents of the issues that needed them, merged with their code
 
 Credentials, decisions, logs and the factory's state stay outside the repository.

@@ -50,26 +50,39 @@ export const Merging: Story = {
       mergeBy: 'factory',
       held: { schema: ['db/migrations/**'], ci: ['.github/**'] },
       personReviews: { payments: 'How customers are charged or refunded' },
+      agreementsPath: '.ovenspring/agreements',
       knowledgePath: '.ovenspring/knowledge',
       githubToken: null,
     })
   },
 }
 
-/** Agents: the knowledge folder follows the repository's own layout. */
-export const KnowledgeFolder: Story = {
+/** Agents: the working agreements and knowledge folders follow the repository's own layout. */
+export const Folders: Story = {
   play: async ({ canvasElement, args }) => {
     const canvas = within(canvasElement)
-    await expect(canvas.getByText('.ovenspring/knowledge')).toBeVisible()
-    await userEvent.click(canvas.getByRole('button', { name: 'Change Knowledge folder' }))
-    const folder = canvas.getByRole('textbox', { name: 'Folder in the repository' })
-    await userEvent.clear(folder)
-    await userEvent.type(folder, 'docs/knowledge')
-    await userEvent.click(canvas.getByRole('button', { name: 'Save' }))
-    await expect(args.save).toHaveBeenCalledWith(
-      'general',
-      expect.objectContaining({ knowledgePath: 'docs/knowledge' })
-    )
+    for (const [name, saved, entered, change] of [
+      [
+        'Working agreements folder',
+        '.ovenspring/agreements',
+        'docs/factory/agreements',
+        { agreementsPath: 'docs/factory/agreements' },
+      ],
+      [
+        'Knowledge folder',
+        '.ovenspring/knowledge',
+        'docs/knowledge',
+        { knowledgePath: 'docs/knowledge' },
+      ],
+    ] as const) {
+      await expect(canvas.getByText(saved)).toBeVisible()
+      await userEvent.click(canvas.getByRole('button', { name: `Change ${name}` }))
+      const folder = canvas.getByRole('textbox', { name: 'Folder in the repository' })
+      await userEvent.clear(folder)
+      await userEvent.type(folder, entered)
+      await userEvent.click(canvas.getByRole('button', { name: 'Save' }))
+      await expect(args.save).toHaveBeenCalledWith('general', expect.objectContaining(change))
+    }
   },
 }
 
@@ -93,6 +106,7 @@ export const PersonReviews: Story = {
         payments: 'How customers are charged or refunded',
         auth: 'sign-in, sessions and who may see what',
       },
+      agreementsPath: '.ovenspring/agreements',
       knowledgePath: '.ovenspring/knowledge',
       githubToken: null,
     })
