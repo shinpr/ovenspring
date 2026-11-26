@@ -39,7 +39,3 @@ Use the repository's existing seed and authentication mechanisms. Create per-tes
 
 - Assert user-observable state, navigation, accessibility, or persisted behavior named by the skeleton. Treat assertions tied only to styling classes or internal view structure as insufficient proof.
 - When the UI specification defines responsive behavior, run the affected interaction at the specified viewport or device size; otherwise use the repository's default browser or device matrix.
-
-## Skeleton Annotations
-
-Preserve the skeleton's annotations unchanged, except `Selection evidence`, which served test selection only and is removed when the test becomes executable. When `Verification items:` are present, implement and assert every listed item.

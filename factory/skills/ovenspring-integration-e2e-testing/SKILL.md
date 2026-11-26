@@ -1,6 +1,6 @@
 ---
 name: ovenspring-integration-e2e-testing
-description: Defines integration/E2E skeleton annotations, lane and file contracts, and route-parity review criteria. Use when generating or consuming test skeletons or reviewing shared mutation routes.
+description: Defines integration/E2E proof boundaries and file conventions, and route-parity review criteria. Use when generating or consuming test skeletons or reviewing shared mutation routes.
 ---
 
 # Integration and E2E Skeleton Contracts
@@ -13,36 +13,9 @@ description: Defines integration/E2E skeleton annotations, lane and file contrac
 | `fixture-e2e` | Actual UI behavior in the real UI runtime (browser, simulator, emulator, or device) with deterministic fixtures | Fixtures may replace dependencies outside the claimed boundary |
 | `service-integration-e2e` | Outcome depends on actual cross-service interaction or persistence | Required local services and stores are real; stubs only outside that proof boundary |
 
-## Test Skeleton Specification
-
-### Required Comment Patterns
-
-Each test MUST include the following annotations:
-
-```
-AC: [Original acceptance criteria text]
-Behavior: [Trigger] → [Process] → [Observable Result]
-@lane: integration | fixture-e2e | service-integration-e2e
-@dependency: none | [component names] | full-system
-Selection evidence: [required claim, uncovered failure, and why cheaper existing proof is insufficient]
-```
-
-Use the project's comment syntax to wrap these annotations (e.g., `//` for C-family, `#` for Python/Ruby/Shell).
-
-`Selection evidence` serves test selection and planning, so the implementing task removes it when it makes the test executable.
-
-### Verification Items (Optional)
-
-When verification points need explicit enumeration:
-```
-Verification items:
-- [Item 1]
-- [Item 2]
-```
-
 ## Test File Naming Convention
 
-Name test files by the repository's existing convention and the project runner's discovery rule; the `@lane:` annotation is the source of truth for lane routing. When the repository has no lane-separating convention and its runner discovers `*.test.*` files, use:
+Name test files by the repository's existing convention and the project runner's discovery rule. When the repository has no lane-separating convention and its runner discovers `*.test.*` files, use:
 
 - Integration tests: `*.int.test.*` or `*.integration.test.*`
 - fixture-e2e tests: `*.fixture.e2e.test.*` (or organize under `tests/e2e/fixture/`)

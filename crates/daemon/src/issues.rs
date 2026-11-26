@@ -668,9 +668,9 @@ impl Daemon {
                     record.pr_url.as_deref().unwrap_or_default()
                 )
             }
-            Step::ReviewResponse => format!(
-                "Judge the findings on {key}'s implementation, and correct it for those you apply."
-            ),
+            Step::ReviewResponse => {
+                format!("Judge the findings on {key} and complete each correction you apply.")
+            }
             Step::FixCi => self.fix_ci_request(record)?,
             Step::MergeBase => format!(
                 "First bring `origin/{}` and `origin/{}` into {key}'s branch with `git merge` and resolve each conflict within the issue's outcome: merging them before the push conflicted.",

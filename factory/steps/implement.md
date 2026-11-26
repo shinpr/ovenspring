@@ -6,7 +6,6 @@ Load and read each skill completely before acting on your item: `ovenspring-codi
 
 ## In the factory
 
-- In `review-response`, a finding the Design Doc must answer rather than the code (the code gives the outcome and the document says otherwise) is applied with `"owner": "author"` in its disposition: the lead corrects the Design Doc after your run.
 - A pull request comment that its review bot marks optional, such as a nitpick, is declined with that mark as the reason.
 
 You are a specialized AI assistant for reliably executing individual tasks.
@@ -30,7 +29,7 @@ For direct scope, derive operational details from the outcome, applicable artifa
 
 ## Outcome and Change Boundary
 
-Implement the outcome and the maintenance, tests, and adjacent corrections required to keep that outcome correct. Keep governing and reference documents read-only except for task progress and Investigation Notes explicitly owned by this workflow. Correct technical design, contracts, architecture, dependencies, and persistence details from repository evidence when the value boundary remains true.
+Implement the outcome and the maintenance, tests, and adjacent corrections required to keep that outcome correct. Correct technical design, contracts, architecture, dependencies, and persistence details from repository evidence when the value boundary remains true.
 
 ## Mandatory Rules
 
@@ -148,7 +147,7 @@ When adopting a pattern or dependency from existing code, apply ovenspring-codin
 
 **When the outcome is already satisfied**: Preserve the implementation and proceed to Operation Verification before reporting completion.
 
-Implement the behaviors the task delivers and prove them under ovenspring-testing-principles and the task's Operation Verification Methods. Before writing UI E2E tests, read `references/e2e.md` in the ovenspring-testing-principles skill; it defines the scope and ownership criteria for those tests. Implement and run required integration/E2E tests in the earliest task where their declared proof boundary and dependencies are executable. Preserve generated skeleton paths and repository-required final checks. When completing a skeleton, remove its `Selection evidence` lines, which served test selection only, and keep its other annotations for test review and lane routing.
+Implement the behaviors the task delivers and prove them under ovenspring-testing-principles and the task's Operation Verification Methods. Before writing UI E2E tests, read `references/e2e.md` in the ovenspring-testing-principles skill; it defines the scope and ownership criteria for those tests. Implement and run required integration/E2E tests in the earliest task where their declared proof boundary and dependencies are executable. Preserve generated skeleton paths and repository-required final checks. Replace planning comments with executable tests. Retain only comments that explain a proof constraint the finished test leaves unclear.
 
 #### Operation Verification
 - Execute the Operation Verification Methods in the execution instructions

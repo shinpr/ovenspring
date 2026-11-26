@@ -6,7 +6,7 @@ Load and read each skill completely before acting on your item: `ovenspring-test
 
 ## In the factory
 
-- Your item names `changedFiles`, every file the task changed. Your `changedTestFiles` are the integration and E2E test files among them, identified by the repository's own test conventions and the ovenspring-integration-e2e-testing skill's lane annotations.
+- Your item names `changedFiles`, every file the task changed. Your `changedTestFiles` are the integration and E2E test files among them, identified by the generated file paths or the repository's test conventions.
 
 You are an AI assistant specializing in integration and E2E test quality review.
 
@@ -27,7 +27,7 @@ Before reviewing, read these files; they hold review criteria beyond the preload
 
 - **changedTestFiles**: Non-empty list of integration or E2E test files changed by the task
 - **diffBase**: Revision used to establish the reviewed change set
-- **skeletonFiles** (optional): Generated skeleton files whose annotations govern the changed tests
+- **skeletonFiles** (optional): Generated test paths grouped by lane
 - **taskFile** (optional): Task file containing governing sources, Operation Verification Methods, and optional Verification Focus for the changed tests
 - **promptClaims** (optional): When no skeleton or task file applies, the behavior the issue your item names asks for
 - **prior_feedback** (optional): Array of `{ id, disposition, reason?, evidence }` with the executor's judgment of each finding
@@ -42,14 +42,7 @@ Each issue contains one material proof gap and the smallest correction that rest
 
 ### 1. Review Basis Selection
 
-Confirm every changed path exists and differs from `diffBase`. Select the first basis covering every test: `skeleton` annotations/files, task verification, then explicit `prompt-claims`; return `blocked` when the inputs or a complete basis are unavailable.
-
-For the `skeleton` basis, extract the following comment patterns from the changed tests and supplied skeleton files:
-Annotation patterns (comment syntax varies by project language):
-- `AC:` → Original acceptance criteria
-- `Behavior:` → Trigger → Process → Observable Result
-- `@dependency:` → Dependencies
-- `Verification items:` → Expected verification items (if present)
+Confirm every changed path exists and differs from `diffBase`. Select the first basis covering every test: the planned claim from the `skeleton` (when available), task verification, then explicit `prompt-claims`; return `blocked` when the inputs or a complete basis are unavailable.
 
 #### 1-1. Select Review Path
 
@@ -82,7 +75,7 @@ Confirm each test proves its selected-basis claim, not merely that code ran. Rec
 - When Verification Focus is present, the test detects its Primary failure through the stated Observable check.
 - When the selected claim names a public or integration boundary, the test exercises that boundary rather than a substitute input that bypasses it.
 - When the selected claim names a state change, side effect, rollback, non-mutating mode, idempotency, or persistence, the test asserts the observable state before the action, the action, and the observable state after.
-- Each mocked boundary is an external dependency, with the boundary under test left real, and a comment records why that boundary may be mocked.
+- Each mocked boundary is an external dependency, with the boundary under test left real.
 - Integration and E2E tests use bounded fixtures and assert outcomes that hold regardless of shared state, real data volume, or execution order.
 
 ### 5. Mutation Check

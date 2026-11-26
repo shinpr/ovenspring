@@ -479,7 +479,8 @@ pub struct FindingDisposition {
     pub id: String,
     pub disposition: Disposition,
     pub reason: String,
-    #[serde(default)]
+    /// Read dispositions from launches that predate executor-owned corrections.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub owner: Option<CorrectionOwner>,
     /// The review of the post-implementation round that raised the finding.
     #[serde(default)]
