@@ -1,7 +1,7 @@
 //! The product running from an issue's worktree: its own port and data directory, started on
 //! demand with the repository's `[app]` commands, so issues in parallel never share a server.
 
-use std::fs::{self, File};
+use std::fs::{self, File, TryLockError};
 use std::net::{TcpListener, TcpStream};
 use std::os::unix::process::CommandExt as _;
 use std::path::{Path, PathBuf};
@@ -60,6 +60,10 @@ impl App<'_> {
         self.dir().join("app.pid")
     }
 
+    fn lock_path(&self) -> PathBuf {
+        self.dir().join("app.lock")
+    }
+
     /// The issue's port, chosen from the ports free at that moment and kept until a start finds
     /// something other than this app answering on it.
     pub fn port(&self) -> std::io::Result<u16> {
@@ -100,14 +104,29 @@ impl App<'_> {
         Ok(cmd)
     }
 
-    /// The pid of the app this worktree started, while it runs.
-    pub fn running(&self) -> Option<u32> {
-        let pid: u32 = fs::read_to_string(self.pid_path())
-            .ok()?
-            .trim()
-            .parse()
-            .ok()?;
-        alive(pid).then_some(pid)
+    /// Whether the app still runs: it holds the lock on `app.lock`, its standard input, until its
+    /// last process ends. Not read from the pid, because an agent's sandbox refuses `ps` and signals.
+    fn running(&self) -> std::io::Result<bool> {
+        let lock = match File::open(self.lock_path()) {
+            Ok(lock) => lock,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+            Err(e) => return Err(e),
+        };
+        match lock.try_lock_shared() {
+            Ok(()) => Ok(false),
+            Err(TryLockError::WouldBlock) => Ok(true),
+            Err(TryLockError::Error(e)) => Err(e),
+        }
+    }
+
+    /// The lock a new start hands to the app, or `None` when another start holds it first.
+    fn claim(&self) -> std::io::Result<Option<File>> {
+        let lock = File::create(self.lock_path())?;
+        match lock.try_lock() {
+            Ok(()) => Ok(Some(lock)),
+            Err(TryLockError::WouldBlock) => Ok(None),
+            Err(TryLockError::Error(e)) => Err(e),
+        }
     }
 
     /// Starts the app unless it already runs and answers, and waits until it does. Returns its
@@ -119,39 +138,31 @@ impl App<'_> {
             .as_deref()
             .ok_or(AppError::NotConfigured("start"))?;
         let mut port = self.port()?;
-        let ours = self.running().is_some();
+        let ours = self.running()?;
         if ours && self.ready(port) {
             return Ok(port);
         }
         while !ours && TcpStream::connect(("127.0.0.1", port)).is_ok() {
             port = self.new_port()?;
         }
-        // A child this call started is polled with `try_wait`: until reaped, an exited child
-        // still answers `kill -0`.
-        let mut child = None;
-        if self.running().is_none() {
+        if !ours && let Some(lock) = self.claim()? {
             self.setup()?;
             let log = File::create(self.log_path())?;
             let spawned = self
                 .shell(start)?
-                .stdin(Stdio::null())
+                .stdin(lock)
                 .stdout(log.try_clone()?)
                 .stderr(log)
                 .process_group(0)
                 .spawn()?;
             fs::write(self.pid_path(), format!("{}\n", spawned.id()))?;
-            child = Some(spawned);
         }
         let deadline = Instant::now() + wait;
         while Instant::now() < deadline {
             if self.ready(port) {
                 return Ok(port);
             }
-            let exited = match child.as_mut() {
-                Some(c) => c.try_wait()?.is_some(),
-                None => self.running().is_none(),
-            };
-            if exited {
+            if !self.running()? {
                 return Err(AppError::Exited {
                     tail: tail(&self.log_path()),
                 });
@@ -183,10 +194,15 @@ impl App<'_> {
 
     /// Stops the app and everything it started. Returns whether one was running.
     pub fn stop(&self) -> Result<bool, AppError> {
-        let Some(pid) = self.running() else {
+        if !self.running()? {
             let _ = fs::remove_file(self.pid_path());
             return Ok(false);
-        };
+        }
+        let pid = fs::read_to_string(self.pid_path())?;
+        let pid = pid
+            .trim()
+            .parse()
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
         stop_group(pid);
         fs::remove_file(self.pid_path())?;
         Ok(true)
