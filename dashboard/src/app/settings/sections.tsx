@@ -158,7 +158,7 @@ function TrackerRow({ settings, save }: SectionProps) {
           apiKey: key === '' ? null : key,
         })
       }
-      fields={['tracker.team', 'api_key', 'tracker.filter']}
+      fields={['tracker.team', 'api_key']}
     >
       {(reasons) => (
         <>
@@ -203,8 +203,7 @@ function TrackerRow({ settings, save }: SectionProps) {
           )}
           <Field
             label="Filter command"
-            hint="Run on each new or changed issue before any agent reads it. Issues it rejects never reach the agents. Leave empty to let every open issue through. The guide's Issue filter section says what the command receives and returns."
-            error={reasons['tracker.filter']}
+            hint="Runs on each new or changed issue before any agent reads it, so the issues it rejects never reach the agents. Leave empty for no filter. What the command receives and how its exit code decides are in the guide, under Tracker issue filter."
           >
             {(control) => (
               <input

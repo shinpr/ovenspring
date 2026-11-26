@@ -382,36 +382,28 @@ fn channel_for(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ovenspring_core::config::{
-        AgentsConfig, AgreementsConfig, AppConfig, Cli, GuardConfig, KnowledgeConfig, Limits,
-        MergeConfig, RepoConfig, ReviewConfig, Roles, SlackConfig, TrackerConfig,
-    };
-    use std::collections::BTreeMap;
 
     fn config() -> Config {
-        Config {
-            repo: RepoConfig::default(),
-            merge: MergeConfig::default(),
-            held: BTreeMap::new(),
-            person_reviews: BTreeMap::new(),
-            agents: AgentsConfig::default(),
-            roles: Roles::all_on(Cli::Codex),
-            tracker: TrackerConfig {
-                kind: TrackerKind::Linear,
-                team: Some("ACME".into()),
-                filter: None,
-            },
-            slack: SlackConfig {
-                channel: "C123".into(),
-                owners: Vec::new(),
-            },
-            app: AppConfig::default(),
-            guard: GuardConfig::default(),
-            review: ReviewConfig::default(),
-            limits: Limits::default(),
-            agreements: AgreementsConfig::default(),
-            knowledge: KnowledgeConfig::default(),
-        }
+        Config::parse(
+            r#"
+[roles.lead]
+cli = "codex"
+[roles.executor]
+cli = "codex"
+[roles.reviewer]
+cli = "codex"
+[roles.analyzer]
+cli = "codex"
+[tracker]
+kind = "linear"
+team = "ACME"
+[slack]
+channel = "C0123456789"
+owners = ["U0123456789"]
+"#,
+            "config.toml",
+        )
+        .unwrap()
     }
 
     #[test]
