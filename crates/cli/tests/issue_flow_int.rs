@@ -1952,18 +1952,28 @@ fn run_acme_160(env: &Env, script: &Value, gh: FakeGitHub) -> Arc<FakeGitHub> {
     gh
 }
 
-/// Runs ACME-160 until it merges, after its correction of the comments was pushed.
+/// Runs ACME-160 until it merges, after its correction of the comments was pushed. The
+/// correction's commit, which reached `origin`, carries the executor's correction of `T002`, so
+/// the push followed the executor's judgment of the test review's finding.
 fn run_comments_then_test_review(refuse_replies: bool) -> (Env, Arc<FakeGitHub>) {
     let env = Env::new();
     let gh = github_commenting_on_acme_160(&env);
     gh.refuse_replies
         .store(refuse_replies, std::sync::atomic::Ordering::SeqCst);
     let gh = run_acme_160(&env, &comments_then_test_review_script(), gh);
+    let applied = applying_commit(&env);
+    assert_eq!(
+        git(
+            &env.origin,
+            &["show", &format!("{applied}:tests/ACME-160.test.ts")]
+        ),
+        "asserts the total"
+    );
     (env, gh)
 }
 
-/// The commit the push after the comments' correction carried.
-fn pushed_commit(env: &Env) -> String {
+/// The commit that applied the comments: the first commit after they were accepted.
+fn applying_commit(env: &Env) -> String {
     let events = env.events();
     let accepted = events
         .iter()
@@ -1971,7 +1981,7 @@ fn pushed_commit(env: &Env) -> String {
         .unwrap();
     events[accepted..]
         .iter()
-        .find(|e| e["event"] == "pushed")
+        .find(|e| e["event"] == "committed")
         .unwrap()["sha"]
         .as_str()
         .unwrap()
@@ -1979,14 +1989,19 @@ fn pushed_commit(env: &Env) -> String {
 }
 
 /// Asserts that the writer's two comments, and only they, have their replies on ACME-160's pull
-/// request, posted after a push carried `commit`: the applied one names `commit`, the declined one
-/// its reason.
+/// request, posted after the push of their correction: the applied one names `commit`, the
+/// declined one its reason.
 fn assert_answered_after_the_push_of(env: &Env, gh: &FakeGitHub, commit: &str) {
     let events = env.events();
-    let pushed = events
+    let accepted = events
         .iter()
-        .position(|e| e["event"] == "pushed" && e["sha"] == commit)
+        .position(|e| e["event"] == "comments-accepted")
         .unwrap();
+    let pushed = accepted
+        + events[accepted..]
+            .iter()
+            .position(|e| e["event"] == "pushed")
+            .unwrap();
     let answered: Vec<usize> = events
         .iter()
         .enumerate()
@@ -2022,14 +2037,14 @@ fn assert_answered_after_the_push_of(env: &Env, gh: &FakeGitHub, commit: &str) {
 // Behavior: two writer comments judged, plus a disposition for a reader's comment -> test review
 //     finds T002 -> the executor applies T002 -> the test review passes -> quality -> the
 //     correction is pushed -> after that push, each writer comment has its reply in its thread,
-//     the applied one naming the pushed commit; the reader's has none.
+//     the applied one naming the correction's commit; the reader's has none.
 // @lane: integration
 // @dependency: daemon, flow, handoff, fake agent, FakeGitHub
 #[test]
 fn each_judged_comment_is_answered_after_a_test_review_of_its_correction() {
     let (env, gh) = run_comments_then_test_review(false);
 
-    assert_answered_after_the_push_of(&env, &gh, &pushed_commit(&env));
+    assert_answered_after_the_push_of(&env, &gh, &applying_commit(&env));
 }
 
 // AC: GH-17: the comment judgment survives the executor's judgment of a test review's findings.
@@ -2082,11 +2097,51 @@ fn a_reply_github_refuses_is_recorded_for_its_comment() {
     );
 }
 
+// AC: AC-022 "answered in its thread with the commit that applied it"; GH-17.
+// Behavior: the pre-push hook refuses the correction -> quality commits a separate fix, which is
+//     pushed -> the applied comment's reply names the correction's commit, not the fix's.
+// @lane: integration
+// @dependency: daemon, flow, fake agent, FakeGitHub, git hook
+#[test]
+fn the_reply_names_the_commit_that_applied_the_comment_after_a_refused_push() {
+    let env = Env::new();
+    let hook = env.repo.join(".git/hooks/pre-push");
+    std::fs::write(
+        &hook,
+        "#!/bin/sh\nif grep -q refunds src/ACME-160.ts && ! test -f lint-fixed; then\n  echo 'knip: unused export refunds' >&2; exit 1\nfi\n",
+    )
+    .unwrap();
+    std::process::Command::new("chmod")
+        .args(["+x", hook.to_str().unwrap()])
+        .status()
+        .unwrap();
+    let mut script = comments_script();
+    script.insert(
+        "quality@ACME-160".into(),
+        json!([quality_pass(), quality_pass(),
+               {"change": {"path": "lint-fixed", "content": "x"}, "output": quality_pass()["output"]}]),
+    );
+    let gh = run_acme_160(
+        &env,
+        &Value::Object(script),
+        github_commenting_on_acme_160(&env),
+    );
+
+    let applied = applying_commit(&env);
+    let events = env.events();
+    assert!(events.iter().any(|e| e["event"] == "push-refused"));
+    let head = events.iter().rfind(|e| e["event"] == "pushed").unwrap()["sha"]
+        .as_str()
+        .unwrap();
+    assert_ne!(head, applied, "the repair is its own commit");
+    assert_answered_after_the_push_of(&env, &gh, &applied);
+}
+
 // AC: GH-17: "also when other checks and corrections ran between the judgment and the push";
 //     factory core design, steps: quality's `stub_detected` sends the work back to implement.
 // Behavior: quality after the correction finds a stub -> implement completes it -> quality ->
-//     the review round passes -> the push -> each comment has its reply, the applied one naming
-//     the pushed commit.
+//     the review round passes -> the push -> each comment has its reply, naming the commit that
+//     applied it.
 // @lane: integration
 // @dependency: daemon, flow, fake agent, FakeGitHub
 #[test]
@@ -2113,5 +2168,80 @@ fn comments_corrected_through_a_stub_repair_and_a_review_round_are_answered() {
         github_commenting_on_acme_160(&env),
     );
 
-    assert_answered_after_the_push_of(&env, &gh, &pushed_commit(&env));
+    assert_answered_after_the_push_of(&env, &gh, &applying_commit(&env));
+}
+
+// AC: AC-022 "answered in its thread with the commit that applied it"; GH-17, the owner's
+//     review comment 4713877372: "the branch head when the correction commits nothing".
+// Behavior: the base advances before the first push, which merges it into the branch -> the
+//     executor applies a comment with no edit -> nothing to commit -> the applied comment's reply
+//     names the branch head, the merge, not the factory's earlier commit.
+// @lane: integration
+// @dependency: daemon, flow, fake agent, FakeGitHub
+#[test]
+fn the_reply_names_the_branch_head_when_the_correction_commits_nothing() {
+    let env = Env::new();
+    let mut script = comments_script();
+    let mut response = script["review-response@ACME-160"][0].clone();
+    response.as_object_mut().unwrap().remove("change");
+    script.insert("review-response@ACME-160".into(), json!([response]));
+    env.configure(CONFIG);
+    env.add_branch("develop");
+    env.script_agents(&Value::Object(script));
+    let gh = Arc::new(github_commenting_on_acme_160(&env));
+    let mut d = acme_160_daemon(&env, &gh);
+    d.begin_issue("ACME-160", "Order totals", vec![]).unwrap();
+    let mut advanced = false;
+    run_until(
+        &mut d,
+        60,
+        |d| {
+            // Once the issue's branch exists, the base moves on before its first push.
+            if !advanced && d.store().worktree("ACME-160").join(".git").exists() {
+                advanced = true;
+                git(&env.repo, &["checkout", "-q", "develop"]);
+                std::fs::write(env.repo.join("HOTFIX.md"), "hotfix\n").unwrap();
+                git(&env.repo, &["add", "HOTFIX.md"]);
+                git(
+                    &env.repo,
+                    &[
+                        "-c",
+                        "user.name=dev",
+                        "-c",
+                        "user.email=dev@example.com",
+                        "commit",
+                        "-q",
+                        "-m",
+                        "Hotfix",
+                    ],
+                );
+                git(&env.repo, &["push", "-q", "origin", "develop"]);
+            }
+        },
+        |d| stage(d, "ACME-160") == Stage::Merged,
+    );
+
+    let events = env.events();
+    let accepted = events
+        .iter()
+        .position(|e| e["event"] == "comments-accepted")
+        .unwrap();
+    assert!(
+        !events[accepted..].iter().any(|e| e["event"] == "committed"),
+        "the correction commits nothing: {events:?}"
+    );
+    let head = events[..accepted]
+        .iter()
+        .rfind(|e| e["event"] == "pushed")
+        .unwrap()["sha"]
+        .as_str()
+        .unwrap();
+    let factory = events[..accepted]
+        .iter()
+        .rfind(|e| e["event"] == "committed")
+        .unwrap()["sha"]
+        .as_str()
+        .unwrap();
+    assert_ne!(head, factory, "the base's merge moved the branch head");
+    assert_answered_after_the_push_of(&env, &gh, head);
 }

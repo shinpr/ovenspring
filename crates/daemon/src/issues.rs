@@ -88,13 +88,15 @@ pub struct IssueRecord {
     pub canceled: Option<String>,
 }
 
-/// A reply owed to a judged pull request comment. An applied comment is answered with the commit
-/// the push carried; a declined one, with its reason.
+/// A reply owed to a judged pull request comment. An applied comment is answered with the first
+/// commit made after its judgment, once a push carries it; a declined one, with its reason.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DueReply {
     pub comment: String,
     pub disposition: Disposition,
     pub reason: String,
+    #[serde(default)]
+    pub commit: Option<String>,
 }
 
 /// A design-phase launch's session, for the next run of the same step to resume: the preparation
@@ -189,8 +191,19 @@ impl IssueRecord {
                 comment: d.id,
                 disposition: d.disposition,
                 reason: d.reason,
+                commit: None,
             })
             .collect();
+    }
+
+    /// A commit point was passed with `commit` at the branch's head: the first commit after a
+    /// comment's judgment is the one that applied it.
+    fn committed(&mut self, commit: Option<&str>) {
+        for reply in &mut self.replies {
+            if reply.disposition == Disposition::Apply && reply.commit.is_none() {
+                reply.commit = commit.map(str::to_owned);
+            }
+        }
     }
 
     pub fn output(&self, step: Step) -> Option<StepOutput> {
@@ -1066,6 +1079,10 @@ impl Daemon {
             .and_then(|_| git(&worktree, &["diff", "--cached", "--name-only"]));
         let made = match staged {
             Ok(s) if s.is_empty() => {
+                // The branch head, which a merge brought in before a push may have moved past
+                // the factory's last commit.
+                let head = git(&worktree, &["rev-parse", "HEAD"]).ok();
+                self.update_issue(key, |r| r.committed(head.as_deref()))?;
                 self.event(&json!({"event": "nothing-to-commit", "issue": key, "after": after.to_string()}))?;
                 return Ok(committed);
             }
@@ -1082,6 +1099,7 @@ impl Daemon {
                     r.summaries.clear();
                     r.last_commit = Some(sha.clone());
                     r.refusal = None;
+                    r.committed(Some(&sha));
                 })?;
                 self.event(
                     &json!({"event": "committed", "issue": key, "after": after.to_string(), "sha": sha}),
