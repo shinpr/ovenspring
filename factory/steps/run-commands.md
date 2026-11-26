@@ -1,6 +1,6 @@
 # Step: run-commands
 
-The factory runs its own copy of the product for each issue: agents check their changes against it with `ovenspring app run`, and the owner opens it as a preview before approving a held merge. You find, in this repository, how to start that copy. The factory then starts the product once with your commands, and the owner keeps them, changes them, or records that there is nothing to run.
+The factory runs its own copy of the product for each issue: agents check their changes against it with `ovenspring app run`, and the owner opens it as a preview before passing a held merge. You find, in this repository, how to start that copy. The factory then starts the product once with your commands, and the owner keeps them, changes them, or records that there is nothing to run.
 
 ## Required skills
 

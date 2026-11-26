@@ -5,11 +5,11 @@ use std::collections::BTreeMap;
 use std::fs;
 
 use ovenspring_core::config::{Cli, Role};
-use ovenspring_core::flow::{Origin, Stage};
+use ovenspring_core::flow::Stage;
 use ovenspring_core::item::{Item, Status};
 use ovenspring_core::output::{
-    CheckResult, Decision, Disposition, KeyResult, ReferenceStrength, Scale, ScopeCheckOutput,
-    StepOutput,
+    CheckResult, Decision, Disposition, DocumentOutput, ExecutorOutput, KeyResult,
+    ReferenceStrength, Scale, ScopeCheckOutput, StepOutput,
 };
 use ovenspring_core::phase::Phase;
 use ovenspring_core::sprint::SprintState;
@@ -203,8 +203,8 @@ fn text_at(v: &Value, keys: &[&str]) -> Option<String> {
 }
 
 /// Findings with their dispositions: each review's findings as its source reports them, settled
-/// by the latest `resolution` that names their id. A comment on the pull request becomes a
-/// finding when a resolution answers it.
+/// by the latest judgment that names their id, from the step they were handed to. A comment on the
+/// pull request becomes a finding when the executor answers it.
 fn findings(items: &[(String, Item)], comments: &[Value]) -> Vec<FindingLine> {
     let mut out: Vec<(String, FindingLine)> = Vec::new();
     for (_, item) in items {
@@ -212,20 +212,19 @@ fn findings(items: &[(String, Item)], comments: &[Value]) -> Vec<FindingLine> {
         let Some(raw) = raw_of(item) else {
             continue;
         };
-        if item.front.step == Step::Resolution {
-            for d in raw
-                .get("dispositions")
-                .and_then(Value::as_array)
-                .into_iter()
-                .flatten()
-            {
+        if let Some(judged) = raw
+            .get("dispositions")
+            .and_then(Value::as_array)
+            .filter(|d| !d.is_empty())
+        {
+            for d in judged {
                 let Some(id) = d.get("id").and_then(Value::as_str) else {
                     continue;
                 };
                 let disposition = d
                     .get("disposition")
                     .and_then(|v| serde_json::from_value(v.clone()).ok());
-                let answer = text_at(d, &["reason", "evidence"]);
+                let answer = text_at(d, &["reason"]);
                 if let Some((_, line)) = out
                     .iter_mut()
                     .rev()
@@ -539,10 +538,10 @@ pub struct RunDetail {
     pub round: Option<u32>,
     /// What a check found.
     pub found: Option<usize>,
-    /// What a resolution applied and declined.
+    /// What the step a check's findings were handed to applied and declined.
     pub applied: Option<usize>,
     pub declined: Option<usize>,
-    /// The findings a resolution under way is judging.
+    /// The findings a step under way is judging.
     pub judging: Option<usize>,
     /// The scale the requirements judged.
     pub scale: Option<Scale>,
@@ -655,26 +654,11 @@ fn result_of(store: &Store, l: &Launch, all: &[Launch]) -> RunResult {
     }
 }
 
-/// The findings the issue's `resolution` judges: the new findings of the round's reviews, of the
-/// one check that raised them, or the pull request's new comments, as each last reported them.
+/// The findings handed to the step under way: a check's, the round's reviews', or the pull
+/// request's new comments.
 fn judging(record: &IssueRecord) -> Option<usize> {
-    let keys: Vec<String> = match record.flow.origin? {
-        Origin::Round => record
-            .flow
-            .round
-            .findings
-            .iter()
-            .map(|r| String::from(*r))
-            .collect(),
-        Origin::PrComments => vec![crate::handoff::COMMENTS.to_owned()],
-        Origin::Document | Origin::TestReview => vec![record.flow.check?.step().to_string()],
-    };
-    Some(
-        keys.iter()
-            .filter_map(|k| record.findings.get(k))
-            .map(Vec::len)
-            .sum(),
-    )
+    record.flow.origin?;
+    Some(crate::handoff::handed(record).len())
 }
 
 fn detail(item: Option<&Item>, record: Option<&IssueRecord>) -> RunDetail {
@@ -692,14 +676,16 @@ fn detail(item: Option<&Item>, record: Option<&IssueRecord>) -> RunDetail {
         Some(StepOutput::CodeReview(r)) => d.found = Some(r.findings.len()),
         Some(StepOutput::SecurityReview(r)) => d.found = Some(r.findings.len()),
         Some(StepOutput::AgreementsCheck(c)) => d.found = Some(c.findings.len()),
-        Some(StepOutput::Resolution(r)) => {
-            let applied = r
-                .dispositions
+        Some(
+            StepOutput::Executor(ExecutorOutput { dispositions, .. })
+            | StepOutput::Document(DocumentOutput { dispositions, .. }),
+        ) if !dispositions.is_empty() => {
+            let applied = dispositions
                 .iter()
                 .filter(|f| f.disposition == Disposition::Apply)
                 .count();
             d.applied = Some(applied);
-            d.declined = Some(r.dispositions.len() - applied);
+            d.declined = Some(dispositions.len() - applied);
         }
         Some(StepOutput::Requirements(r)) => {
             d.closed = r.decision == Decision::Close;
@@ -710,9 +696,9 @@ fn detail(item: Option<&Item>, record: Option<&IssueRecord>) -> RunDetail {
         }
         _ => {}
     }
-    if item.front.step == Step::Resolution
-        && matches!(item.front.status, Status::Open | Status::Doing)
-    {
+    let receiving = item.front.step == Step::ReviewResponse
+        || (item.front.step.document().is_some() && record.is_some_and(|r| r.flow.correcting()));
+    if receiving && matches!(item.front.status, Status::Open | Status::Doing) {
         d.judging = record.and_then(judging);
     }
     let tasks = record.map_or(&[][..], |r| r.flow.tasks.as_slice());
@@ -881,7 +867,10 @@ mod tests {
         );
     }
 
-    fn with_findings(origin: Origin, findings: &[(&str, usize)]) -> IssueRecord {
+    fn with_findings(
+        origin: ovenspring_core::flow::Origin,
+        findings: &[(&str, usize)],
+    ) -> IssueRecord {
         let mut r = IssueRecord::new("ACME-1", "Title", vec![]);
         r.flow.origin = Some(origin);
         for (key, n) in findings {
@@ -891,7 +880,8 @@ mod tests {
     }
 
     #[test]
-    fn a_resolution_under_way_judges_the_findings_of_its_origin() {
+    fn a_receiver_under_way_judges_the_findings_of_its_origin() {
+        use ovenspring_core::flow::Origin;
         use ovenspring_core::output::Review;
         use ovenspring_core::step::Check;
 

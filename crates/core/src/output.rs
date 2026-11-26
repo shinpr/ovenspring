@@ -178,6 +178,9 @@ pub struct DocumentOutput {
     pub question: Option<String>,
     #[serde(default)]
     pub approvals: Vec<Approval>,
+    /// The author's judgment of each finding it was handed, in update mode.
+    #[serde(default)]
+    pub dispositions: Vec<FindingDisposition>,
 }
 
 /// How far the implementation follows a prototype, as the UI Spec records it: `binding`, its
@@ -331,6 +334,9 @@ pub struct ExecutorOutput {
     /// test review: an extra review costs one launch, a skipped one lets those tests go unreviewed.
     #[serde(default = "unsaid_means_review")]
     pub requires_test_review: bool,
+    /// The executor's judgment of each finding it was handed, in `review-response`.
+    #[serde(default)]
+    pub dispositions: Vec<FindingDisposition>,
 }
 
 fn unsaid_means_review() -> bool {
@@ -458,8 +464,8 @@ impl Disposition {
     }
 }
 
-/// Who corrects an applied finding: the document's author when the
-/// implementation already satisfies the value boundaries, else the executor.
+/// Who corrects an applied finding the executor was handed in the review round: the Design Doc's
+/// author when the code already gives the outcome and the document must change, else the executor.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum CorrectionOwner {
@@ -467,15 +473,12 @@ pub enum CorrectionOwner {
     Executor,
 }
 
-/// One finding's record.
+/// The judgment of one finding by the step it was handed to.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct FindingDisposition {
     pub id: String,
     pub disposition: Disposition,
-    pub basis: String,
-    pub evidence: String,
-    #[serde(default)]
-    pub reason: Option<String>,
+    pub reason: String,
     #[serde(default)]
     pub owner: Option<CorrectionOwner>,
     /// The review of the post-implementation round that raised the finding.
@@ -483,37 +486,18 @@ pub struct FindingDisposition {
     pub review: Option<Review>,
 }
 
-/// `resolution`: the orchestrator's dispositions; `decision` and `question` carry Requirement
-/// Change Detection to the owner.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct ResolutionOutput {
-    pub decision: Decision,
-    #[serde(default)]
-    pub dispositions: Vec<FindingDisposition>,
-    #[serde(default)]
-    pub question: Option<String>,
+/// Whether any finding was applied.
+pub fn applies(dispositions: &[FindingDisposition]) -> bool {
+    dispositions
+        .iter()
+        .any(|d| d.disposition == Disposition::Apply)
 }
 
-impl ResolutionOutput {
-    pub fn applies(&self) -> bool {
-        self.dispositions
-            .iter()
-            .any(|d| d.disposition == Disposition::Apply)
-    }
-
-    /// Whether an applied finding is the document author's to correct.
-    pub fn author_applies(&self) -> bool {
-        self.dispositions.iter().any(|d| {
-            d.disposition == Disposition::Apply && d.owner == Some(CorrectionOwner::Author)
-        })
-    }
-
-    /// Whether an applied finding is the executor's to correct (the default owner).
-    pub fn executor_applies(&self) -> bool {
-        self.dispositions.iter().any(|d| {
-            d.disposition == Disposition::Apply && d.owner != Some(CorrectionOwner::Author)
-        })
-    }
+/// Whether an applied finding is the Design Doc's author's to correct.
+pub fn author_applies(dispositions: &[FindingDisposition]) -> bool {
+    dispositions
+        .iter()
+        .any(|d| d.disposition == Disposition::Apply && d.owner == Some(CorrectionOwner::Author))
 }
 
 /// A review of the post-implementation round: `code-review/<unit>` (units counted from 1) or
@@ -782,7 +766,7 @@ pub struct RunCommandsOutput {
 pub enum CheckResult {
     /// Nothing actionable: the check is complete.
     Clear,
-    /// Findings for `resolution`.
+    /// Findings for the step that wrote what the check reviewed.
     Findings,
     /// A correction re-review maintained an applied finding: it returns to its author or executor.
     MaintainedApply,
@@ -829,7 +813,6 @@ pub enum StepOutput {
     Quality(QualityOutput),
     CodeReview(CodeReviewOutput),
     SecurityReview(SecurityReviewOutput),
-    Resolution(ResolutionOutput),
     RerunCheck(RerunCheckOutput),
     AgreementsCheck(AgreementsCheckOutput),
     Exception(ExceptionOutput),
@@ -907,7 +890,6 @@ impl StepOutput {
             }
             Step::CodeReview => StepOutput::CodeReview(read(step, value)?),
             Step::SecurityReview => StepOutput::SecurityReview(read(step, value)?),
-            Step::Resolution => StepOutput::Resolution(read(step, value)?),
             Step::RerunCheck => StepOutput::RerunCheck(read(step, value)?),
             Step::AgreementsCheck => StepOutput::AgreementsCheck(read(step, value)?),
             Step::Exception => StepOutput::Exception(read(step, value)?),
@@ -943,26 +925,11 @@ impl StepOutput {
                 }
             }
             StepOutput::Document(d) => check_document(d),
+            StepOutput::Executor(e) => judged(&e.dispositions),
             StepOutput::CodeReview(r) => declared(&r.approvals),
             StepOutput::Prototype(p) => {
                 filled("path", &p.path)?;
                 filled("basis", &p.basis)
-            }
-            StepOutput::Resolution(r) => {
-                for d in &r.dispositions {
-                    filled("dispositions.id", &d.id)?;
-                    filled("dispositions.basis", &d.basis)?;
-                    filled("dispositions.evidence", &d.evidence)?;
-                    if d.disposition == Disposition::Decline {
-                        needed("dispositions.reason", d.reason.as_deref(), "decline")?;
-                    }
-                }
-                optional("question", r.question.as_deref())?;
-                match r.decision {
-                    Decision::Ask => needed("question", r.question.as_deref(), "ask"),
-                    Decision::Close => Err("decision: close is decided at requirements".into()),
-                    Decision::Proceed => Ok(()),
-                }
             }
             StepOutput::AgreementsCheck(r) => r.findings.iter().try_for_each(|f| {
                 filled("findings.id", &f.id)?;
@@ -1011,7 +978,6 @@ impl StepOutput {
             | StepOutput::Verifier(_)
             | StepOutput::DesignSync(_)
             | StepOutput::TestDesign(_)
-            | StepOutput::Executor(_)
             | StepOutput::TestReview(_)
             | StepOutput::Quality(_)
             | StepOutput::SecurityReview(_)
@@ -1023,7 +989,7 @@ impl StepOutput {
     pub fn check_result(&self) -> Option<CheckResult> {
         Some(match self {
             // An empty actionable issue set completes the review whatever the verdict says; a
-            // rejection goes to resolution, which settles its source conflict.
+            // rejection goes to the document's author, who settles its source conflict.
             StepOutput::DocumentReview(r) => found(
                 false,
                 &r.prior_feedback_reconciliation,
@@ -1060,7 +1026,6 @@ impl StepOutput {
             | StepOutput::TestDesign(_)
             | StepOutput::Executor(_)
             | StepOutput::Quality(_)
-            | StepOutput::Resolution(_)
             | StepOutput::RerunCheck(_)
             | StepOutput::AgreementsCheck(_)
             | StepOutput::Exception(_)
@@ -1104,7 +1069,16 @@ fn check_document(d: &DocumentOutput) -> Result<(), String> {
         }
         DocumentStatus::Completed => {}
     }
-    declared(&d.approvals)
+    declared(&d.approvals)?;
+    judged(&d.dispositions)
+}
+
+/// Each judgment names its finding and why.
+fn judged(dispositions: &[FindingDisposition]) -> Result<(), String> {
+    dispositions.iter().try_for_each(|d| {
+        filled("dispositions.id", &d.id)?;
+        filled("dispositions.reason", &d.reason)
+    })
 }
 
 /// The categories a step declares: each once, and never the factory's configuration, which is

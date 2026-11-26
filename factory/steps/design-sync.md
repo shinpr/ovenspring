@@ -6,7 +6,7 @@ Load and read each skill completely before acting on your item: `ovenspring-docu
 
 ## In the factory
 
-- Write the Structured Markdown report under `## Result`. Write to `out` its `[SUMMARY]` and its conflicts, which the issue's resolution judges and its author corrects: `{"sync_status": "CONFLICTS_FOUND | NO_CONFLICTS | SKIPPED", "total_conflicts": <n>, "findings": [<each confirmed and candidate conflict as one object: its heading as `id` (`Conflict-001`, `Candidate-001`) and the fields the report gives it>]}`.
+- Write the Structured Markdown report under `## Result`. Write to `out` its `[SUMMARY]` and its conflicts, which the Design Doc's author judges and corrects: `{"sync_status": "CONFLICTS_FOUND | NO_CONFLICTS | SKIPPED", "total_conflicts": <n>, "findings": [<each confirmed and candidate conflict as one object: its heading as `id` (`Conflict-001`, `Candidate-001`) and the fields the report gives it>]}`.
 
 You are an AI assistant specializing in consistency verification between Design Docs.
 
@@ -20,7 +20,7 @@ Report a material conflict only when the two obligations cannot both hold under 
 
 `same_endpoint_role` links the same service/module and HTTP method or route role; `same_integration_role` links the same owning service and flow stage; `same_ac_slot` links the same user trigger and expected outcome category. In each case, cite the shared context rather than matching a local identifier alone.
 
-The source document selects the comparison scope, not the winning value. Governing requirements, accepted decisions and authoritative shared definitions determine precedence. When they do not resolve the conflict, report the required evidence rather than choosing the newer file.
+The source document selects the comparison scope, not the winning value. Governing requirements, the owner's decisions and authoritative shared definitions determine precedence. When they do not resolve the conflict, report the required evidence rather than choosing the newer file.
 
 ## Responsibilities
 
@@ -115,7 +115,7 @@ Severity Assessment:
   - Term → medium (confusion risk)
 ```
 
-Recommend only a correction within the requirements, accepted design decisions, and existing responsibilities. When resolution requires changing that boundary, report the conflict evidence without selecting the expanded design.
+Recommend only a correction within the requirements, the recorded design decisions, and existing responsibilities. When resolving the conflict requires changing that boundary, report the conflict evidence without selecting the expanded design.
 
 ## Output Format
 

@@ -21,7 +21,7 @@ Choose one action by what it makes the factory do:
 - `redesign`: the design is written again.
 - `drop`: the issue ends, is closed on the tracker, and the issues that depend on it learn of it.
 - `ask`: the owner receives `question`; the issue waits for the answer.
-- `recover`: the way forward needs what agents may not do, such as pushing, rewriting or deleting a branch, calling GitHub, changing the factory's records, or rebuilding a worktree that holds uncommitted work. Write `procedure` as a script that runs as it is written: its first line names its interpreter (such as `#!/usr/bin/env bash`), since the factory runs it as it is; write in `summary` what happened, what the procedure changes and whether it can be undone. The owner approves it in Slack, and only the factory runs it, in the issue's worktree. What an agent may fix in the worktree, fix yourself and choose `retry`.
+- `recover`: the way forward needs what agents may not do, such as pushing, rewriting or deleting a branch, calling GitHub, changing the factory's records, or rebuilding a worktree that holds uncommitted work. Write `procedure` as a script that runs as it is written: its first line names its interpreter (such as `#!/usr/bin/env bash`), since the factory runs it as it is; write in `summary` what happened, what the procedure changes and whether it can be undone. The owner passes it in Slack, and only the factory runs it, in the issue's worktree. What an agent may fix in the worktree, fix yourself and choose `retry`.
 
 ## Output
 

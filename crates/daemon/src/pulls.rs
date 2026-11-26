@@ -145,9 +145,6 @@ fn exchange_name(d: &DecisionRecord) -> Option<&'static str> {
         (DecisionKind::Spec, Some(Step::Exception)) => {
             Some("The lead's question when the work could not go on")
         }
-        (DecisionKind::Spec, Some(Step::Resolution)) => {
-            Some("The lead's question about a review finding")
-        }
         (DecisionKind::Recovery, _) => Some("A recovery the lead proposed"),
         (DecisionKind::Stopped, _) => Some("A stop the owner resolved"),
         _ => None,
@@ -509,7 +506,7 @@ impl Daemon {
     }
 
     /// Takes in comments not yet seen from trusted authors, writing them to a source file and
-    /// keeping each as a finding for the lead's `resolution`. Returns whether any arrived.
+    /// keeping each as a finding for the executor to judge. Returns whether any arrived.
     fn new_comments(&mut self, record: &IssueRecord) -> Result<bool, DaemonError> {
         let Some(pr) = record.flow.pr else {
             return Ok(false);
@@ -556,7 +553,7 @@ impl Daemon {
         let Some(pr) = record.flow.pr else {
             return Ok(());
         };
-        let Some(StepOutput::Resolution(resolution)) = record.output(Step::Resolution) else {
+        let Some(StepOutput::Executor(judged)) = record.output(Step::ReviewResponse) else {
             return Ok(());
         };
         let gh = self.github()?;
@@ -564,7 +561,7 @@ impl Daemon {
             Ok(c) => c,
             Err(e) => return self.github_error(key, &e),
         };
-        for d in &resolution.dispositions {
+        for d in &judged.dispositions {
             let Some(comment) = all.iter().find(|c| c.key() == d.id) else {
                 continue;
             };
@@ -573,10 +570,7 @@ impl Daemon {
                     Some(commit) => format!("Applied in {commit}."),
                     None => continue,
                 },
-                Disposition::Decline => format!(
-                    "Not applied: {}",
-                    d.reason.as_deref().unwrap_or(d.evidence.as_str())
-                ),
+                Disposition::Decline => format!("Not applied: {}", d.reason),
             };
             match gh.reply(pr, comment, &comments::factory_reply(&text)) {
                 Ok(()) => self.event(
@@ -926,7 +920,7 @@ mod tests {
                 Some("https://s.test/p2"),
             ),
             answered(DecisionKind::Stopped, None, Some("https://s.test/p3")),
-            answered(DecisionKind::Spec, Some(Step::Resolution), None),
+            answered(DecisionKind::Spec, Some(Step::Design), None),
             answered(DecisionKind::Design, None, Some("https://s.test/p4")),
             pending,
         ];

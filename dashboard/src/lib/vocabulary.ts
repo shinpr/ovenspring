@@ -50,8 +50,7 @@ const ACTIVITY: Record<Activity, string> = {
   'quality-checks': 'Quality checks',
   committing: 'Committing',
   'reviews-running': 'Reviews running',
-  'judging-findings': 'Judging findings',
-  'applying-findings': 'Applying findings',
+  'applying-findings': 'Judging findings',
   rechecking: 'Rechecking',
   pushing: 'Pushing',
   'waiting-for-ci': 'Waiting for CI',
@@ -172,8 +171,7 @@ export const STEP_NAME: Record<Step, string> = {
   'code-review': 'Code review',
   'security-review': 'Security review',
   'rerun-check': 'Recheck',
-  resolution: 'Judging findings',
-  'review-response': 'Applying findings',
+  'review-response': 'Judging findings',
   'fix-ci': 'CI fix',
   'merge-base': 'Conflict resolution',
   exception: 'Problem handling',
@@ -212,8 +210,7 @@ const STEP_DID: Record<Step, string> = {
   'code-review': 'reviewed the code',
   'security-review': 'reviewed security',
   'rerun-check': 'chose what to recheck',
-  resolution: 'judged the findings',
-  'review-response': 'applied the findings',
+  'review-response': 'judged the findings',
   'fix-ci': 'fixed CI',
   'merge-base': 'resolved a conflict',
   exception: 'looked into a problem',
@@ -252,8 +249,7 @@ const STEP_DOING: Record<Step, string> = {
   'code-review': 'is reviewing the code',
   'security-review': 'is reviewing security',
   'rerun-check': 'is choosing what to recheck',
-  resolution: 'is judging the findings',
-  'review-response': 'is applying the findings',
+  'review-response': 'is judging the findings',
   'fix-ci': 'is fixing CI',
   'merge-base': 'is resolving a conflict',
   exception: 'is looking into a problem',
@@ -279,7 +275,7 @@ const NAMED: Partial<Record<Step, (d: Detail, running: boolean) => string | unde
     const task = `task ${number} of ${of}${name === null ? '' : `: ${name}`}`
     return running ? `is implementing ${task}` : `implemented ${task}`
   },
-  resolution: (d, running) => {
+  'review-response': (d, running) => {
     if (running) {
       return d.judging === null ? undefined : `is judging the ${plural(d.judging, 'finding')}`
     }
@@ -331,7 +327,7 @@ const PASSED: Partial<Record<Step, string>> = {
 
 /** How a run that just did its work came out, by step, where its output says. */
 const DONE: Partial<Record<Step, (d: Detail) => string | undefined>> = {
-  resolution: (d) => {
+  'review-response': (d) => {
     if (d.applied === null || d.declined === null) {
       return undefined
     }
@@ -394,7 +390,7 @@ const HOLDS: Record<Phase, string> = {
     'The lead reads the code, writes the design and plans the tasks. Reviewers check each document.',
   build: "Each task implemented and checked, then the repository's quality checks.",
   review:
-    'Code and security reviews. The lead judges the findings, and applied ones are corrected and checked again.',
+    'Code and security reviews. The executor judges the findings and corrects what it applies, then they are checked again.',
   merge: 'Push, CI, review bots and required approvals, then the factory merges it.',
 }
 
@@ -406,17 +402,17 @@ const NEXT: Partial<Record<Activity, string>> = {
   'reading-the-code': 'the lead decides which documents it needs.',
   'choosing-documents': 'each document it chose and its review, then the work plan and its tasks.',
   'making-a-prototype': 'your approval of the prototype, then the rest of the design.',
-  'writing-the-design': 'the design checks and review, then the work plan and its tasks.',
-  'reviewing-the-design': 'the test plan, the work plan and its tasks.',
+  'writing-the-design': 'the design review and checks, then the work plan and its tasks.',
+  'reviewing-the-design': 'the design checks, then the test plan, the work plan and its tasks.',
+  'checking-the-design': 'the test plan, the work plan and its tasks.',
   planning: 'its review, then the tasks.',
   'reviewing-the-plan': 'the plan split into tasks.',
   implementing: 'the remaining tasks, then the quality checks.',
   'reviewing-tests': 'the remaining tasks, then the quality checks.',
   'quality-checks': 'the code review and security review.',
-  'reviews-running': 'the lead judges what the reviews find.',
-  'judging-findings': 'the executor corrects what the lead applies, then the reviews check again.',
+  'reviews-running': 'the executor judges what the reviews find.',
   'applying-findings': 'the quality checks, then the reviews check again.',
-  rechecking: 'the lead judges what the rechecks find, or the issue goes on to merge.',
+  rechecking: 'the executor judges what the rechecks find, or the issue goes on to merge.',
   pushing: 'CI, the review bots and required approvals, then the merge.',
   'waiting-for-ci': 'the review bots, then the merge.',
   'fixing-ci': 'CI runs again.',

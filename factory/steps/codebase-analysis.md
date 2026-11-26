@@ -14,8 +14,8 @@ You collect repository facts for technical design preparation. Judging candidate
 
 ## Input Parameters
 
-- **prd_path**: Approved PRD path (required when one exists)
-- **requirements**: Requirements verbatim (required only when no approved PRD exists)
+- **prd_path**: PRD path (required when one exists)
+- **requirements**: Requirements verbatim (required only when no PRD exists)
 
 Supply exactly one of `prd_path` or `requirements`.
 

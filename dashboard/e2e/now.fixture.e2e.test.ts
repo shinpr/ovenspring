@@ -29,7 +29,9 @@ test('golden states 1, 5 and 6: from Now to an issue and the run under way', asy
   const path = page.getByRole('region', { name: 'Path' })
   await path.getByRole('button', { name: 'follow' }).click()
   const run = page.getByRole('dialog')
-  await expect(run.getByRole('heading', { level: 2 })).toHaveText('Lead is judging the 4 findings')
+  await expect(run.getByRole('heading', { level: 2 })).toHaveText(
+    'Executor is judging the 4 findings'
+  )
   await expect(run.getByText(/checking whether the SQL is built/)).toBeVisible()
   await page.keyboard.press('Escape')
   await expect(run).toBeHidden()

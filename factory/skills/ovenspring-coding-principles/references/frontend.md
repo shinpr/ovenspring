@@ -12,7 +12,7 @@ Use an escape from the type system (an untyped or dynamic type, an unchecked cas
 
 ## Components and State
 
-- Follow the project's adopted component architecture and file layout. Co-locate files only when it is established or approved as a new structure.
+- Follow the project's adopted component architecture and file layout. Co-locate files only when it is established or chosen as a new structure.
 - Preserve the repository's existing local, shared, and server-state ownership boundaries. Introduce a shared-state layer or a server-state dependency only when the accepted design requires ownership or lifecycle that the existing boundary cannot represent.
 - Keep one authoritative owner for each state value.
 - Guard asynchronous results against stale or post-unmount updates through the repository's cancellation or server-state mechanism.

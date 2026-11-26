@@ -38,7 +38,6 @@ pub enum Step {
     CodeReview,
     SecurityReview,
     RerunCheck,
-    Resolution,
     ReviewResponse,
     FixCi,
     MergeBase,
@@ -52,7 +51,7 @@ pub enum Step {
 }
 
 impl Step {
-    pub const ALL: [Step; 36] = [
+    pub const ALL: [Step; 35] = [
         Step::Requirements,
         Step::Prd,
         Step::PrdReview,
@@ -78,7 +77,6 @@ impl Step {
         Step::CodeReview,
         Step::SecurityReview,
         Step::RerunCheck,
-        Step::Resolution,
         Step::ReviewResponse,
         Step::FixCi,
         Step::MergeBase,
@@ -123,7 +121,6 @@ impl Step {
             | Step::CodeReview
             | Step::SecurityReview
             | Step::RerunCheck
-            | Step::Resolution
             | Step::Exception
             | Step::SprintPlan
             | Step::Facts
@@ -162,7 +159,6 @@ impl Step {
             Step::CodeReview => "code-review",
             Step::SecurityReview => "security-review",
             Step::RerunCheck => "rerun-check",
-            Step::Resolution => "resolution",
             Step::ReviewResponse => "review-response",
             Step::FixCi => "fix-ci",
             Step::MergeBase => "merge-base",
@@ -209,7 +205,6 @@ impl Step {
             | Step::WorkPlan
             | Step::Decompose
             | Step::RerunCheck
-            | Step::Resolution
             | Step::Exception
             | Step::SprintPlan
             | Step::SprintReview
@@ -246,7 +241,6 @@ impl Step {
             | Step::CodeReview
             | Step::SecurityReview
             | Step::RerunCheck
-            | Step::Resolution
             | Step::ReviewResponse
             | Step::FixCi
             | Step::MergeBase
@@ -289,7 +283,6 @@ impl Step {
             | Step::CodeReview
             | Step::SecurityReview
             | Step::RerunCheck
-            | Step::Resolution
             | Step::ReviewResponse
             | Step::FixCi
             | Step::MergeBase
@@ -335,7 +328,7 @@ impl Document {
             Document::Prd => Check::PrdReview,
             Document::UiSpec => Check::UiSpecReview,
             Document::Adr => Check::AdrReview,
-            Document::Design => Check::DesignVerify,
+            Document::Design => Check::DesignReview,
             Document::WorkPlan => Check::PlanReview,
         }
     }

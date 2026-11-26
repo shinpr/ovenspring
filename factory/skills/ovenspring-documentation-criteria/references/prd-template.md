@@ -61,7 +61,7 @@ C4Context
 
 ### Future / Out of Scope
 
-Record user-authored non-goals. The table is limited to them; evaluation requests, speculative ideas, and unselected possibilities remain only in active convergence context. Record `None — user confirmed there are none` when the user considered exclusions and found none.
+Record user-authored non-goals. The table is limited to them; evaluation requests, speculative ideas, and unselected possibilities remain only in active convergence context. Omit the table when the user stated no exclusions.
 
 | Capability | Disposition | Reason |
 |---|---|---|

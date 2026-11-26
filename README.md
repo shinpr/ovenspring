@@ -15,7 +15,7 @@ Oven Spring takes over the work that usually keeps a person in every loop:
 |---|---|
 | Decides what to work on next | The lead, the agent that plans the work and talks to you, proposes a sprint from the goal and the open issues |
 | Turns an issue into a spec | The lead defines the outcome, the non-goals and each requirement with its source, and asks you only about behavior nothing in the repository decides |
-| Checks the design | A reviewer checks it against the issue and the code before any code is written |
+| Checks the design | A reviewer checks the design against the issue and relevant code, then compares it with existing designs |
 | Reviews the code | Separate code and security reviews, with each finding judged before anything changes |
 | Confirms the behavior works | Your CI, through the base branch's required checks |
 | Decides when to merge | A gate merges the exact commit that passed, and waits for your approval on the kinds of change you named |

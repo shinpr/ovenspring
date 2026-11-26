@@ -11,7 +11,7 @@ export const inReview: IssueDetail = {
   now: {
     section: 'in-progress',
     phase: 'review',
-    activity: 'judging-findings',
+    activity: 'applying-findings',
     task: null,
     problem: null,
     onHold: false,
@@ -111,9 +111,9 @@ const NO_DETAIL: LaunchRow['detail'] = {
 
 /** ACME-141's runs, newest first. */
 export const runs: LaunchRow[] = [
-  run('20261121-141700-resolution-ACME-141.1', '2026-11-21T14:17:00Z', null, {
-    role: 'lead',
-    step: 'resolution',
+  run('20261121-141700-review-response-ACME-141.1', '2026-11-21T14:17:00Z', null, {
+    role: 'executor',
+    step: 'review-response',
     cli: 'claude',
     detail: { ...NO_DETAIL, judging: 4 },
   }),

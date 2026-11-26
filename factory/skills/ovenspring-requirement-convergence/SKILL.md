@@ -17,7 +17,7 @@ This skill converges **what to build**. How to build it, and which documents the
 |-------|----------------|
 | `outcome` | One observable result. A requirement that does not serve it is excess. |
 | `requirements[]` | Every build-relevant item labeled `current-state` or `desired-future`. |
-| `nonGoals[]` | Authored by the user, or the user stated there are none. |
+| `nonGoals[]` | Records the exclusions the user stated. An empty list means no exclusion was stated. |
 | `cost` | A band with the repository and lifecycle evidence that places it, plus the unknowns that remain. |
 
 `cost` is a rough band, not the effort estimate a work plan schedules against; requirements cannot support person-days. Its unknowns carry more decision weight than its size.
@@ -49,14 +49,12 @@ Render this shape at every requirements confirmation stop, whether or not the he
 
 | Section | Contents |
 |---------|----------|
-| **User-selected scope** | The requirements and exclusions the user has already selected, in the user's wording |
+| **Scope** | Use the requester's and owner's words for the outcome, requirements and stated exclusions. Where the issue or existing behavior could reasonably put adjacent work in scope, name what you would leave out as your reading. |
 | **Decision evidence** | Each material observed fact with its source, followed by what that fact can change about scope, outcome, or cost |
 | **User decisions** | One question per convergence field below `ready` and per decision of the owner's part (Hearing Protocol Step 1), followed by the scope, outcome, or cost effects of its materially different answers |
 | **Workflow** | Rough cost band with the unknowns that remain, Structural Scale, and the selected document and workflow route |
 
-Keeping the first three sections separate is what makes the decision informable: merged, the reader cannot tell which line is the user's own selection, which is a repository observation, and which is still open.
-
-Only an explicit user answer moves an item from **User decisions** into **User-selected scope**. Because Step 2 records the user's own wording, pose each open decision as a question and let the user supply its answer. The orchestrator owns **Workflow** and presents it as a selected route.
+Only an explicit answer settles an open user decision. The orchestrator selects the workflow.
 
 ## Storage Protocol
 
@@ -77,7 +75,6 @@ A flow that produces neither document carries the record in its own context to t
 ## Quality Checklist
 
 - [ ] Scope facts were presented before questions were asked
-- [ ] `nonGoals` came from the user, or the user stated there are none
 - [ ] Every applicable field is `ready`, or `weak-but-explicit` by the user's agreement
 
 ## References

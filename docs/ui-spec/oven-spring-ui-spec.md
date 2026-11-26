@@ -102,7 +102,7 @@ The dashboard owns these words; the API returns codes (owner-interface design). 
 
 ### Phases
 
-Five, the same for every issue: **Requirements**, **Design**, **Build**, **Review**, **Merge**. A step belongs to the phase of the work it advances; a correction (`resolution`, `review-response`, `quality` after a correction) belongs to the phase of the check whose findings it answers (a document check: Requirements or Design; `test-review`: Build; the review round: Review; pull request comments: Merge). An exception keeps the phase it stopped in. A small issue's Design is "skipped".
+Five, the same for every issue: **Requirements**, **Design**, **Build**, **Review**, **Merge**. A step belongs to the phase of the work it advances; a correction (an author run again in update mode, `review-response`, `quality` after a correction) belongs to the phase of the check whose findings it answers (a document check: Requirements or Design; `test-review`: Build; the review round: Review; pull request comments: Merge). An exception keeps the phase it stopped in. A small issue's Design is "skipped".
 
 ### Activities (three words or fewer)
 
@@ -111,7 +111,7 @@ Five, the same for every issue: **Requirements**, **Design**, **Build**, **Revie
 | Requirements | Reading the issue · Writing the PRD · Reviewing the PRD |
 | Design | Reading the code · Choosing documents · Making a prototype · Reading the screens · Writing the UI Spec · Reviewing the UI Spec · Recording decisions · Reviewing decisions · Writing the design · Checking the design · Reviewing the design · Comparing designs · Writing test plans · Planning · Reviewing the plan · Splitting tasks |
 | Build | Task n of m (Implementing for a small issue) · Reviewing tests · Quality checks · Committing |
-| Review | Reviews running · Judging findings · Applying findings · Rechecking |
+| Review | Reviews running · Judging findings · Rechecking |
 | Merge | Pushing · Waiting for CI · Fixing CI · Resolving a conflict · Waiting for bots · Waiting for a GitHub review · Blocked by GitHub · Checking merge |
 | Any | ▲ Problem: <cause> (the lead's exception; cause: "<step name> stopped", such as "Code review stopped", "dependency dropped", "PR closed", "push refused", "<operation> failing") · On hold (paused) |
 

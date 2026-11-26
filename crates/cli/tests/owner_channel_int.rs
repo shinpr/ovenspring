@@ -136,19 +136,14 @@ fn held_merge_told(
     (d, gh, stub, slack)
 }
 
-/// The lead applies a writer's comment on ACME-125 and the executor commits it.
+/// The executor applies a writer's comment on ACME-125 and the fix is committed.
 fn comment_applied_script() -> Map<String, Value> {
     let mut script = Map::new();
     script.insert(
-        "resolution@ACME-125".into(),
-        json!([{"output": {"decision": "proceed", "dispositions": [
-            {"id": "review-comment-1", "disposition": "apply", "owner": "executor", "basis": "AC 2", "evidence": "db/migrations/0002_add_index.sql:1"}
-        ]}}]),
-    );
-    script.insert(
         "review-response@ACME-125".into(),
         json!([{"change": {"path": "db/migrations/0002_add_index.sql", "content": "create index concurrently\n"},
-                "output": {"status": "completed", "taskName": "comments", "changeSummary": "Create the index concurrently", "requiresTestReview": false}}]),
+                "output": {"status": "completed", "taskName": "comments", "changeSummary": "Create the index concurrently", "requiresTestReview": false,
+                           "dispositions": [{"id": "review-comment-1", "disposition": "apply", "reason": "db/migrations/0002_add_index.sql:1 locks the table (AC 2)"}]}}]),
     );
     script
 }
@@ -701,8 +696,9 @@ fn a_cancel_from_the_dashboard_ends_a_held_issue_and_settles_its_merge_request()
 }
 
 // AC: PRD AC-067 (as above), from Slack.
-// Behavior: ACME-125's lead asks the owner about a writer's comment on its pull request, and
-//     ACME-126 waits on ACME-125 -> the owner presses Cancel issue on the question -> ACME-125 is
+// Behavior: ACME-125's executor escalates a writer's comment on its pull request and the lead asks
+//     the owner about it, and ACME-126 waits on ACME-125 -> the owner presses Cancel issue on the
+//     question -> ACME-125 is
 //     dropped with its pull request closed, the tracker records it canceled, the question says who
 //     canceled it, and ACME-126's lead learns it lost its dependency.
 // @lane: integration
@@ -715,9 +711,15 @@ fn cancel_on_a_question_the_issue_waits_on_ends_it_and_its_dependent_learns_of_i
     let mut script = straight("ACME-125");
     script.extend(straight("ACME-126"));
     script.insert(
-        "resolution@ACME-125".into(),
+        "review-response@ACME-125".into(),
+        json!([{"output": {"status": "escalation_needed",
+                           "reason": "Including archived orders would widen the issue's outcome."}}]),
+    );
+    script.insert(
+        "exception@ACME-125".into(),
         json!([
-            {"output": {"decision": "ask", "question": "Should the export include archived orders? The comment asks for them; the issue does not."}},
+            {"output": {"action": "ask", "note": "A comment asks for more than the issue",
+                        "question": "Should the export include archived orders? The comment asks for them; the issue does not."}},
             {"hang": true}
         ]),
     );
@@ -992,7 +994,7 @@ fn a_reply_to_a_design_approval_goes_back_to_the_lead_as_the_answer() {
 fn approving_a_merge_while_new_comments_are_judged_merges_nothing() {
     let env = Env::new();
     let mut script = Map::new();
-    script.insert("resolution@ACME-125".into(), json!([{"hang": true}]));
+    script.insert("review-response@ACME-125".into(), json!([{"hang": true}]));
     let (mut d, gh, stub, slack) = held_merge(&env, "", script);
     let request = stub.message_of(&pending_merge_request(&d).unwrap().id);
     let pr = d.issue("ACME-125").unwrap().unwrap().flow.pr.unwrap();
@@ -1001,14 +1003,14 @@ fn approving_a_merge_while_new_comments_are_judged_merges_nothing() {
         &mut d,
         30,
         |_| {},
-        |d| stage(d, "ACME-125") == Stage::running(Step::Resolution),
+        |d| stage(d, "ACME-125") == Stage::running(Step::ReviewResponse),
     );
 
     deliver(&slack, &[press_on(&request, "approve", OWNER)]);
     ticks(&mut d, 5);
 
     assert_eq!(merges(&gh), [] as [String; 0]);
-    assert_eq!(stage(&d, "ACME-125"), Stage::running(Step::Resolution));
+    assert_eq!(stage(&d, "ACME-125"), Stage::running(Step::ReviewResponse));
 }
 
 // AC: "Held categories are the union of what the design declared and what path rules in

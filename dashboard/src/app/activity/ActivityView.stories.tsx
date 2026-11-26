@@ -29,7 +29,7 @@ export const ThisSprint: Story = {
   play: async ({ canvasElement, args }) => {
     const canvas = within(canvasElement)
     const under = canvas.getByRole('region', { name: 'Under way' })
-    await expect(under).toHaveTextContent('Lead is judging the 4 findings · for 3 min')
+    await expect(under).toHaveTextContent('Executor is judging the 4 findings · for 3 min')
     await expect(canvas.getByText(/reviewed the code/)).toHaveTextContent('→ 3 findings')
     await expect(canvas.getByText(/→ failed/)).toBeVisible()
     await userEvent.selectOptions(canvas.getByRole('combobox', { name: 'Issue' }), 'ACME-141')

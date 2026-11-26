@@ -9,7 +9,9 @@ use std::path::{Path, PathBuf};
 use ovenspring_core::config::Role;
 use ovenspring_core::flow::{self, Action, Cause, CommitPoint, Fact, Filing, IssueState, Stage};
 use ovenspring_core::item::{Front, Item, Status};
-use ovenspring_core::output::{Decision, PrepareOutput, QualityStatus, Scale, StepOutput};
+use ovenspring_core::output::{
+    DocumentStatus, ExecutorStatus, PrepareOutput, QualityStatus, Scale, StepOutput,
+};
 use ovenspring_core::plan;
 use ovenspring_core::step::{Document, Step};
 use ovenspring_store::{StoreError, item_name};
@@ -186,10 +188,9 @@ impl IssueRecord {
 }
 
 /// Steps that are the orchestrator's or the factory's own judgment: they read the issue's records.
-const JUDGING: [Step; 8] = [
+const JUDGING: [Step; 7] = [
     Step::Requirements,
     Step::ScopeCheck,
-    Step::Resolution,
     Step::RerunCheck,
     Step::Exception,
     Step::Prototype,
@@ -520,7 +521,7 @@ impl Daemon {
             refs.extend(record.outputs.values().cloned());
         }
         if record.flow.origin == Some(ovenspring_core::flow::Origin::PrComments)
-            && matches!(step, Step::ReviewResponse | Step::Resolution)
+            && step == Step::ReviewResponse
         {
             refs.extend(record.comments_source.iter().cloned());
         }
@@ -606,7 +607,7 @@ impl Daemon {
         let document = filing.step.document().map(Document::name);
         if let (true, Some(document)) = (correcting, document) {
             return Ok(format!(
-                "Update the {document} of {key} (update mode) for the findings the latest resolution applied."
+                "Judge the findings on the {document} of {key}, and update it (update mode) for those you apply."
             ));
         }
         Ok(match filing.step {
@@ -656,21 +657,20 @@ impl Daemon {
                 None => format!("Review the code of {key}{round}."),
             },
             Step::SecurityReview => format!("Review the security of {key}'s change{round}."),
-            Step::Resolution
-                if record.flow.origin == Some(ovenspring_core::flow::Origin::PrComments) =>
-            {
-                format!(
-                    "Judge the new comments on {key}'s pull request {}, each as a finding.",
-                    record.pr_url.as_deref().unwrap_or_default()
-                )
-            }
-            Step::Resolution => format!("Judge the findings on {key}."),
             Step::RerunCheck => format!(
                 "Judge whether {key}'s correction changed the evidence the reviews that passed relied on."
             ),
-            Step::ReviewResponse => {
-                format!("Correct {key}'s implementation for the applied findings.")
+            Step::ReviewResponse
+                if record.flow.origin == Some(ovenspring_core::flow::Origin::PrComments) =>
+            {
+                format!(
+                    "Judge the new comments on {key}'s pull request {}, each as a finding, and correct the implementation for those you apply.",
+                    record.pr_url.as_deref().unwrap_or_default()
+                )
             }
+            Step::ReviewResponse => format!(
+                "Judge the findings on {key}'s implementation, and correct it for those you apply."
+            ),
             Step::FixCi => self.fix_ci_request(record)?,
             Step::MergeBase => format!(
                 "First bring `origin/{}` and `origin/{}` into {key}'s branch with `git merge` and resolve each conflict within the issue's outcome: merging them before the push conflicted.",
@@ -764,7 +764,12 @@ impl Daemon {
         let step = item.front.step;
         self.update_issue(&key, |r| {
             r.last_item = Some(archived.display().to_string());
-            if item.front.status == Status::Done {
+            // The archive retains failed attempts. Only a usable result replaces the
+            // review evidence a retry will receive.
+            let failed_check = step.is_check()
+                && !matches!(&fact, Fact::Done {output, ..}
+                if output.check_result() != Some(ovenspring_core::output::CheckResult::Blocked));
+            if item.front.status == Status::Done && !failed_check {
                 let key = ovenspring_core::output::output_key(step, unit);
                 let found = fs::read_to_string(&item.front.out)
                     .ok()
@@ -841,10 +846,25 @@ impl Daemon {
         let Some(output) = self.read_output(item)? else {
             return Ok(Fact::Stuck { step, unit });
         };
-        if let StepOutput::Resolution(r) = &output
-            && r.decision == Decision::Proceed
+        // Only a finished judgment must name every finding: an escalation or a question is not one.
+        let judged = if let StepOutput::Executor(e) = &output
+            && step == Step::ReviewResponse
+            && e.status == ExecutorStatus::Completed
         {
-            let undisposed = crate::handoff::undisposed(&self.record_of(key)?, r);
+            Some(&e.dispositions)
+        } else if let StepOutput::Document(d) = &output
+            && d.question.is_none()
+            && d.status == DocumentStatus::Completed
+        {
+            Some(&d.dispositions)
+        } else {
+            None
+        };
+        let record = self.record_of(key)?;
+        if let Some(dispositions) =
+            judged.filter(|_| step == Step::ReviewResponse || record.flow.correcting())
+        {
+            let undisposed = crate::handoff::undisposed(&record, dispositions);
             if !undisposed.is_empty() {
                 let error = format!("no disposition for {}", undisposed.join(", "));
                 self.event(&json!({"event": "unreadable-output", "step": step, "error": error}))?;
@@ -1042,7 +1062,15 @@ impl Daemon {
         let parsed = fs::read_to_string(&item.front.out)
             .map_err(|e| e.to_string())
             .and_then(|t| serde_json::from_str(&t).map_err(|e| e.to_string()))
-            .and_then(|v| StepOutput::parse(step, v));
+            .and_then(|raw: serde_json::Value| {
+                let output = StepOutput::parse(step, raw.clone())?;
+                if step.is_check()
+                    && output.check_result() != Some(ovenspring_core::output::CheckResult::Blocked)
+                {
+                    self.check_reconciliation(item, &raw)?;
+                }
+                Ok(output)
+            });
         match parsed {
             Ok(output) => Ok(Some(output)),
             Err(e) => {
@@ -1050,6 +1078,60 @@ impl Daemon {
                 Ok(None)
             }
         }
+    }
+
+    /// A scoped recheck answers exactly its filed questions. Failure to answer preserves
+    /// the previous judgment for recovery instead of accepting a new review as its answer.
+    fn check_reconciliation(&self, item: &Item, raw: &serde_json::Value) -> Result<(), String> {
+        if !item
+            .body
+            .lines()
+            .take_while(|line| *line != "## Result")
+            .any(|line| line.starts_with("prior_feedback: "))
+        {
+            return Ok(());
+        }
+        let name = item_name(Path::new(&item.front.out));
+        let file = self
+            .store
+            .source(&format!("handoffs/{name}-prior_feedback.json"));
+        let expected: serde_json::Value =
+            serde_json::from_slice(&fs::read(file).map_err(|e| e.to_string())?)
+                .map_err(|e| e.to_string())?;
+        // Cross-document sync and legacy verification carry their own conflict report schema.
+        let Some(entries) = expected.as_array() else {
+            return Ok(());
+        };
+        let mut expected: Vec<_> = entries
+            .iter()
+            .map(|e| (&e["id"], &e["disposition"]))
+            .collect();
+        let answers = raw["prior_feedback_reconciliation"]
+            .as_array()
+            .ok_or("missing reconciliation for prior feedback")?;
+        for answer in answers {
+            let pair = (&answer["id"], &answer["prior_disposition"]);
+            let index = expected
+                .iter()
+                .position(|entry| *entry == pair)
+                .ok_or("unexpected or repeated reconciliation entry")?;
+            expected.swap_remove(index);
+            if answer["status"] == "maintained"
+                && answer["evidence"]
+                    .as_str()
+                    .is_none_or(|e| e.trim().is_empty())
+            {
+                return Err("maintained finding has no remaining condition".into());
+            }
+        }
+        if !expected.is_empty()
+            || crate::handoff::FINDING_KEYS
+                .iter()
+                .any(|k| raw[*k].as_array().is_some_and(|a| !a.is_empty()))
+        {
+            return Err("a recheck must answer only and all of its filed findings".into());
+        }
+        Ok(())
     }
 
     /// Repairs any issue missing an item its state calls for (after a restart, a failed write, or

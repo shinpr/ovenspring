@@ -8,7 +8,7 @@ Before writing a test, inspect the test scripts, runner configuration, setup fil
 
 - Use the repository's network mocking layer for API behavior. When that layer is handler-based, extend its handlers instead of adding runner-level request mocks.
 - Use the configured runner's imports, module-mocking API, fake timers, and reset conventions.
-- When multiple approaches coexist, choose from the behavior under test and the setup the repository maintains for it rather than from proximity alone. If none is representative and adding or replacing tooling is outside the approved work, report the missing test-environment decision.
+- When multiple approaches coexist, choose from the behavior under test and the setup the repository maintains for it rather than from proximity alone. If none is representative and adding or replacing tooling is outside the work's scope, report the missing test-environment decision.
 
 ## Test Scope
 

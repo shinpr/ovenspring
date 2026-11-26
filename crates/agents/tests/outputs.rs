@@ -228,8 +228,13 @@ fn design_samples() -> Samples {
                 // A name of the owner's own: a kind of change a person reviews.
                 json!({"status": "completed", "documentType": "DesignDoc", "path": "docs/design/a.md",
                        "approvals": ["payments"]}),
+                json!({"status": "completed", "path": "docs/design/a.md", "dispositions": [
+                    {"id": "I001", "disposition": "apply", "reason": "AC-2 has no row in the table"},
+                    {"id": "I002", "disposition": "decline", "reason": "the section it asks for repeats AC-3"}
+                ]}),
             ],
             vec![
+                json!({"status": "completed", "path": "docs/design/a.md", "dispositions": [{"id": "I001", "disposition": "apply", "reason": ""}]}),
                 json!({"status": "completed", "path": "docs/design/a.md", "approvals": [""]}),
                 json!({"status": "completed", "path": "docs/design/a.md", "approvals": ["schema", "schema"]}),
                 json!({"status": "completed", "path": "docs/design/a.md", "approvals": ["factory-configuration"]}),
@@ -281,8 +286,18 @@ fn code_samples() -> Samples {
         vec![
             json!({"status": "completed", "taskName": "t", "changeSummary": "c", "requiresTestReview": true}),
             json!({"status": "escalation_needed", "reason": "r", "requiredDecision": "d"}),
+            json!({"status": "completed", "changeSummary": "c", "requiresTestReview": false, "dispositions": [
+                {"id": "F001", "review": "code-review/1", "disposition": "apply", "reason": "a.ts:1 breaks AC-1"},
+                {"id": "F002", "review": "code-review/1", "disposition": "apply", "owner": "author", "reason": "the Design Doc names five columns; AC-1 six"},
+                {"id": "S001", "review": "security-review", "disposition": "decline", "reason": "optional hardening"}
+            ]}),
         ],
-        vec![json!({"taskName": "t"}), json!({"status": "done"})],
+        vec![
+            json!({"taskName": "t"}),
+            json!({"status": "done"}),
+            json!({"status": "completed", "dispositions": [{"id": "F001", "disposition": "decline"}]}),
+            json!({"status": "completed", "dispositions": [{"id": "F001", "review": "code-review/0", "disposition": "apply", "reason": "r"}]}),
+        ],
     );
     let quality = (
         vec![
@@ -318,22 +333,6 @@ fn code_samples() -> Samples {
                 json!({"status": "needs_revision", "summary": "s", "findings": [{"id": "S001"}]}),
             ],
             vec![json!({"status": "needs-improvement"})],
-        ),
-        (
-            "resolution",
-            vec![
-                json!({"decision": "proceed", "dispositions": []}),
-                json!({"decision": "proceed", "dispositions": [
-                    {"id": "F001", "review": "code-review/1", "disposition": "apply", "owner": "executor", "basis": "AC-1", "evidence": "a.ts:1"},
-                    {"id": "S001", "review": "security-review", "disposition": "decline", "basis": "AC-1", "evidence": "e", "reason": "optional hardening"}
-                ]}),
-                json!({"decision": "ask", "question": "q"}),
-            ],
-            vec![
-                json!({"decision": "proceed", "dispositions": [{"id": "F001", "disposition": "decline", "basis": "b", "evidence": "e"}]}),
-                json!({"decision": "proceed", "dispositions": [{"id": "F001", "review": "code-review/0", "disposition": "apply", "basis": "b", "evidence": "e"}]}),
-                json!({"decision": "ask"}),
-            ],
         ),
         (
             "rerun-check",
@@ -506,7 +505,7 @@ fn document_reviews_keep_their_source_agents_shared_sections_alike() {
     let shared = [
         "Execution Gate",
         "Review Order and Boundary",
-        "Findings and Review Resolution",
+        "Findings and Rechecks",
     ];
     let first = paragraphs(reviews[0], &shared);
     for review in &reviews[1..] {

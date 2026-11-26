@@ -13,6 +13,7 @@ use ovenspring_integrations::channel::{
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::sync::{Arc, PoisonError};
+use std::time::{Instant, SystemTime};
 
 use crate::app::{App, READY_WAIT};
 use crate::conversation::Said;
@@ -271,7 +272,6 @@ impl Daemon {
             Some(StepOutput::Requirements(r)) => r.question,
             Some(StepOutput::ScopeCheck(c)) => c.question,
             Some(StepOutput::Document(d)) => d.question,
-            Some(StepOutput::Resolution(r)) => r.question,
             Some(StepOutput::Exception(e)) => e.question,
             _ => None,
         })
@@ -932,31 +932,69 @@ impl Daemon {
     /// Once every `timing.remind`, while anything delivered waits on the owner, one message lists
     /// it all with where to answer. An owner who still does not answer leaves the work waiting.
     pub(crate) fn remind_owner(&mut self) -> Result<(), DaemonError> {
-        if self.last_reminder.elapsed() < self.timing.remind {
+        let now = Instant::now();
+        if now < self.next_reminder_check {
             return Ok(());
         }
-        self.last_reminder = std::time::Instant::now();
-        let pending: Vec<DecisionRecord> = self
-            .decisions()?
-            .into_iter()
-            .filter(|d| d.status == DecisionStatus::Pending)
-            .collect();
+        let interval = self.timing.remind;
+        let wall_now = SystemTime::now();
+        let mut next_check = interval;
+        let mut due = |since| {
+            let age = wall_now.duration_since(since).unwrap_or_default();
+            if age >= interval {
+                return true;
+            }
+            next_check = next_check.min(interval.saturating_sub(age));
+            false
+        };
+
+        let mut pending = Vec::new();
+        for decision in self.decisions()? {
+            if decision.status == DecisionStatus::Pending {
+                // Successful delivery writes the pending record; its next write ends the wait.
+                let path = self.store.isolated().join(decision_path(&decision.id));
+                let delivered = path
+                    .metadata()
+                    .and_then(|m| m.modified())
+                    .map_err(StoreError::io(&path))?;
+                if due(delivered) {
+                    pending.push(decision);
+                }
+            }
+        }
+        let mut issues = self.issues()?;
+        if issues.iter().any(|r| r.flow.stage == Stage::ReadyForOwner) {
+            let events = crate::records::fact_events(&self.store)?;
+            issues.retain(|r| {
+                r.flow.stage != Stage::ReadyForOwner
+                    || events
+                        .iter()
+                        .rev()
+                        .find(|e| {
+                            e.issue == r.key() && e.to == Stage::ReadyForOwner && e.from != e.to
+                        })
+                        .and_then(|e| e.at.parse::<jiff::Timestamp>().ok())
+                        .and_then(|at| SystemTime::try_from(at).ok())
+                        .is_none_or(&mut due)
+            });
+        }
         let purpose = self.sprint()?.and_then(|s| s.plan).map(|p| p.purpose);
-        let lines: Vec<String> =
-            crate::overview::waiting(&pending, &self.issues()?, purpose.as_deref())
-                .into_iter()
-                .filter_map(|w| {
-                    let link = w.link?;
-                    let what = match w.issue {
-                        Some(key) => format!("{key}: {}", w.title),
-                        None => w.title,
-                    };
-                    Some(format!("- [{what}]({link})"))
-                })
-                .collect();
+        let lines: Vec<String> = crate::overview::waiting(&pending, &issues, purpose.as_deref())
+            .into_iter()
+            .filter_map(|w| {
+                let link = w.link?;
+                let what = match w.issue {
+                    Some(key) => format!("{key}: {}", w.title),
+                    None => w.title,
+                };
+                Some(format!("- [{what}]({link})"))
+            })
+            .collect();
         if lines.is_empty() {
+            self.next_reminder_check = now + next_check;
             return Ok(());
         }
+        self.next_reminder_check = now + interval;
         let notice = Notice {
             kind: NoticeKind::Reminder,
             issue: None,

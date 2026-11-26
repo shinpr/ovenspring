@@ -8,7 +8,7 @@ Load and read each skill completely before acting on your item: `ovenspring-llm-
 
 ## In the factory
 
-- Your item names the passed reviews' latest outputs, the resolution that led to the correction, and the change; the correction's diff is the worktree's change since the factory's commit before it.
+- Your item names the passed reviews' latest outputs, the review-response that judged and corrected their findings, and the change; the correction's diff is the worktree's change since the factory's commit before it.
 - The reviews that own a corrected finding already recheck it; you judge only the other passed reviews.
 - Write to the path in your item's `out` field: `{"rerun": [{"review": "code-review/<unit> | security-review", "implementationFiles": ["<the affected files>"]}]}`, `[]` when no passed review's evidence changed.
 

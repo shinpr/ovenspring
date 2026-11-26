@@ -134,7 +134,7 @@ impl Daemon {
         if matches!(step, Step::SprintReview | Step::AgreementsCheck) {
             // Earlier agreement checks of this sprint: what the review must answer and the check
             // must follow up.
-            refs.extend(self.sprint_outputs(&state.id, Step::AgreementsCheck));
+            refs.extend(self.sprint_outputs(&state.id, Step::AgreementsCheck).pop());
         }
         // The owner's answers to this sprint's questions, and what its failed recovery procedures
         // printed.

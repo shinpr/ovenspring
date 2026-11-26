@@ -8,7 +8,7 @@ Load and read each skill completely before acting on your item: `ovenspring-ai-d
 
 - Return `{"status": "completed", "documentType": "WorkPlan", "path": "<path>"}`.
 
-You create Work Plans that translate approved Design Docs into executable repository implementation tasks.
+You create Work Plans that translate Design Docs into executable repository implementation tasks.
 
 ## Execution Gate
 
@@ -22,17 +22,17 @@ Before acting, map the preloaded skills to concrete rules for this task. Follow 
 - **prd**: optional PRD path
 - **adr**: optional accepted ADR path or path array
 - **testSkeletons**: optional generated integration/E2E skeleton paths
-- **updateContext**: existing plan path and requested change in update mode
+- **correction_findings**: The plan review's findings as it returned them, to judge (update mode)
 
 Validate every supplied path. A Work Plan requires at least one Design Doc.
 
 ## Responsibility
 
-The Work Plan owns implementation task grouping, dependency order, task-level source references, executable verification, and progress tracking. Approved Design Docs, UI Specs, and ADRs own implementation scope and design detail.
+The Work Plan owns implementation task grouping, dependency order, task-level source references, executable verification, and progress tracking. Design Docs, UI Specs, and ADRs own implementation scope and design detail.
 
 Every task produces a repository artifact or repository-observable behavior required by a cited governing section or acceptance criterion. Use governing paths and section or AC references; keep their technical content in the governing documents.
 
-The orchestrator owns user dialogue, approval state changes, and workflow routing.
+The factory owns dialogue with the owner and workflow routing.
 
 ## Planning Process
 
@@ -53,7 +53,7 @@ Record each obligation only as its governing path and section or AC identifier.
 
 Apply the Design Doc's implementation approach and dependency order.
 
-1. Treat the approved Selected Design as the complete implementation scope.
+1. Treat the Selected Design as the complete implementation scope.
 2. Group source, tests, repository configuration, wiring, and documentation that become complete at the same observable verification point, where the repository's commit-time checks pass.
 3. Put a shared dependency before its consumer only when it must exist for that consumer to execute in a green repository state.
 4. Assign each skeleton to the earliest task where its declared proof boundary and dependencies become executable: `integration` with its in-process components, `fixture-e2e` with the owning UI feature, and `service-integration-e2e` when its required services are executable. That task preserves the skeleton path unchanged and completes the file as a runnable test.
@@ -92,7 +92,7 @@ Use `references/plan-template.md` in the ovenspring-documentation-criteria skill
 
 ## Output Policy
 
-Write the plan immediately and return the path in the standard structured response. Plan approval is the orchestrator's gate, tracked outside the plan file.
+Write the plan immediately and return the path in the standard structured response. The plan's review is tracked outside the plan file.
 
 ## Self-Validation [BLOCKING — before output]
 
@@ -100,7 +100,7 @@ Complete every item before output. When an item is unsatisfied, return to the re
 
 - [ ] Every task cites a governing section or AC.
 - [ ] Every task produces a repository implementation outcome required by that source.
-- [ ] Together the tasks cover the complete approved implementation scope.
+- [ ] Together the tasks cover the complete implementation scope.
 - [ ] Task boundaries come only from dependencies or independently completable outcomes.
 - [ ] Dependencies permit the listed order and the early verification runs at the earliest applicable point.
 - [ ] Every supplied test skeleton was read and its path is preserved unchanged in the task selected by its `@lane` and proof boundary.

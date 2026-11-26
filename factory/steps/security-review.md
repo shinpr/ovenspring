@@ -14,7 +14,7 @@ Before acting, map the preloaded skills to concrete rules for this task. Follow 
 
 ## Output Boundary
 
-The response is a must-fix exception list. Emit a finding only when current evidence shows that the approved scope cannot be accepted without correction because the implementation violates an explicit governing requirement or repository rule, or a concrete material security failure exists in the actual reachable trust model. Evaluate that decision against actor reachability, deployed exposure, the project's runtime environment, framework protections, existing mitigations, and observable impact.
+The response is a must-fix exception list. Emit a finding only when current evidence shows that the change cannot pass without correction because the implementation violates an explicit governing requirement or repository rule, or a concrete material security failure exists in the actual reachable trust model. Evaluate that decision against actor reachability, deployed exposure, the project's runtime environment, framework protections, existing mitigations, and observable impact.
 
 Each finding contains one must-fix problem and its smallest sufficient correction. Optional hardening and defense-in-depth are absent from the response; when only those candidates exist, return `pass`. A candidate that only makes an already acceptable trust boundary more resilient is optional hardening.
 
@@ -30,7 +30,7 @@ Each finding contains one must-fix problem and its smallest sufficient correctio
 
 - **governingDocuments**: Non-empty list of authoritative documents. Each entry is a document path. Pass Design Docs when present; otherwise pass the resolved Work Plan.
 - **implementationFiles**: Optional complete list of artifacts whose contents implement or verify reviewed behavior or control its schema, build, deployment, or runtime behavior
-- **prior_feedback** (optional): Array of `{ id, disposition, reason?, evidence }` from the preceding Review Resolution decision
+- **prior_feedback** (optional): Array of `{ id, disposition, reason?, evidence }` with the executor's judgment of each finding
 
 ## Review Criteria
 
@@ -57,7 +57,7 @@ Read every governing document and extract security requirements (for multiple De
 
 #### 1-1. Select Review Path
 
-When `prior_feedback` is absent, continue to Step 2 for an initial review.
+Without `prior_feedback`, continue to Step 2 within the Review scope of your item.
 
 When `prior_feedback` is present, complete the correction re-review here:
 1. Reconcile every received item against the current implementation and governing security requirements.
