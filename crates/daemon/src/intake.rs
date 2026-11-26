@@ -205,6 +205,7 @@ impl Daemon {
         };
         match tracker.open_issues() {
             Ok(mut issues) => {
+                // An issue someone else already started is theirs; the factory's own stay.
                 issues.retain(|issue| {
                     !issue.started || self.issue(&issue.key).is_ok_and(|record| record.is_some())
                 });
@@ -225,6 +226,8 @@ impl Daemon {
                 self.tracker_error = None;
                 records::reached(&self.store, Service::Tracker, Ok(()))?;
             }
+            // Not answering is the service's or the network's: shown as out of reach, not as a
+            // connection to fix.
             Err(error @ HttpError::Transient { why, .. }) => {
                 records::reached(&self.store, Service::Tracker, Err(why))?;
                 self.event(&json!({"event": "service-unreachable", "operation": "reading the tracker", "error": error.to_string()}))?;
@@ -308,6 +311,7 @@ impl Daemon {
             self.event(&json!({"event": "tracker-issues", "open": open}))?;
         }
         self.open_issues = published;
+        // A sprint that found no issue to propose proposes again once one opens.
         if opened {
             self.sprint_fact(&ovenspring_core::sprint::SprintFact::IssueOpened)?;
         }
@@ -447,6 +451,10 @@ impl Daemon {
         let _ = run.handle.join();
     }
 
+    /// Removes the snapshot of each issue the tracker no longer reports open, so a reader never
+    /// takes an old state for the current one. An issue the factory is still working on keeps its
+    /// snapshot: its steps read the requester's words from it. So does an issue in the current
+    /// proposal that has no record yet: approving it takes the title and URL from that snapshot.
     fn forget_closed_sources(&self, open: &[&str]) -> Result<(), DaemonError> {
         let dir = self.store.source("issues");
         let current_plan = self.sprint()?.and_then(|sprint| sprint.plan);

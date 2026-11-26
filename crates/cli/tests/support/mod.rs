@@ -136,46 +136,16 @@ impl Env {
         self.set_tracker_filter(Some(command));
     }
 
-    /// Replaces or removes `[tracker] filter` in the repository's configuration.
+    /// Replaces or removes `[tracker] filter` in the repository's configuration, serialized as a
+    /// Settings save serializes it.
     pub fn set_tracker_filter(&self, command: Option<&str>) {
-        let path = self.repo.join(".ovenspring/config.toml");
-        let text = std::fs::read_to_string(&path).unwrap();
-        let setting = command.map(|value| {
-            let escaped = value.replace('\\', "\\\\").replace('"', "\\\"");
-            format!("filter = \"{escaped}\"")
-        });
-        let mut output = Vec::new();
-        let mut in_tracker = false;
-        let mut found_filter = false;
-        for line in text.lines() {
-            if line.starts_with('[') {
-                if in_tracker
-                    && !found_filter
-                    && let Some(setting) = &setting
-                {
-                    output.push(setting.clone());
-                }
-                in_tracker = line.trim() == "[tracker]";
-                found_filter = false;
-                output.push(line.to_owned());
-                continue;
-            }
-            if in_tracker && line.trim_start().starts_with("filter =") {
-                if let Some(setting) = &setting {
-                    output.push(setting.clone());
-                }
-                found_filter = true;
-            } else {
-                output.push(line.to_owned());
-            }
-        }
-        if in_tracker
-            && !found_filter
-            && let Some(setting) = setting
-        {
-            output.push(setting);
-        }
-        std::fs::write(path, format!("{}\n", output.join("\n"))).unwrap();
+        let mut config = ovenspring_core::config::Config::read(&self.repo).unwrap();
+        config.tracker.filter = command.map(str::to_owned);
+        std::fs::write(
+            self.repo.join(".ovenspring/config.toml"),
+            config.to_toml().unwrap(),
+        )
+        .unwrap();
     }
 
     /// Writes the real shell script run by an integration test and returns its repository-relative command.
