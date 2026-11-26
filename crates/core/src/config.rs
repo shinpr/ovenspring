@@ -267,7 +267,6 @@ pub struct TrackerConfig {
     /// Linear team key; unused for GitHub Issues, which reads the repository's own issues.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub team: Option<String>,
-    /// Owner's command that decides which open issues enter intake.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub filter: Option<String>,
 }

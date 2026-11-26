@@ -275,6 +275,8 @@ Exit 0 admits the issue. Exit 2 drops it; the first line of stdout is the reason
 
 For a drop, the daemon records the issue key, URL and reason in `events.jsonl`. It masks credentials held from the command's start until its result is taken and values in common token formats. Agents read this event log when they collect sprint facts.
 
+When you first set the filter or change its command while the factory is running, it rechecks every current issue that has not been selected for a sprint, even if the issue has not changed. Until each new command returns, the factory handles that issue as if no filter were set, so an agent may read it before a later drop removes it. Intake ends when the lead includes an issue in a sprint proposal: the factory keeps using the version the lead selected and does not recheck later tracker edits. If a revised proposal leaves the issue out, it becomes a candidate again; unchanged content already judged by the current command is not run twice.
+
 This example uses `jq`. Save it as `.ovenspring/filter-issue.sh` and make it executable with `chmod +x .ovenspring/filter-issue.sh`:
 
 ```sh

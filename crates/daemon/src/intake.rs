@@ -127,7 +127,6 @@ fn judge_until(mut child: Child, input: Vec<u8>, deadline: Instant) -> Outcome {
             Err(error) => {
                 stop_group(pid);
                 let _ = child.wait();
-                let _ = writer.join();
                 let _ = reader.join();
                 return Outcome::Failed(format!("could not wait for filter: {error}"));
             }
@@ -135,12 +134,16 @@ fn judge_until(mut child: Child, input: Vec<u8>, deadline: Instant) -> Outcome {
         if Instant::now() >= deadline {
             stop_group(pid);
             let _ = child.wait();
-            let _ = writer.join();
             let _ = reader.join();
             return Outcome::Failed("ran longer than 60 seconds".into());
         }
         std::thread::sleep(Duration::from_millis(10));
     };
+    if !writer.is_finished() {
+        // A descendant can keep the input pipe open without draining it after the shell has
+        // exited. Stop that leftover process group so the completed verdict cannot strand a writer.
+        stop_group(pid);
+    }
     let _ = writer.join();
     let first_line = match reader.join() {
         Ok(Ok(line)) => line,
@@ -211,15 +214,19 @@ impl Daemon {
                 let keys: HashSet<String> = issues.iter().map(|issue| issue.key.clone()).collect();
                 self.verdicts.retain(|key, _| keys.contains(key));
                 self.provisional.retain(|key| keys.contains(key));
-                if let Some(run) = self.filter_run.as_mut()
-                    && !keys.contains(&run.key)
-                {
-                    run.void = true;
-                }
-                self.tracker_issues = issues
+                let tracker_issues: Vec<(TrackerIssue, [u8; 32])> = issues
                     .iter()
                     .map(|issue| encoded_input(issue).map(|(_, hash)| (issue.clone(), hash)))
                     .collect::<Result<_, _>>()?;
+                if let Some(run) = self.filter_run.as_mut()
+                    && tracker_issues
+                        .iter()
+                        .find(|(issue, _)| issue.key == run.key)
+                        .is_none_or(|(_, hash)| *hash != run.hash)
+                {
+                    run.void = true;
+                }
+                self.tracker_issues = tracker_issues;
                 self.tracker_read = true;
                 self.tracker_error = None;
                 records::reached(&self.store, Service::Tracker, Ok(()))?;
@@ -451,6 +458,7 @@ impl Daemon {
 
     fn forget_closed_sources(&self, open: &[&str]) -> Result<(), DaemonError> {
         let dir = self.store.source("issues");
+        let current_plan = self.sprint()?.and_then(|sprint| sprint.plan);
         let entries = fs::read_dir(&dir).map_err(StoreError::io(&dir))?;
         for entry in entries {
             let path = entry.map_err(StoreError::io(&dir))?.path();
@@ -461,7 +469,15 @@ impl Daemon {
             else {
                 continue;
             };
-            if !open.contains(&key) && !self.selected(key)? {
+            let record = self.issue(key)?;
+            let record_is_unfinished = record
+                .as_ref()
+                .is_some_and(|record| !record.flow.stage.is_finished());
+            let proposed_without_record = record.is_none()
+                && current_plan
+                    .as_ref()
+                    .is_some_and(|plan| plan.issues.iter().any(|issue| issue.key == key));
+            if !open.contains(&key) && !record_is_unfinished && !proposed_without_record {
                 fs::remove_file(&path).map_err(StoreError::io(&path))?;
             }
         }
@@ -583,10 +599,6 @@ mod tests {
     }
 
     fn process_exists(pid: &str) -> bool {
-        Command::new("kill")
-            .args(["-0", "--", pid])
-            .stderr(Stdio::null())
-            .status()
-            .is_ok_and(|status| status.success())
+        pid.parse::<u32>().is_ok_and(crate::app::alive)
     }
 }

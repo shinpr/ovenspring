@@ -320,22 +320,24 @@ fn credentials_remain_masked_when_a_drop_waits_for_the_sprint_proposal_to_end() 
 // Permissible substitutes: RecordingTracker for external tracker I/O; real config reload, HALT,
 //     Store and filter process.
 
-// Planned test: a result for content that changed during judgment is discarded.
+// Regression: a result is discarded if content changes during judgment, even if it later returns
+//     to the original bytes.
 // AC: Issue Filter Design Document, Acceptance Criteria > Intake: "If the configured filter
 //     changed, the issue left the tracker's open list (even if reopened), or its content changed
 //     while a command judged it, or the issue is selected when the result arrives, then the system
 //     shall discard that result: no verdict, no publication change and no event come from it"
 // Source: docs/design/issue-filter-design.md, Acceptance Criteria > Intake.
-// Behavior: a gated run reads X's old input; the tracker edits X before the run returns exit 2 ->
-//     the old result changes no snapshot or event, and the edited input receives a fresh run.
+// Behavior: a gated run reads X's old input; the tracker changes X and then restores the original
+//     content before the run returns exit 2 -> the old result changes no snapshot or event, and
+//     the restored content receives a fresh run.
 // @lane: integration
 // @dependency: Daemon::tick, Store, RecordingTracker
 // @real-dependency: Store, sh -c filter process
 // Primary failure mode: a stale drop removes the updated issue or logs a reason for content the
 //     current command never judged.
-// Proof obligation: gate the first invocation, change a serialized input field, release it with
-//     exit 2, and require the new content to remain unjudged and the old result to emit no event;
-//     then require a fresh invocation whose captured stdin contains the edited body to decide it.
+// Proof obligation: gate the first invocation, poll changed content and then the original content,
+//     release it with exit 2, and require no event from that result; then require a fresh invocation
+//     whose captured stdin contains the restored body to decide it.
 // Permissible substitutes: RecordingTracker and deterministic gated scripts. Keep Store and the
 //     command process real.
 
@@ -956,6 +958,142 @@ fn no_filter_poll_preserves_tracker_snapshots_and_publication_event() {
     assert_eq!(tracker_events[0]["open"], json!(["ACME-131", "ACME-132"]));
 }
 
+// Regression: a filter run that exits while a descendant holds its unread stdin cannot occupy the
+//     only filter slot past the verdict.
+// AC: Issue Filter Design Document, Acceptance Criteria > The command's contract and Risks and Mitigation.
+// Behavior: a command reads only the JSON prefix, starts a descendant that holds the stdin pipe
+//     without draining it, then exits 2 -> intake applies the drop and judges the next candidate.
+// @lane: integration
+// @dependency: Daemon::tick, intake publication, RecordingTracker
+// @real-dependency: Store, sh -c filter process and its process group
+// Proof obligation: give the first issue input larger than a pipe buffer; before releasing the
+//     descendant, require the first drop event and a second command invocation, then require the
+//     first issue absent and the second admitted.
+#[test]
+fn a_filter_exit_with_a_blocked_stdin_writer_releases_the_filter_slot() {
+    let env = Env::new();
+    let script = r#"prefix=$(head -c 20)
+case "$prefix" in
+  *ACME-131*)
+    (while [ ! -f .ovenspring/release ]; do sleep 0.01; done) <&0 >/dev/null 2>&1 &
+    echo $! > .ovenspring/held-pid
+    printf 'large issue denied\n'
+    exit 2
+    ;;
+  *ACME-132*)
+    cat >/dev/null
+    printf 'x\n' >> .ovenspring/second-ran
+    exit 0
+    ;;
+esac
+exit 1
+"#;
+    let mut large_issue = issue("ACME-131");
+    large_issue.body = "x".repeat(1024 * 1024);
+    let (mut daemon, _, _) = filtered_daemon(
+        &env,
+        script,
+        vec![large_issue, issue("ACME-132")],
+        Vec::new(),
+    );
+
+    daemon.tick().unwrap();
+    let observed_held_child = support::wait_until(3, || env.filter_file("held-pid").exists());
+    let completed_before_release = support::wait_until(2, || {
+        daemon.tick().unwrap();
+        filter_events(&env, "filter-dropped").len() == 1
+            && invocation_count(&env, "second-ran") == 1
+    });
+    std::fs::write(env.filter_file("release"), "go").unwrap();
+    assert!(
+        observed_held_child,
+        "the filter must leave a descendant holding stdin"
+    );
+    assert!(
+        completed_before_release,
+        "the completed command must not wait for a descendant that holds stdin open"
+    );
+
+    support::run_until(
+        &mut daemon,
+        5,
+        |_| {},
+        |daemon| has_open_issue(daemon, "ACME-132"),
+    );
+    assert_unpublished(&env, &daemon, "ACME-131");
+    assert!(env.state().join("sources/issues/ACME-132.md").exists());
+}
+
+// Regression: closed snapshots are retained only while work is unfinished or a proposal has not
+//     started its selected issue.
+// Source: docs/design/issue-filter-design.md, Selected Design > Publication pass, Cleanup.
+// Behavior: a finished issue closes on the tracker -> its old intake snapshot is removed.
+// @lane: integration
+// @dependency: Daemon::tick, issue records, RecordingTracker
+// @real-dependency: Store
+// Proof obligation: publish a snapshot, create a finished issue record, close the tracker issue,
+//     and require the snapshot and open-list entry to disappear.
+#[test]
+fn a_closed_finished_issue_is_removed_from_intake_sources() {
+    let env = Env::new();
+    env.configure("");
+    let tracker = Arc::new(RecordingTracker::default());
+    *tracker.issues.lock().unwrap() = vec![issue("ACME-131"), issue("ACME-132")];
+    let channel = Arc::new(RecordingChannel::default());
+    let mut daemon = daemon(&env, services(tracker.clone(), channel.clone(), Vec::new()));
+
+    daemon.tick().unwrap();
+    let snapshot = env.state().join("sources/issues/ACME-131.md");
+    let other_snapshot = env.state().join("sources/issues/ACME-132.md");
+    assert!(snapshot.exists());
+    assert!(other_snapshot.exists());
+
+    let proposal = set_proposing(&daemon, None);
+    complete_sprint_plan(&mut daemon, &proposal, &plan(&["ACME-131", "ACME-132"]));
+    approve_sprint_proposal(&mut daemon, &channel);
+    assert_eq!(
+        daemon
+            .sprint()
+            .unwrap()
+            .unwrap()
+            .plan
+            .unwrap()
+            .issues
+            .iter()
+            .map(|planned| planned.key.as_str())
+            .collect::<Vec<_>>(),
+        ["ACME-131", "ACME-132"]
+    );
+
+    daemon.apply("ACME-131", Fact::MergedOnGitHub).unwrap();
+    assert!(
+        daemon
+            .issue("ACME-131")
+            .unwrap()
+            .unwrap()
+            .flow
+            .stage
+            .is_finished()
+    );
+    assert!(snapshot.exists());
+    assert!(has_open_issue(&daemon, "ACME-131"));
+    assert!(other_snapshot.exists());
+    assert!(has_open_issue(&daemon, "ACME-132"));
+
+    tracker
+        .issues
+        .lock()
+        .unwrap()
+        .retain(|issue| issue.key != "ACME-131");
+
+    daemon.tick().unwrap();
+
+    assert!(!snapshot.exists());
+    assert!(!has_open_issue(&daemon, "ACME-131"));
+    assert!(other_snapshot.exists());
+    assert!(has_open_issue(&daemon, "ACME-132"));
+}
+
 fn issue(key: &str) -> TrackerIssue {
     TrackerIssue {
         key: key.into(),
@@ -1304,7 +1442,7 @@ exit 1
     );
     env.set_tracker_filter(Some(&command_b));
     daemon.tick().unwrap();
-    assert!(support::wait_until(3, || invocation_count(env, "b-131") == 1));
+    support::run_until(daemon, 3, |_| {}, |_| invocation_count(env, "b-131") == 1);
     assert_eq!(
         std::fs::read_to_string(env.state().join("sources/issues/ACME-131.md")).unwrap(),
         initial_131,
@@ -1722,6 +1860,43 @@ fn credentials_replaced_while_a_filter_run_is_held_remain_masked() {
     assert!(!raw_events.contains(&secret_b));
 }
 
+// Regression: overlapping held values are matched in the command's original reason text.
+// AC: Issue Filter Design Document, Acceptance Criteria > Intake; PRD Non-Functional Requirements > Security.
+// Behavior: exit 2 returns a reason where two held credentials overlap -> intake still drops the
+//     issue and masks their full combined span without changing surrounding words.
+// @lane: integration
+// @dependency: Daemon::tick, Services::secrets, Store
+// @real-dependency: Store, sh -c filter process
+// Proof obligation: require the raw event to contain only the masked span and verify neither the
+//     combined value nor the suffix left by sequential replacement appears in events.jsonl.
+#[test]
+fn overlapping_held_credentials_are_fully_masked_from_the_raw_drop_event() {
+    let env = Env::new();
+    let secret_a = "shared-prefix";
+    let secret_b = "prefix-suffix";
+    let (mut daemon, _, _) = filtered_daemon(
+        &env,
+        "printf 'before shared-prefix-suffix after\\n'; exit 2\n",
+        vec![issue("ACME-131")],
+        vec![secret_a.into(), secret_b.into()],
+    );
+
+    daemon.tick().unwrap();
+    support::run_until(
+        &mut daemon,
+        5,
+        |daemon| assert_unpublished(&env, daemon, "ACME-131"),
+        |_| filter_events(&env, "filter-dropped").len() == 1,
+    );
+
+    let dropped = filter_events(&env, "filter-dropped");
+    assert_eq!(dropped[0]["reason"], "before [masked] after");
+    let raw_events = std::fs::read_to_string(env.state().join("events.jsonl")).unwrap();
+    assert!(!raw_events.contains(secret_a));
+    assert!(!raw_events.contains(secret_b));
+    assert!(!raw_events.contains("shared-prefix-suffix"));
+}
+
 #[test]
 fn a_failed_command_publishes_the_candidate_and_records_one_failure() {
     let env = Env::new();
@@ -1868,15 +2043,18 @@ fn a_new_steady_state_candidate_stays_unpublished_until_its_first_verdict() {
 }
 
 #[test]
-fn a_result_for_changed_content_is_discarded_and_the_current_content_is_judged() {
+fn a_result_is_discarded_when_content_changes_then_returns_to_original() {
     let env = Env::new();
     let script = "input=$(cat)\nprintf '%s\\n' \"$input\" >> .ovenspring/calls\nif [ ! -f .ovenspring/first ]; then printf '%s' \"$input\" > .ovenspring/first-input.json; touch .ovenspring/first; while [ ! -f .ovenspring/gate ]; do sleep 0.01; done; printf 'stale rejection\\n'; exit 2; fi\nprintf '%s' \"$input\" > .ovenspring/replacement-input.json\nexit 0\n";
+    let original_body = issue("ACME-131").body;
     let (mut daemon, tracker, _) =
         filtered_daemon(&env, script, vec![issue("ACME-131")], Vec::new());
 
     daemon.tick().unwrap();
     assert!(support::wait_until(3, || env.filter_file("first").exists()));
     tracker.issues.lock().unwrap()[0].body = "current edited requirement".into();
+    daemon.tick().unwrap();
+    tracker.issues.lock().unwrap()[0].body = original_body.clone();
     daemon.tick().unwrap();
     assert_unpublished(&env, &daemon, "ACME-131");
     assert_no_filter_events(&env, "filter-dropped");
@@ -1891,10 +2069,11 @@ fn a_result_for_changed_content_is_discarded_and_the_current_content_is_judged()
                 let snapshot =
                     std::fs::read_to_string(env.state().join("sources/issues/ACME-131.md"))
                         .unwrap();
-                assert!(snapshot.contains("current edited requirement"));
+                assert!(snapshot.contains(&original_body));
+                assert!(!snapshot.contains("current edited requirement"));
             }
             if !daemon.open_issues().is_empty() {
-                assert_eq!(daemon.open_issues()[0].body, "current edited requirement");
+                assert_eq!(daemon.open_issues()[0].body, original_body);
             }
         },
         |daemon| {
@@ -1915,7 +2094,7 @@ fn a_result_for_changed_content_is_discarded_and_the_current_content_is_judged()
         &std::fs::read_to_string(env.filter_file("replacement-input.json")).unwrap(),
     )
     .unwrap();
-    assert_eq!(replacement["body"], "current edited requirement");
+    assert_eq!(replacement["body"], original_body);
 }
 
 #[test]
@@ -2093,11 +2272,7 @@ exit 1
 }
 
 fn process_exists(pid: &str) -> bool {
-    std::process::Command::new("kill")
-        .args(["-0", "--", pid])
-        .stderr(std::process::Stdio::null())
-        .status()
-        .is_ok_and(|status| status.success())
+    pid.parse::<u32>().is_ok_and(ovenspring_daemon::app::alive)
 }
 
 #[test]
@@ -2106,7 +2281,7 @@ fn normal_daemon_stop_terminates_the_filter_process_group() {
     const FILTER_TIMEOUT_SECS: u64 = 10;
 
     let env = Env::new();
-    let script = "echo $$ > .ovenspring/filter-pid\nsleep 30 &\nchild=$!\necho $child > .ovenspring/child-pid\nwhile [ ! -f .ovenspring/gate ]; do sleep 0.01; done\nwait $child\n";
+    let script = "echo $$ > .ovenspring/filter-pid\nsleep 30 &\nchild=$!\necho $child > .ovenspring/child-pid\ntouch .ovenspring/pids-ready\nwhile [ ! -f .ovenspring/gate ]; do sleep 0.01; done\nwait $child\n";
     let command = env.write_filter_script(script);
     env.configure_filter(&command);
     let tracker = Arc::new(RecordingTracker::default());
@@ -2119,9 +2294,8 @@ fn normal_daemon_stop_terminates_the_filter_process_group() {
     let mut daemon = support::daemon_timed(&env, services(tracker, channel, Vec::new()), timing);
 
     daemon.tick().unwrap();
-    assert!(support::wait_until(3, || {
-        env.filter_file("filter-pid").exists() && env.filter_file("child-pid").exists()
-    }));
+    let pids_ready = env.filter_file("pids-ready");
+    assert!(support::wait_until(3, || pids_ready.exists()));
     let filter_pid = std::fs::read_to_string(env.filter_file("filter-pid")).unwrap();
     let child_pid = std::fs::read_to_string(env.filter_file("child-pid")).unwrap();
     assert!(process_exists(filter_pid.trim()));

@@ -100,21 +100,49 @@ fn token_at(text: &str, at: usize) -> Option<usize> {
 /// `text` with every value in `secrets` and every token the design's formats name replaced by
 /// `[masked]`.
 pub fn mask(text: &str, secrets: &[&str]) -> String {
-    let mut out = text.to_owned();
-    for secret in secrets.iter().filter(|s| !s.is_empty()) {
-        out = out.replace(secret, MASK);
-    }
-    let mut masked = String::with_capacity(out.len());
-    let mut at = 0;
-    while let Some(c) = out.get(at..).and_then(|r| r.chars().next()) {
-        if let Some(len) = token_at(&out, at) {
-            masked.push_str(MASK);
-            at += len;
-        } else {
-            masked.push(c);
-            at += c.len_utf8();
+    let mut spans = Vec::new();
+    for secret in secrets.iter().filter(|secret| !secret.is_empty()) {
+        let mut from = 0;
+        while let Some(relative) = text.get(from..).and_then(|rest| rest.find(secret)) {
+            let start = from + relative;
+            spans.push((start, start + secret.len()));
+            let Some(character) = text.get(start..).and_then(|rest| rest.chars().next()) else {
+                break;
+            };
+            from = start + character.len_utf8();
         }
     }
+    let mut at = 0;
+    while at < text.len() {
+        if let Some(len) = token_at(text, at) {
+            spans.push((at, at + len));
+        }
+        let Some(character) = text.get(at..).and_then(|rest| rest.chars().next()) else {
+            break;
+        };
+        at += character.len_utf8();
+    }
+
+    spans.sort_unstable();
+    let mut merged = Vec::<(usize, usize)>::with_capacity(spans.len());
+    for (start, end) in spans {
+        if let Some((_, previous_end)) = merged.last_mut()
+            && start < *previous_end
+        {
+            *previous_end = (*previous_end).max(end);
+        } else {
+            merged.push((start, end));
+        }
+    }
+
+    let mut masked = String::with_capacity(text.len());
+    let mut at = 0;
+    for (start, end) in merged {
+        masked.push_str(&text[at..start]);
+        masked.push_str(MASK);
+        at = end;
+    }
+    masked.push_str(&text[at..]);
     masked
 }
 
@@ -273,6 +301,18 @@ mod tests {
         ] {
             assert_eq!(mask(text, &[]), text);
         }
+    }
+
+    #[test]
+    fn overlapping_held_values_and_tokens_are_masked_as_their_original_spans() {
+        assert_eq!(
+            mask("before abcde after", &["abc", "bcde"]),
+            "before [masked] after"
+        );
+        assert_eq!(
+            mask("before sk-proj-abcdef after", &["sk-proj-abc"]),
+            "before [masked] after"
+        );
     }
 
     #[test]

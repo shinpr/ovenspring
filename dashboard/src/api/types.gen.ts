@@ -8,14 +8,14 @@ export type Activity = "reading-the-issue" | "writing-the-prd" | "reviewing-the-
 /**
  * What every launch gets, whatever its role.
  */
-export type AgentsConfig = { permissions: Permissions,
+export type AgentsConfig = { permissions: Permissions, 
 /**
  * Names of the MCP servers launches may use, defined in the repository's `.mcp.json` or the
  * owner's own Claude Code or Codex configuration.
  */
 mcp?: Array<string>, };
 
-export type AgreementsConfig = {
+export type AgreementsConfig = { 
 /**
  * Relative to the repository's root.
  */
@@ -27,7 +27,7 @@ path: string, };
  */
 export type ApiErrors = { errors: { [key in string]: string }, };
 
-export type AppConfig = { setup?: string | null, start?: string | null, ready?: string | null,
+export type AppConfig = { setup?: string | null, start?: string | null, ready?: string | null, 
 /**
  * The product has nothing to start (a library, a CLI): agents check with tests only and no
  * preview is offered.
@@ -50,7 +50,7 @@ export type Ask = "answer-question" | "approve-prd" | "approve-prototype" | "app
  */
 export type Available = { name: string, source: string, reaches: Array<string>, };
 
-export type CancelRequest = {
+export type CancelRequest = { 
 /**
  * Why the owner cancels it, told to the tracker; may be empty.
  */
@@ -68,11 +68,11 @@ export type Cli = "claude" | "codex" | "opencode";
  */
 export type CliSkills = { dirs: Array<string>, skills: Array<SkillInfo>, };
 
-export type Config = { repo: RepoConfig, merge: MergeConfig,
+export type Config = { repo: RepoConfig, merge: MergeConfig, 
 /**
  * Categories held for the owner by path; only the approval categories are valid names.
  */
-held: { [key in Approval]?: HeldCategory },
+held: { [key in Approval]?: HeldCategory }, 
 /**
  * Kinds of change a person reviews before they merge, by the owner's name for each, described
  * in the owner's words; the design and the code review judge which a change falls under.
@@ -85,15 +85,15 @@ export type Disposition = "apply" | "decline";
 
 export type DocumentKind = "prototype" | "ui-spec" | "adr" | "design-doc";
 
-export type EndedSprint = { id: string, purpose: string, startedAt: string | null, endedAt: string | null, keyResults: Array<KeyResult>,
+export type EndedSprint = { id: string, purpose: string, startedAt: string | null, endedAt: string | null, keyResults: Array<KeyResult>, 
 /**
  * The working-agreement files the review changed.
  */
-agreements: Array<string>,
+agreements: Array<string>, 
 /**
  * The issues merged, dropped and held for the review, by key.
  */
-merged: Array<string>, dropped: Array<string>, held: Array<string>, launches: number, costUsd: number,
+merged: Array<string>, dropped: Array<string>, held: Array<string>, launches: number, costUsd: number, 
 /**
  * Ended launches whose CLI reported no cost.
  */
@@ -104,7 +104,7 @@ export type Ending = "merged" | "closed" | "dropped" | "canceled" | "held";
 /**
  * One review finding and how it was answered.
  */
-export type FindingLine = { source: FindingSource, text: string,
+export type FindingLine = { source: FindingSource, text: string, 
 /**
  * None while unanswered.
  */
@@ -118,23 +118,23 @@ export type FindingSource = { "kind": "review", review: Step, round: number, } |
 /**
  * `general`: the base branch, who merges, what is held by path, and GitHub's token.
  */
-export type GeneralSection = { baseBranch: string, mergeBy: MergeBy,
+export type GeneralSection = { baseBranch: string, mergeBy: MergeBy, 
 /**
  * Category → path patterns; a category left out is not held.
  */
-held: { [key in Approval]?: Array<string> },
+held: { [key in Approval]?: Array<string> }, 
 /**
  * The owner's name for each kind of change a person reviews → the words that describe it.
  */
-personReviews: { [key in string]: string },
+personReviews: { [key in string]: string }, 
 /**
  * The folder the working agreements are kept in, relative to the repository's root.
  */
-agreementsPath: string,
+agreementsPath: string, 
 /**
  * The folder the factory keeps its knowledge in, relative to the repository's root.
  */
-knowledgePath: string,
+knowledgePath: string, 
 /**
  * Empty to keep the token already held, or to use the signed-in `gh`.
  */
@@ -143,13 +143,13 @@ githubToken: string | null, };
 /**
  * The account GitHub answered a passed check as, which pull requests are opened as.
  */
-export type GitHubAccount = { login: string,
+export type GitHubAccount = { login: string, 
 /**
  * The signed-in `gh`'s token, not one the owner entered.
  */
 fromGh: boolean, };
 
-export type GitHubSetup = {
+export type GitHubSetup = { 
 /**
  * None to use the token of the signed-in `gh`.
  */
@@ -162,7 +162,7 @@ export type GoalRequest = { text: string, };
  */
 export type GoalSaved = { goal: string, };
 
-export type GuardConfig = {
+export type GuardConfig = { 
 /**
  * Command patterns agents must not run, such as production access.
  */
@@ -176,27 +176,27 @@ export type HeldCategory = { paths: Array<string>, };
  */
 export type HeldCredential = { credential: Credential, ending: string, };
 
-export type IssueDetail = { key: string, title: string, tracker: string | null, pullRequest: string | null,
+export type IssueDetail = { key: string, title: string, tracker: string | null, pullRequest: string | null, 
 /**
  * The reference strength of the issue's prototype, once it has one.
  */
-prototype: ReferenceStrength | null, now: Position,
+prototype: ReferenceStrength | null, now: Position, 
 /**
  * What the owner is asked about this issue, while they are.
  */
-decision: Waiting | null, scale: Scale | null,
+decision: Waiting | null, scale: Scale | null, 
 /**
  * What the scale was judged from: the requirements' cost drivers.
  */
-scaleEvidence: Array<string>,
+scaleEvidence: Array<string>, 
 /**
  * The outcome the issue is to reach, from its requirements.
  */
-outcome: string | null, nonGoals: Array<string>, path: Array<PhaseSpan>, findings: Array<FindingLine>,
+outcome: string | null, nonGoals: Array<string>, path: Array<PhaseSpan>, findings: Array<FindingLine>, 
 /**
  * Why the owner canceled it, in their words; empty when they gave none.
  */
-canceled: string | null, launches: number, costUsd: number,
+canceled: string | null, launches: number, costUsd: number, 
 /**
  * Ended launches whose CLI reported no cost.
  */
@@ -209,7 +209,7 @@ export type KeyResult = { text: string, met: boolean, evidence: string, };
 /**
  * Where the factory keeps its knowledge in the repository.
  */
-export type KnowledgeConfig = {
+export type KnowledgeConfig = { 
 /**
  * A folder relative to the repository's root, as the repository's own layout puts such notes.
  */
@@ -218,23 +218,23 @@ path: string, };
 /**
  * One launch in full: how it ran and what the agent said.
  */
-export type LaunchDetail = { model: string | null, effort: string | null,
+export type LaunchDetail = { model: string | null, effort: string | null, 
 /**
  * Why it failed, as the CLI reported it.
  */
-failure: string | null,
+failure: string | null, 
 /**
  * What the agent said, in order, read from its output so far.
  */
-messages: Array<string>,
+messages: Array<string>, 
 /**
  * `<item>.<attempt>`, the launch's log name.
  */
-id: string, startedAt: string, endedAt: string | null, issue: string | null, role: Role, step: Step,
+id: string, startedAt: string, endedAt: string | null, issue: string | null, role: Role, step: Step, 
 /**
  * The issue's phase when it started.
  */
-phase: Phase | null, cli: Cli, result: RunResult,
+phase: Phase | null, cli: Cli, result: RunResult, 
 /**
  * None while it runs, and when its CLI reports no cost.
  */
@@ -243,25 +243,25 @@ costUsd: number | null, detail: RunDetail, };
 /**
  * One launch as Activity and the issue page list it.
  */
-export type LaunchRow = {
+export type LaunchRow = { 
 /**
  * `<item>.<attempt>`, the launch's log name.
  */
-id: string, startedAt: string, endedAt: string | null, issue: string | null, role: Role, step: Step,
+id: string, startedAt: string, endedAt: string | null, issue: string | null, role: Role, step: Step, 
 /**
  * The issue's phase when it started.
  */
-phase: Phase | null, cli: Cli, result: RunResult,
+phase: Phase | null, cli: Cli, result: RunResult, 
 /**
  * None while it runs, and when its CLI reports no cost.
  */
 costUsd: number | null, detail: RunDetail, };
 
-export type Limits = { issues_at_once: number,
+export type Limits = { issues_at_once: number, 
 /**
  * No limit when unset.
  */
-review_rounds?: number | null,
+review_rounds?: number | null, 
 /**
  * No limit when unset.
  */
@@ -271,45 +271,45 @@ export type MergeBy = "factory" | "owner";
 
 export type MergeConfig = { by: MergeBy, };
 
-export type Missing = {
+export type Missing = { 
 /**
  * What is missing, as one sentence.
  */
-what: string,
+what: string, 
 /**
  * How to fix it, as one sentence.
  */
-fix: string,
+fix: string, 
 /**
  * The settings section that fixes it, when a setting does.
  */
 setting?: string | null, };
 
-export type Overview = { goal: string, status: Status, sprint: SprintLine | null,
+export type Overview = { goal: string, status: Status, sprint: SprintLine | null, 
 /**
  * Every decision waiting on the owner, sprint decisions first, then by issue.
  */
-decisions: Array<Waiting>,
+decisions: Array<Waiting>, 
 /**
  * The running sprint's issues, by key.
  */
-issues: Array<IssueRow>,
+issues: Array<IssueRow>, 
 /**
  * Where the issues come from, as the configuration names it.
  */
-tracker: TrackerKind | null,
+tracker: TrackerKind | null, 
 /**
  * The open tracker issues the factory last read.
  */
-openIssues: number, lastSprintEndedAt: string | null,
+openIssues: number, lastSprintEndedAt: string | null, 
 /**
  * Where the lead told the owner that no open issue serves the goal, while that is the state.
  */
-toldWaiting: Told | null,
+toldWaiting: Told | null, 
 /**
  * The working agreements' pull request, while the sprint waits for it to merge.
  */
-agreements: string | null,
+agreements: string | null, 
 /**
  * What the owner types after `@` to mention the factory in Slack.
  */
@@ -322,11 +322,11 @@ export type Phase = "requirements" | "design" | "build" | "review" | "merge";
 /**
  * One of the five phases on the issue's path.
  */
-export type PhaseSpan = { phase: Phase, state: PhaseState,
+export type PhaseSpan = { phase: Phase, state: PhaseState, 
 /**
  * The first launch in the phase.
  */
-startedAt: string | null,
+startedAt: string | null, 
 /**
  * The last launch in the phase to end.
  */
@@ -338,19 +338,19 @@ export type PhaseState = "done" | "now" | "ahead" | "skipped";
  * Where an issue is: its section, and by section its phase and activity, why it has not
  * started, or how it ended.
  */
-export type Position = { section: Section, phase: Phase | null, activity: Activity | null,
+export type Position = { section: Section, phase: Phase | null, activity: Activity | null, 
 /**
  * The task being implemented, when the change has task files.
  */
-task: TaskCount | null,
+task: TaskCount | null, 
 /**
  * What the lead is finding a way past.
  */
-problem: Cause | null,
+problem: Cause | null, 
 /**
  * In progress while the factory is paused.
  */
-onHold: boolean,
+onHold: boolean, 
 /**
  * When the issue entered its current activity (in progress only).
  */
@@ -367,7 +367,7 @@ export type RepoConfig = { base_branch: string, };
 
 export type RepoSetup = { baseBranch: string, mergeBy: MergeBy, };
 
-export type ReviewConfig = {
+export type ReviewConfig = { 
 /**
  * Review bots whose comments are judged like a write-access reviewer's.
  */
@@ -377,20 +377,20 @@ export type ReviewPart = "facts" | "review" | "agreements";
 
 export type Role = "lead" | "executor" | "reviewer" | "analyzer";
 
-export type RoleConfig = { cli: Cli,
+export type RoleConfig = { cli: Cli, 
 /**
  * The CLI's own default when unset.
  */
-model?: string | null,
+model?: string | null, 
 /**
  * The CLI's own default when unset.
  */
-effort?: string | null,
+effort?: string | null, 
 /**
  * Names of the repository's own skills this role loads, in the directory its CLI reads
  * (`.claude/skills` for Claude Code, `.agents/skills` for Codex, either for OpenCode).
  */
-skills?: Array<string>,
+skills?: Array<string>, 
 /**
  * Appended verbatim to the end of every prompt of this role.
  */
@@ -408,7 +408,7 @@ export type RunCheck = { "started": { port: number, seconds: number, } } | { "fa
 /**
  * `run-commands`: how the product starts, for `[app]`, with the repository's evidence.
  */
-export type RunCommandsOutput = { runs: Runs, setup: string | null, start: string | null, ready: string | null,
+export type RunCommandsOutput = { runs: Runs, setup: string | null, start: string | null, ready: string | null, 
 /**
  * What in the repository says so, as the owner reads it.
  */
@@ -417,39 +417,39 @@ reason: string, };
 /**
  * What a run's item and output add to its line, as far as they are known.
  */
-export type RunDetail = {
+export type RunDetail = { 
 /**
  * The review round, from the second on.
  */
-round: number | null,
+round: number | null, 
 /**
  * What a check found.
  */
-found: number | null,
+found: number | null, 
 /**
  * What a resolution applied and declined.
  */
-applied: number | null, declined: number | null,
+applied: number | null, declined: number | null, 
 /**
  * The findings a resolution under way is judging.
  */
-judging: number | null,
+judging: number | null, 
 /**
  * The scale the requirements judged.
  */
-scale: Scale | null,
+scale: Scale | null, 
 /**
  * The requirements found the issue needs no change, and closed it.
  */
-closed: boolean,
+closed: boolean, 
 /**
  * The tasks a decompose wrote.
  */
-tasks: number | null,
+tasks: number | null, 
 /**
  * The task an implement carried out.
  */
-task: TaskRef | null,
+task: TaskRef | null, 
 /**
  * The documents a scope check chose, in the order they are written; none for a small change.
  */
@@ -480,19 +480,19 @@ export type Service = "github" | "tracker";
  * The settings as the dashboard shows them: the configuration file's contents, which
  * credentials are held, and the MCP servers the owner can allow.
  */
-export type Settings = { config: Config,
+export type Settings = { config: Config, 
 /**
  * Why the factory cannot use the configuration as it is; a save that corrects it applies.
  */
-problem: string | null,
+problem: string | null, 
 /**
  * What no agent runs, whatever the owner sets.
  */
-alwaysDenied: Array<Shown>, held: Array<HeldCredential>, mcp: Array<Available>,
+alwaysDenied: Array<Shown>, held: Array<HeldCredential>, mcp: Array<Available>, 
 /**
  * This folder's `origin` on GitHub, as `owner/name`.
  */
-repository: string | null,
+repository: string | null, 
 /**
  * The account the last passed GitHub check answered as.
  */
@@ -506,7 +506,7 @@ export type SettingsSection = "general" | "agents" | "roles" | "tracker" | "slac
 /**
  * One Connect block, checked on its own before anything is saved.
  */
-export type SetupCheck = { "section": "github", token: string | null, baseBranch: string, } | { "section": "tracker", tracker: TrackerSetup,
+export type SetupCheck = { "section": "github", token: string | null, baseBranch: string, } | { "section": "tracker", tracker: TrackerSetup, 
 /**
  * The GitHub token entered above, which GitHub Issues are read with.
  */
@@ -522,37 +522,37 @@ export type SetupFound = { found: string, };
  */
 export type SetupRequest = { cli: Cli, tracker: TrackerSetup, slack: SlackSetup, repo: RepoSetup, github: GitHubSetup, };
 
-export type SetupRun = {
+export type SetupRun = { 
 /**
  * What the lead has said so far while it reads the repository.
  */
-said: Array<string>,
+said: Array<string>, 
 /**
  * Why the factory paused before the lead answered: its agent's own error.
  */
-stopped: string | null,
+stopped: string | null, 
 /**
  * What the owner types after `@` to mention the factory in Slack, to resume it.
  */
 mention: string, found: RunCommandsOutput | null, checking: boolean, check: RunCheck | null, };
 
-export type SetupState = { step: SetupStep,
+export type SetupState = { step: SetupStep, 
 /**
  * The repository's directory name, which the setup screen names.
  */
-repository: string,
+repository: string, 
 /**
  * This folder's `origin` on GitHub, as `owner/name`.
  */
-origin: string | null,
+origin: string | null, 
 /**
  * Why the configuration in the repository cannot be used, when it cannot.
  */
-error: string | null,
+error: string | null, 
 /**
  * The manifest the owner creates the Slack app from, as the JSON they paste.
  */
-slackManifest: string,
+slackManifest: string, 
 /**
  * Where finding how the product runs stands, while that is the step.
  */
@@ -576,7 +576,7 @@ export type SkillInfo = { name: string, description: string, };
 
 export type Skills = { claude: CliSkills, codex: CliSkills, opencode: CliSkills, };
 
-export type SlackConfig = { channel: string,
+export type SlackConfig = { channel: string, 
 /**
  * The Slack users the factory responds to and whose approvals count.
  */
@@ -585,23 +585,23 @@ owners: Array<string>, };
 /**
  * `slack`: the channel, who the factory answers, and the tokens.
  */
-export type SlackSection = { channel: string, owners: Array<string>,
+export type SlackSection = { channel: string, owners: Array<string>, 
 /**
  * Empty to keep the token already held.
  */
-botToken: string | null,
+botToken: string | null, 
 /**
  * Empty to keep the token already held.
  */
 appToken: string | null, };
 
-export type SlackSetup = { botToken: string, appToken: string, channel: string,
+export type SlackSetup = { botToken: string, appToken: string, channel: string, 
 /**
  * The owner's Slack member id.
  */
 owner: string, };
 
-export type SprintLine = { id: string, purpose: string, startedAt: string | null,
+export type SprintLine = { id: string, purpose: string, startedAt: string | null, 
 /**
  * Issues that ended: merged, closed, dropped or held.
  */
@@ -612,19 +612,19 @@ done: number, total: number, };
  */
 export type State = "paused" | "prerequisites" | "unreachable" | "settings-not-applied" | "proposing" | "waiting-for-issues" | "proposal-with-owner" | "sprint-problem" | "sprint-with-owner" | "reviewing" | "review-with-owner" | "applying-agreements" | "working";
 
-export type Status = { state: State,
+export type Status = { state: State, 
 /**
  * Why the factory paused, when it did.
  */
-reason: string | null, prerequisites: Array<Missing>,
+reason: string | null, prerequisites: Array<Missing>, 
 /**
  * A service failing to answer and since when.
  */
-unreachable: Unreachable | null,
+unreachable: Unreachable | null, 
 /**
  * Why `.ovenspring/config.toml` cannot be used, while it cannot.
  */
-configError: string | null,
+configError: string | null, 
 /**
  * Which part of the sprint review runs, while it does.
  */
@@ -637,7 +637,7 @@ export type Step = "requirements" | "prd" | "prd-review" | "codebase-analysis" |
 
 export type TaskCount = { number: number, of: number, };
 
-export type TaskRef = { number: number, of: number,
+export type TaskRef = { number: number, of: number, 
 /**
  * The task file's heading.
  */
@@ -646,28 +646,24 @@ name: string | null, };
 /**
  * Where and when the lead told the owner that no open issue serves the goal.
  */
-export type Told = { at: string,
+export type Told = { at: string, 
 /**
  * The Slack message, when Slack gave its address.
  */
 link: string | null, };
 
-export type TrackerConfig = { kind: TrackerKind,
+export type TrackerConfig = { kind: TrackerKind, 
 /**
  * Linear team key; unused for GitHub Issues, which reads the repository's own issues.
  */
-team?: string | null,
-/**
- * Owner's command that decides which open issues enter intake.
- */
-filter?: string | null, };
+team?: string | null, filter?: string | null, };
 
 export type TrackerKind = "linear" | "github";
 
 /**
  * `tracker`: where the issues are, and Linear's key.
  */
-export type TrackerSection = { kind: TrackerKind, team: string | null,
+export type TrackerSection = { kind: TrackerKind, team: string | null, 
 /**
  * Empty to keep the key already held.
  */
@@ -685,7 +681,7 @@ export type Update = { "kind": "restart", version: string, } | { "kind": "availa
 /**
  * What the dashboard's header shows.
  */
-export type VersionState = {
+export type VersionState = { 
 /**
  * The version this daemon runs.
  */
@@ -696,11 +692,11 @@ running: string, update: Update | null, };
  */
 export type Wait = { "reason": "after", keys: Array<string>, } | { "reason": "place", heldBy: Array<string>, };
 
-export type Waiting = { issue: string | null, ask: Ask,
+export type Waiting = { issue: string | null, ask: Ask, 
 /**
  * The issue's title, or the decision's for a sprint decision.
  */
-title: string,
+title: string, 
 /**
  * Where the owner acts: the Slack message once delivered, or the pull request to merge.
  */

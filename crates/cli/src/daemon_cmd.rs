@@ -297,8 +297,9 @@ fn factory(paths: &Paths, store: &Store, credentials: &Path) -> Result<Daemon> {
 /// What the services are built from: the tracker, the Slack channel and the credentials file.
 fn connection_key(config: &Config, credentials: &Path) -> String {
     format!(
-        "{:?} {} {}",
-        config.tracker,
+        "{:?} {:?} {} {}",
+        config.tracker.kind,
+        config.tracker.team,
         config.slack.channel,
         fs::read_to_string(credentials).unwrap_or_default()
     )
@@ -376,4 +377,53 @@ fn channel_for(
     }
     slack.listen(Arc::new(Ureq::new()), app);
     Arc::new(slack)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ovenspring_core::config::{
+        AgentsConfig, AgreementsConfig, AppConfig, Cli, GuardConfig, KnowledgeConfig, Limits,
+        MergeConfig, RepoConfig, ReviewConfig, Roles, SlackConfig, TrackerConfig,
+    };
+    use std::collections::BTreeMap;
+
+    fn config() -> Config {
+        Config {
+            repo: RepoConfig::default(),
+            merge: MergeConfig::default(),
+            held: BTreeMap::new(),
+            person_reviews: BTreeMap::new(),
+            agents: AgentsConfig::default(),
+            roles: Roles::all_on(Cli::Codex),
+            tracker: TrackerConfig {
+                kind: TrackerKind::Linear,
+                team: Some("ACME".into()),
+                filter: None,
+            },
+            slack: SlackConfig {
+                channel: "C123".into(),
+                owners: Vec::new(),
+            },
+            app: AppConfig::default(),
+            guard: GuardConfig::default(),
+            review: ReviewConfig::default(),
+            limits: Limits::default(),
+            agreements: AgreementsConfig::default(),
+            knowledge: KnowledgeConfig::default(),
+        }
+    }
+
+    #[test]
+    fn filter_changes_do_not_rebuild_tracker_or_slack_connections() {
+        let mut config = config();
+        let credentials = Path::new("missing-credentials.toml");
+        let original = connection_key(&config, credentials);
+
+        config.tracker.filter = Some("./filter.sh".into());
+        assert_eq!(connection_key(&config, credentials), original);
+
+        config.tracker.team = Some("OTHER".into());
+        assert_ne!(connection_key(&config, credentials), original);
+    }
 }
