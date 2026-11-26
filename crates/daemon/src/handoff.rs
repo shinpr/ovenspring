@@ -24,6 +24,21 @@ pub(crate) enum Entry {
 /// The findings key of the pull request comments the lead judges.
 pub(crate) const COMMENTS: &str = "comments";
 
+/// The output key of the executor's judgment of the test review's findings. A test review can
+/// check the correction of the review round or of the pull request comments, so its judgment is
+/// kept apart from the correction's, under `review-response`: the round's recheck, the quality run
+/// after the correction and the comment replies read the correction's judgment after it.
+pub(crate) const TEST_REVIEW_JUDGMENT: &str = "test-review-judgment";
+
+/// The output key a finished step's output is kept under, given the origin of the correction it
+/// ran in.
+pub(crate) fn kept_under(origin: Option<Origin>, step: Step, unit: Option<usize>) -> String {
+    match (step, origin) {
+        (Step::ReviewResponse, Some(Origin::TestReview)) => TEST_REVIEW_JUDGMENT.to_owned(),
+        _ => output_key(step, unit),
+    }
+}
+
 /// The keys under which a check's source reports its findings.
 pub(crate) const FINDING_KEYS: [&str; 4] = ["findings", "issues", "discrepancies", "qualityIssues"];
 
@@ -89,9 +104,18 @@ fn receiver(key: &str) -> Step {
         .map_or(Step::ReviewResponse, Document::step)
 }
 
-/// The judgments a step recorded for the findings it was handed.
-fn judgments(record: &IssueRecord, step: Step) -> Vec<FindingDisposition> {
-    match record.output(step) {
+/// The output key of the receiver's judgment of the findings kept under `key`.
+fn judgment_key(key: &str) -> String {
+    if key == Step::TestReview.as_str() {
+        TEST_REVIEW_JUDGMENT.to_owned()
+    } else {
+        receiver(key).to_string()
+    }
+}
+
+/// The judgments `step` recorded, in its output kept under `key`, for the findings it was handed.
+fn judgments(record: &IssueRecord, step: Step, key: &str) -> Vec<FindingDisposition> {
+    match record.output_at(step, key) {
         Some(StepOutput::Document(d)) => d.dispositions,
         Some(StepOutput::Executor(e)) => e.dispositions,
         _ => vec![],
@@ -100,7 +124,7 @@ fn judgments(record: &IssueRecord, step: Step) -> Vec<FindingDisposition> {
 
 /// The judgments of `key`'s findings by the step they were handed to.
 fn dispositions_for(record: &IssueRecord, key: &str) -> Vec<FindingDisposition> {
-    judgments(record, receiver(key))
+    judgments(record, receiver(key), &judgment_key(key))
         .into_iter()
         .filter(|d| belongs_to(d, key))
         .collect()
@@ -255,7 +279,7 @@ pub(crate) fn handed(record: &IssueRecord) -> Vec<(String, Value)> {
 fn executor_applied(record: &IssueRecord, owner: CorrectionOwner) -> Value {
     let check = record.flow.check.map(|c| c.step().to_string());
     let keys: Vec<String> = record.findings.keys().cloned().collect();
-    let out: Vec<Value> = judgments(record, Step::ReviewResponse)
+    let out: Vec<Value> = judgments(record, Step::ReviewResponse, Step::ReviewResponse.as_str())
         .into_iter()
         .filter(|d| d.disposition == Disposition::Apply)
         .filter(|d| d.owner.unwrap_or(CorrectionOwner::Executor) == owner)

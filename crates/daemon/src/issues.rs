@@ -10,7 +10,7 @@ use ovenspring_core::config::Role;
 use ovenspring_core::flow::{self, Action, Cause, CommitPoint, Fact, Filing, IssueState, Stage};
 use ovenspring_core::item::{Front, Item, Status};
 use ovenspring_core::output::{
-    DocumentStatus, ExecutorStatus, PrepareOutput, QualityStatus, Scale, StepOutput,
+    Disposition, DocumentStatus, ExecutorStatus, PrepareOutput, QualityStatus, Scale, StepOutput,
 };
 use ovenspring_core::plan;
 use ovenspring_core::step::{Document, Step};
@@ -42,6 +42,10 @@ pub struct IssueRecord {
     pub comments_seen: BTreeSet<String>,
     /// The latest `sources/comments/` file.
     pub comments_source: Option<String>,
+    /// The replies owed to the judged comments, each kept until it is posted or its failure is
+    /// recorded.
+    #[serde(default)]
+    pub replies: Vec<DueReply>,
     /// When the wait for review bots began (RFC 3339).
     pub bots_since: Option<String>,
     /// The owner's answers, as source files the next item names.
@@ -84,6 +88,17 @@ pub struct IssueRecord {
     pub canceled: Option<String>,
 }
 
+/// A reply owed to a judged pull request comment. An applied comment is answered with the first
+/// commit made after its judgment, once a push carries it; a declined one, with its reason.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DueReply {
+    pub comment: String,
+    pub disposition: Disposition,
+    pub reason: String,
+    #[serde(default)]
+    pub commit: Option<String>,
+}
+
 /// A design-phase launch's session, for the next run of the same step to resume: the preparation
 /// turn's, or the work turn's that asked the owner. `session` is `None` when its launch recorded
 /// none, and the next run starts fresh; `question` is the preparation's message when it asks.
@@ -108,6 +123,7 @@ impl IssueRecord {
             pr_url: None,
             comments_seen: BTreeSet::new(),
             comments_source: None,
+            replies: Vec::new(),
             bots_since: None,
             answers: Vec::new(),
             sprint: None,
@@ -152,8 +168,51 @@ impl IssueRecord {
         }
     }
 
+    /// Owes a reply to each accepted comment the latest `review-response` judged. A disposition
+    /// naming no comment of the accepted batch gets none.
+    pub(crate) fn owe_replies(&mut self) {
+        let Some(StepOutput::Executor(judged)) = self.output(Step::ReviewResponse) else {
+            return;
+        };
+        let accepted = self
+            .findings
+            .get(crate::handoff::COMMENTS)
+            .map(Vec::as_slice)
+            .unwrap_or_default();
+        self.replies = judged
+            .dispositions
+            .into_iter()
+            .filter(|d| {
+                accepted
+                    .iter()
+                    .any(|f| f.get("id").and_then(serde_json::Value::as_str) == Some(&d.id))
+            })
+            .map(|d| DueReply {
+                comment: d.id,
+                disposition: d.disposition,
+                reason: d.reason,
+                commit: None,
+            })
+            .collect();
+    }
+
+    /// A commit point was passed with `commit` at the branch's head: the first commit after a
+    /// comment's judgment is the one that applied it.
+    fn committed(&mut self, commit: Option<&str>) {
+        for reply in &mut self.replies {
+            if reply.disposition == Disposition::Apply && reply.commit.is_none() {
+                reply.commit = commit.map(str::to_owned);
+            }
+        }
+    }
+
     pub fn output(&self, step: Step) -> Option<StepOutput> {
-        let path = self.outputs.get(step.as_str())?;
+        self.output_at(step, step.as_str())
+    }
+
+    /// The output of `step` kept under the output `key`.
+    pub fn output_at(&self, step: Step, key: &str) -> Option<StepOutput> {
+        let path = self.outputs.get(key)?;
         let value = serde_json::from_str(&fs::read_to_string(path).ok()?).ok()?;
         StepOutput::parse(step, value).ok()
     }
@@ -332,7 +391,7 @@ impl Daemon {
                 Ok(None)
             }
             Action::AnswerComments => {
-                self.answer_comments(key)?;
+                self.answer_comments(key, false)?;
                 Ok(None)
             }
             Action::RunGate => self.run_gate(key),
@@ -770,7 +829,7 @@ impl Daemon {
                 && !matches!(&fact, Fact::Done {output, ..}
                 if output.check_result() != Some(ovenspring_core::output::CheckResult::Blocked));
             if item.front.status == Status::Done && !failed_check {
-                let key = ovenspring_core::output::output_key(step, unit);
+                let key = crate::handoff::kept_under(r.flow.origin, step, unit);
                 let found = fs::read_to_string(&item.front.out)
                     .ok()
                     .and_then(|t| serde_json::from_str(&t).ok())
@@ -779,6 +838,11 @@ impl Daemon {
                     r.findings.insert(key.clone(), found);
                 }
                 r.outputs.insert(key, item.front.out.clone());
+                if step == Step::ReviewResponse
+                    && r.flow.origin == Some(ovenspring_core::flow::Origin::PrComments)
+                {
+                    r.owe_replies();
+                }
                 if dialogue {
                     r.resume = Some(Resume {
                         step,
@@ -1015,6 +1079,10 @@ impl Daemon {
             .and_then(|_| git(&worktree, &["diff", "--cached", "--name-only"]));
         let made = match staged {
             Ok(s) if s.is_empty() => {
+                // The branch head, which a merge brought in before a push may have moved past
+                // the factory's last commit.
+                let head = git(&worktree, &["rev-parse", "HEAD"]).ok();
+                self.update_issue(key, |r| r.committed(head.as_deref()))?;
                 self.event(&json!({"event": "nothing-to-commit", "issue": key, "after": after.to_string()}))?;
                 return Ok(committed);
             }
@@ -1031,6 +1099,7 @@ impl Daemon {
                     r.summaries.clear();
                     r.last_commit = Some(sha.clone());
                     r.refusal = None;
+                    r.committed(Some(&sha));
                 })?;
                 self.event(
                     &json!({"event": "committed", "issue": key, "after": after.to_string(), "sha": sha}),

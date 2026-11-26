@@ -510,7 +510,8 @@ pub enum Action {
     /// Ask the owner to approve the PRD, the prototype, what the design adds, or a held merge.
     RequestApproval,
     WaitForBots,
-    /// Reply in each judged comment's thread and request review from those who asked for changes.
+    /// Reply in the threads of comments judged without applying any. A push answers a batch that
+    /// applied some, once it carries the commit that applied them.
     AnswerComments,
     RunGate,
     /// Tell the owner the pull request is ready to merge.
@@ -1104,7 +1105,7 @@ fn after_commit(s: &mut IssueState, after: CommitPoint, limits: Limits) -> Vec<A
             Some(Origin::PrComments) => {
                 s.origin = None;
                 s.stage = Stage::Pushing;
-                vec![Action::AnswerComments, Action::Push]
+                vec![Action::Push]
             }
             Some(Origin::Document | Origin::TestReview) | None => start_round(s),
         },
@@ -2343,10 +2344,7 @@ mod tests {
                     vec!["review-response"],
                 ),
                 (answered(&json!([apply("doc", None)])), vec!["quality"]),
-                (
-                    quality("pass"),
-                    vec!["commit after quality", "AnswerComments", "Push"],
-                ),
+                (quality("pass"), vec!["commit after quality", "Push"]),
             ],
             Limits::default(),
         );
@@ -2790,10 +2788,7 @@ mod tests {
                     answered(&json!([apply("review-comment-1", None)])),
                     vec!["quality"],
                 ),
-                (
-                    quality("pass"),
-                    vec!["commit after quality", "AnswerComments", "Push"],
-                ),
+                (quality("pass"), vec!["commit after quality", "Push"]),
             ],
             Limits::default(),
         );
