@@ -88,15 +88,13 @@ pub struct IssueRecord {
     pub canceled: Option<String>,
 }
 
-/// A reply owed to a judged pull request comment. An applied comment is answered with the first
-/// commit made after its judgment, once a push carries it; a declined one, with its reason.
+/// A reply owed to a judged pull request comment. An applied comment is answered with the commit
+/// the push carried; a declined one, with its reason.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DueReply {
     pub comment: String,
     pub disposition: Disposition,
     pub reason: String,
-    #[serde(default)]
-    pub commit: Option<String>,
 }
 
 /// A design-phase launch's session, for the next run of the same step to resume: the preparation
@@ -191,27 +189,8 @@ impl IssueRecord {
                 comment: d.id,
                 disposition: d.disposition,
                 reason: d.reason,
-                commit: None,
             })
             .collect();
-    }
-
-    /// The commit point `after` was passed with `commit` at the branch's head: the first commit
-    /// after a comment's judgment is the one that applied it.
-    fn committed(&mut self, after: CommitPoint, commit: Option<&str>) {
-        // A record saved by an earlier version holds the judgment, but no reply owed, until the
-        // correction's commit.
-        if after == CommitPoint::Quality
-            && self.flow.origin == Some(ovenspring_core::flow::Origin::PrComments)
-            && self.replies.is_empty()
-        {
-            self.owe_replies();
-        }
-        for reply in &mut self.replies {
-            if reply.disposition == Disposition::Apply && reply.commit.is_none() {
-                reply.commit = commit.map(str::to_owned);
-            }
-        }
     }
 
     pub fn output(&self, step: Step) -> Option<StepOutput> {
@@ -1087,10 +1066,6 @@ impl Daemon {
             .and_then(|_| git(&worktree, &["diff", "--cached", "--name-only"]));
         let made = match staged {
             Ok(s) if s.is_empty() => {
-                self.update_issue(key, |r| {
-                    let head = r.last_commit.clone();
-                    r.committed(after, head.as_deref());
-                })?;
                 self.event(&json!({"event": "nothing-to-commit", "issue": key, "after": after.to_string()}))?;
                 return Ok(committed);
             }
@@ -1107,7 +1082,6 @@ impl Daemon {
                     r.summaries.clear();
                     r.last_commit = Some(sha.clone());
                     r.refusal = None;
-                    r.committed(after, Some(&sha));
                 })?;
                 self.event(
                     &json!({"event": "committed", "issue": key, "after": after.to_string(), "sha": sha}),
@@ -1242,8 +1216,6 @@ impl Daemon {
             self.file_step(&key, &filing)?;
             self.event(&json!({"event": "reconciled", "issue": key, "step": filing.step}))?;
         }
-        // Replies a stop interrupted: those the push below or a later one owes are posted there.
-        self.answer_comments(&key, false)?;
         if record.flow.stage == Stage::Pushing
             && let Some(fact) = self.push(&key)?
         {

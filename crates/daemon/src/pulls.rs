@@ -565,11 +565,9 @@ impl Daemon {
         let gh = self.github()?;
         let all = gh.comments(pr).map_err(|e| e.to_string());
         for reply in &due {
-            let text = match (reply.disposition, &reply.commit) {
+            let text = match (reply.disposition, &record.pushed_sha) {
                 (Disposition::Apply, Some(commit)) => Ok(format!("Applied in {commit}.")),
-                (Disposition::Apply, None) => {
-                    Err("no commit of the correction is recorded".to_owned())
-                }
+                (Disposition::Apply, None) => Err("no pushed commit is recorded".to_owned()),
                 (Disposition::Decline, _) => Ok(format!("Not applied: {}", reply.reason)),
             };
             let posted = text.and_then(|text| {
