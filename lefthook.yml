@@ -1,5 +1,6 @@
 # Git hooks for this repository: `lefthook install` sets them up once per clone. They run CI's
-# checks before a change leaves the machine: the quick ones on each commit, the tests before a push.
+# checks before a change leaves the machine: the quick ones on each commit, clippy and the tests
+# before a push.
 pre-commit:
   jobs:
     - name: gitleaks
@@ -7,9 +8,6 @@ pre-commit:
     - name: rust format
       glob: ["*.rs", "rustfmt.toml", "rust-toolchain.toml"]
       run: cargo fmt --check
-    - name: clippy
-      glob: ["*.rs", "*Cargo.toml", "Cargo.lock", "clippy.toml", "rust-toolchain.toml"]
-      run: cargo clippy --workspace --all-targets --all-features -- -D warnings
     - name: dashboard lint and format
       root: dashboard/
       glob: "*.{ts,tsx,js,mjs,json,jsonc,css}"
@@ -17,6 +15,9 @@ pre-commit:
 
 pre-push:
   jobs:
+    - name: clippy
+      glob: ["*.rs", "*Cargo.toml", "Cargo.lock", "clippy.toml", "rust-toolchain.toml"]
+      run: cargo clippy --workspace --all-targets --all-features -- -D warnings
     - name: rust tests
       # A push from a linked worktree hands its hooks GIT_DIR, which would point the tests' own git
       # commands at this repository.
