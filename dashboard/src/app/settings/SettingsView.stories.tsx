@@ -181,6 +181,7 @@ export const SavedKey: Story = {
     await expect(args.save).toHaveBeenLastCalledWith('tracker', {
       kind: 'linear',
       team: 'ACME',
+      filter: '',
       apiKey: null,
     })
 
@@ -188,10 +189,12 @@ export const SavedKey: Story = {
     const reopened = within(canvas.getByRole('form', { name: 'Issue tracker' }))
     await userEvent.click(reopened.getByRole('button', { name: 'Replace API key' }))
     await userEvent.type(reopened.getByLabelText('API key'), 'lin_api_new0001')
+    await userEvent.type(reopened.getByLabelText('Filter command'), './.ovenspring/filter-issue.sh')
     await userEvent.click(reopened.getByRole('button', { name: 'Check and save' }))
     await expect(args.save).toHaveBeenLastCalledWith('tracker', {
       kind: 'linear',
       team: 'ACME',
+      filter: './.ovenspring/filter-issue.sh',
       apiKey: 'lin_api_new0001',
     })
   },

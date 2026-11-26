@@ -109,6 +109,7 @@ function TrackerRow({ settings, save }: SectionProps) {
   const [kind, setKind] = useState(saved.kind)
   const [team, setTeam] = useState(saved.team ?? '')
   const [key, setKey] = useState('')
+  const [filter, setFilter] = useState(saved.filter ?? '')
   return (
     <SettingRow
       name="Issue tracker"
@@ -131,6 +132,15 @@ function TrackerRow({ settings, save }: SectionProps) {
           ) : (
             <div className={styles['line']}>GitHub Issues of this repository</div>
           )}
+          <div className={styles['line']}>
+            {saved.filter == null ? (
+              'Every open issue reaches the agents'
+            ) : (
+              <>
+                Issues filtered by <code>{saved.filter}</code>
+              </>
+            )}
+          </div>
           <Connected />
         </>
       }
@@ -138,15 +148,17 @@ function TrackerRow({ settings, save }: SectionProps) {
         setKind(saved.kind)
         setTeam(saved.team ?? '')
         setKey('')
+        setFilter(saved.filter ?? '')
       }}
       onSave={() =>
         save('tracker', {
           kind,
           team: kind === 'linear' ? team : null,
+          filter,
           apiKey: key === '' ? null : key,
         })
       }
-      fields={['tracker.team', 'api_key']}
+      fields={['tracker.team', 'api_key', 'tracker.filter']}
     >
       {(reasons) => (
         <>
@@ -189,6 +201,20 @@ function TrackerRow({ settings, save }: SectionProps) {
               />
             </>
           )}
+          <Field
+            label="Filter command"
+            hint="Run on each new or changed issue before any agent reads it. Issues it rejects never reach the agents. Leave empty to let every open issue through. The guide's Issue filter section says what the command receives and returns."
+            error={reasons['tracker.filter']}
+          >
+            {(control) => (
+              <input
+                {...control}
+                className={monoControlClass}
+                value={filter}
+                onChange={(e) => setFilter(e.target.value)}
+              />
+            )}
+          </Field>
         </>
       )}
     </SettingRow>

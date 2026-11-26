@@ -355,7 +355,8 @@ pub fn daemon_timed(
 pub const QUICK: ovenspring_daemon::Timing = ovenspring_daemon::Timing {
     github_poll: std::time::Duration::ZERO,
     tracker_poll: std::time::Duration::ZERO,
-    filter_timeout: std::time::Duration::from_secs(2),
+    // Longer than any gated filter test waits, so only a test about the timeout reaches it.
+    filter_timeout: std::time::Duration::from_secs(60),
     retry_wait: std::time::Duration::from_secs(1),
     bot_pending: std::time::Duration::ZERO,
     bot_absent: std::time::Duration::ZERO,

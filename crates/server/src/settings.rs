@@ -182,12 +182,14 @@ pub struct RoleSection {
     append: String,
 }
 
-/// `tracker`: where the issues are, and Linear's key.
+/// `tracker`: where the issues are, Linear's key, and the command that filters issues.
 #[derive(Deserialize, TS)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct TrackerSection {
     kind: TrackerKind,
     team: Option<String>,
+    /// The filter command; empty for no filter.
+    filter: Option<String>,
     /// Empty to keep the key already held.
     api_key: Option<String>,
 }
@@ -288,6 +290,7 @@ pub(crate) fn save(
             let t: TrackerSection = parse(body)?;
             config.tracker.kind = t.kind;
             config.tracker.team = entered(t.team).filter(|_| t.kind == TrackerKind::Linear);
+            config.tracker.filter = entered(t.filter);
             if let Some(key) = entered(t.api_key) {
                 held.linear.api_key = Some(key);
             }
@@ -463,7 +466,7 @@ mod tests {
     }
 
     #[test]
-    fn tracker_settings_save_keeps_the_configured_filter() {
+    fn tracker_settings_save_sets_and_clears_the_filter() {
         let temp = tempfile::tempdir().unwrap();
         let repo = temp.path().join("repo");
         let config_dir = repo.join(".ovenspring");
@@ -484,7 +487,6 @@ cli = "codex"
 cli = "codex"
 [tracker]
 kind = "github"
-filter = "scripts/issue-filter"
 [slack]
 channel = "C0123456789"
 owners = ["U0123456789"]
@@ -504,22 +506,29 @@ owners = ["U0123456789"]
                 transport: Arc::new(ovenspring_integrations::http::Ureq::new()),
             },
         };
+        let save_filter = |filter: &str| {
+            save(
+                &context,
+                SettingsSection::Tracker,
+                serde_json::json!({"kind": "github", "team": null, "filter": filter, "apiKey": null}),
+            )
+            .unwrap_or_else(|_| panic!("the tracker settings save should succeed"))
+        };
+        let config_text = || std::fs::read_to_string(config_dir.join("config.toml")).unwrap();
 
-        let saved = save(
-            &context,
-            SettingsSection::Tracker,
-            serde_json::json!({"kind": "github", "team": null, "apiKey": null}),
-        )
-        .unwrap_or_else(|_| panic!("the tracker settings save should succeed"));
-
+        let saved = save_filter(" scripts/issue-filter ");
         assert_eq!(
             saved.config.tracker.filter.as_deref(),
             Some("scripts/issue-filter")
         );
-        let persisted = Config::read(&repo).unwrap();
         assert_eq!(
-            persisted.tracker.filter.as_deref(),
+            Config::read(&repo).unwrap().tracker.filter.as_deref(),
             Some("scripts/issue-filter")
         );
+
+        let cleared = save_filter("  ");
+        assert_eq!(cleared.config.tracker.filter, None);
+        assert_eq!(Config::read(&repo).unwrap().tracker.filter, None);
+        assert!(!config_text().contains("filter"), "{}", config_text());
     }
 }

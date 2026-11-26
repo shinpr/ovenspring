@@ -102,11 +102,8 @@ fn spawn_filter(command: &str, repo: &Path) -> std::io::Result<Child> {
 }
 
 /// Runs the command's child without blocking the daemon's polling thread.
-fn judge(child: Child, input: Vec<u8>, limit: Duration) -> Outcome {
-    judge_until(child, input, Instant::now() + limit)
-}
-
-fn judge_until(mut child: Child, input: Vec<u8>, deadline: Instant) -> Outcome {
+fn judge(mut child: Child, input: Vec<u8>, limit: Duration) -> Outcome {
+    let deadline = Instant::now() + limit;
     let pid = child.id();
     let Some(mut stdin) = child.stdin.take() else {
         stop_group(pid);
@@ -135,7 +132,7 @@ fn judge_until(mut child: Child, input: Vec<u8>, deadline: Instant) -> Outcome {
             stop_group(pid);
             let _ = child.wait();
             let _ = reader.join();
-            return Outcome::Failed("ran longer than 60 seconds".into());
+            return Outcome::Failed(format!("ran longer than {} seconds", limit.as_secs_f64()));
         }
         std::thread::sleep(Duration::from_millis(10));
     };
@@ -219,10 +216,7 @@ impl Daemon {
                     .map(|issue| encoded_input(issue).map(|(_, hash)| (issue.clone(), hash)))
                     .collect::<Result<_, _>>()?;
                 if let Some(run) = self.filter_run.as_mut()
-                    && tracker_issues
-                        .iter()
-                        .find(|(issue, _)| issue.key == run.key)
-                        .is_none_or(|(_, hash)| *hash != run.hash)
+                    && !keys.contains(&run.key)
                 {
                     run.void = true;
                 }
@@ -383,11 +377,8 @@ impl Daemon {
         let result = spawn_filter(&command, &self.paths.repo);
         let pid = result.as_ref().ok().map(Child::id);
         let timeout = self.timing.filter_timeout;
-        let started = Instant::now();
         let handle = match result {
-            Ok(child) => std::thread::spawn(move || {
-                judge(child, input, timeout.saturating_sub(started.elapsed()))
-            }),
+            Ok(child) => std::thread::spawn(move || judge(child, input, timeout)),
             Err(error) => {
                 std::thread::spawn(move || Outcome::Failed(format!("could not start: {error}")))
             }
@@ -590,8 +581,8 @@ mod tests {
         let process = child(&command, dir.path());
         let pid = process.id();
         assert_eq!(
-            judge(process, vec![], Duration::from_secs(1)),
-            Outcome::Failed("ran longer than 60 seconds".into())
+            judge(process, vec![], Duration::from_secs(2)),
+            Outcome::Failed("ran longer than 2 seconds".into())
         );
         let child_pid = fs::read_to_string(child_pid_file).unwrap();
         assert!(!process_exists(child_pid.trim()));
