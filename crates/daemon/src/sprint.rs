@@ -16,6 +16,7 @@ use ovenspring_core::sprint::{
 use ovenspring_core::step::Step;
 use ovenspring_integrations::channel::DecisionKind;
 use ovenspring_integrations::github::{NewPull, PullState, ReviewDecision};
+use ovenspring_integrations::tracker::TrackerIssue;
 use ovenspring_store::{Store, StoreError, item_name};
 use serde_json::json;
 
@@ -85,7 +86,13 @@ impl Daemon {
         self.event(
             &json!({"event": "sprint-fact", "sprint": next.id, "fact": crate::records::fact_name(fact), "from": from, "to": next.stage}),
         )?;
-        self.sprint_actions(&actions)
+        let leaves_proposing =
+            from == SprintStage::Proposing && next.stage != SprintStage::Proposing;
+        self.sprint_actions(&actions)?;
+        if leaves_proposing {
+            self.intake_pass()?;
+        }
+        Ok(())
     }
 
     fn sprint_actions(&mut self, actions: &[SprintAction]) -> Result<(), DaemonError> {
@@ -395,11 +402,14 @@ impl Daemon {
             {
                 continue;
             }
-            let title = self
-                .open_issues
-                .iter()
-                .find(|i| i.key == planned.key)
-                .map_or_else(|| planned.key.clone(), |i| i.title.clone());
+            let snapshot = self.store.source(&format!("issues/{}.md", planned.key));
+            let selected_heading = fs::read_to_string(snapshot)
+                .ok()
+                .and_then(|snapshot| TrackerIssue::heading(&planned.key, &snapshot));
+            let (title, url) = selected_heading.map_or_else(
+                || (planned.key.clone(), None),
+                |(title, url)| (title, Some(url)),
+            );
             // Only issues in this sprint can hold it up; the lead's plan already ordered the rest.
             let deps = planned
                 .depends_on
@@ -409,7 +419,10 @@ impl Daemon {
                 .collect();
             self.begin_issue(&planned.key, &title, deps)?;
             let id = state.id.clone();
-            let record = self.update_issue(&planned.key, |r| r.sprint = Some(id))?;
+            let record = self.update_issue(&planned.key, |r| {
+                r.sprint = Some(id);
+                r.url = url;
+            })?;
             if record.flow.stage == Stage::Held {
                 self.apply(&planned.key, Fact::TakenUp)?;
             }

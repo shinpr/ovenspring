@@ -305,7 +305,9 @@ fn connection_key(config: &Config, credentials: &Path) -> String {
 }
 
 fn services_for(repo: &Path, store: &Store, config: &Config, held: &Credentials) -> Services {
-    let github = github_api(repo, held);
+    let (github, gh_token) = github_api(repo, held);
+    let mut secrets: Vec<String> = held.values().into_iter().map(str::to_owned).collect();
+    secrets.extend(gh_token);
     Services {
         github: github.clone().map(|g| g as Arc<dyn GitHub>),
         channel: channel_for(
@@ -314,19 +316,30 @@ fn services_for(repo: &Path, store: &Store, config: &Config, held: &Credentials)
             ovenspring_daemon::records::last_activity(store),
         ),
         tracker: tracker_client(config, held, github),
+        secrets,
     }
 }
 
 /// The GitHub API for `origin`, with the token setup stored or, when none was entered, the token
 /// of the signed-in `gh`.
-fn github_api(repo: &Path, held: &Credentials) -> Option<Arc<GitHubApi<Ureq>>> {
-    let id = crate::setup_checks::repo_id(repo)?;
-    let token = held
+fn github_api(repo: &Path, held: &Credentials) -> (Option<Arc<GitHubApi<Ureq>>>, Option<String>) {
+    let Some(id) = crate::setup_checks::repo_id(repo) else {
+        return (None, None);
+    };
+    let using_gh_token = held.github.token.is_none();
+    let Some(token) = held
         .github
         .token
         .clone()
-        .or_else(crate::setup_checks::gh_token)?;
-    Some(Arc::new(GitHubApi::new(Ureq::new(), id, token)))
+        .or_else(crate::setup_checks::gh_token)
+    else {
+        return (None, None);
+    };
+    let secret = using_gh_token.then(|| token.clone());
+    (
+        Some(Arc::new(GitHubApi::new(Ureq::new(), id, token))),
+        secret,
+    )
 }
 
 /// The configured tracker: Linear with its stored key, or the repository's GitHub Issues through

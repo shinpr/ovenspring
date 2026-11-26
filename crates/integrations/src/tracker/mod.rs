@@ -14,6 +14,7 @@ pub struct TrackerIssue {
     /// `ACME-123` (Linear) or `GH-12` (GitHub Issues): also the branch's name.
     pub key: String,
     pub title: String,
+    pub author: String,
     pub body: String,
     pub url: String,
     pub state: String,
@@ -61,6 +62,38 @@ impl TrackerIssue {
             }
         }
         out
+    }
+
+    /// Reads the title and URL from the snapshot this issue rendered.
+    pub fn heading(key: &str, snapshot: &str) -> Option<(String, String)> {
+        let prefix = format!("# {key}: ");
+        let (heading, details) = snapshot.split_once("\n\n- URL: ")?;
+        let title = heading.strip_prefix(&prefix)?;
+        let url = details.split_once('\n').map_or(details, |(url, _)| url);
+        Some((title.to_owned(), url.to_owned()))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn heading_reads_a_title_containing_a_colon_and_url_from_the_snapshot() {
+        let issue = TrackerIssue {
+            key: "NOR-32".into(),
+            title: "Keep this title: as selected".into(),
+            url: "https://linear.app/team/issue/NOR-32".into(),
+            ..TrackerIssue::default()
+        };
+
+        assert_eq!(
+            TrackerIssue::heading("NOR-32", &issue.render()),
+            Some((
+                "Keep this title: as selected".into(),
+                "https://linear.app/team/issue/NOR-32".into()
+            ))
+        );
     }
 }
 

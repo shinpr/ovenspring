@@ -16,6 +16,7 @@ ovenspring-integrations = { version = "0.1.0", path = "../integrations" }
 ovenspring-store = { version = "0.1.0", path = "../store" }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
+sha2 = "0.11.1"
 thiserror = "2.0.21"
 ts-rs = { version = "12.0.1", features = ["no-serde-warnings"] }
 

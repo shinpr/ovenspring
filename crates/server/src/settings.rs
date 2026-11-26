@@ -424,3 +424,102 @@ impl SettingsSection {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::path::Path;
+    use std::sync::Arc;
+
+    use super::*;
+    use crate::setup::{GitHubAccount, SetupChecks, SlackSetup, TrackerSetup};
+
+    struct ConnectedChecks;
+
+    impl SetupChecks for ConnectedChecks {
+        fn tracker(
+            &self,
+            _repo: &Path,
+            _tracker: &TrackerSetup,
+            _github: Option<&str>,
+        ) -> Result<String, String> {
+            Ok("connected".into())
+        }
+
+        fn slack(&self, _slack: &SlackSetup) -> Result<String, String> {
+            Ok("connected".into())
+        }
+
+        fn github(
+            &self,
+            _repo: &Path,
+            _token: Option<&str>,
+            _base_branch: &str,
+        ) -> Result<GitHubAccount, String> {
+            Ok(GitHubAccount {
+                login: "owner".into(),
+                from_gh: false,
+            })
+        }
+    }
+
+    #[test]
+    fn tracker_settings_save_keeps_the_configured_filter() {
+        let temp = tempfile::tempdir().unwrap();
+        let repo = temp.path().join("repo");
+        let config_dir = repo.join(".ovenspring");
+        let home = temp.path().join("home");
+        let codex_home = home.join(".codex");
+        std::fs::create_dir_all(&config_dir).unwrap();
+        std::fs::create_dir_all(&codex_home).unwrap();
+        std::fs::write(
+            config_dir.join("config.toml"),
+            r#"
+[roles.lead]
+cli = "codex"
+[roles.executor]
+cli = "codex"
+[roles.reviewer]
+cli = "codex"
+[roles.analyzer]
+cli = "codex"
+[tracker]
+kind = "github"
+filter = "scripts/issue-filter"
+[slack]
+channel = "C0123456789"
+owners = ["U0123456789"]
+"#,
+        )
+        .unwrap();
+        let context = Context {
+            repo: repo.clone(),
+            store: ovenspring_store::Store::open(temp.path().join("state")).unwrap(),
+            credentials: temp.path().join("credentials.toml"),
+            checks: Arc::new(ConnectedChecks),
+            home,
+            codex_home,
+            version: crate::version::Sources {
+                executable: temp.path().join("ovenspring"),
+                latest_release: String::new(),
+                transport: Arc::new(ovenspring_integrations::http::Ureq::new()),
+            },
+        };
+
+        let saved = save(
+            &context,
+            SettingsSection::Tracker,
+            serde_json::json!({"kind": "github", "team": null, "apiKey": null}),
+        )
+        .unwrap_or_else(|_| panic!("the tracker settings save should succeed"));
+
+        assert_eq!(
+            saved.config.tracker.filter.as_deref(),
+            Some("scripts/issue-filter")
+        );
+        let persisted = Config::read(&repo).unwrap();
+        assert_eq!(
+            persisted.tracker.filter.as_deref(),
+            Some("scripts/issue-filter")
+        );
+    }
+}

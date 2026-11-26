@@ -461,7 +461,11 @@ fn config_of(request: &SetupRequest) -> Config {
         merge: MergeConfig {
             by: request.repo.merge_by,
         },
-        tracker: TrackerConfig { kind, team },
+        tracker: TrackerConfig {
+            kind,
+            team,
+            filter: None,
+        },
         slack: SlackConfig {
             channel: request.slack.channel.trim().to_owned(),
             owners: vec![request.slack.owner.trim().to_owned()],

@@ -130,6 +130,67 @@ impl Env {
         git(&self.repo, &["push", "-q", "origin", "main"]);
     }
 
+    /// Configures the repository with the supplied filter command.
+    pub fn configure_filter(&self, command: &str) {
+        self.configure("");
+        self.set_tracker_filter(Some(command));
+    }
+
+    /// Replaces or removes `[tracker] filter` in the repository's configuration.
+    pub fn set_tracker_filter(&self, command: Option<&str>) {
+        let path = self.repo.join(".ovenspring/config.toml");
+        let text = std::fs::read_to_string(&path).unwrap();
+        let setting = command.map(|value| {
+            let escaped = value.replace('\\', "\\\\").replace('"', "\\\"");
+            format!("filter = \"{escaped}\"")
+        });
+        let mut output = Vec::new();
+        let mut in_tracker = false;
+        let mut found_filter = false;
+        for line in text.lines() {
+            if line.starts_with('[') {
+                if in_tracker
+                    && !found_filter
+                    && let Some(setting) = &setting
+                {
+                    output.push(setting.clone());
+                }
+                in_tracker = line.trim() == "[tracker]";
+                found_filter = false;
+                output.push(line.to_owned());
+                continue;
+            }
+            if in_tracker && line.trim_start().starts_with("filter =") {
+                if let Some(setting) = &setting {
+                    output.push(setting.clone());
+                }
+                found_filter = true;
+            } else {
+                output.push(line.to_owned());
+            }
+        }
+        if in_tracker
+            && !found_filter
+            && let Some(setting) = setting
+        {
+            output.push(setting);
+        }
+        std::fs::write(path, format!("{}\n", output.join("\n"))).unwrap();
+    }
+
+    /// Writes the real shell script run by an integration test and returns its repository-relative command.
+    pub fn write_filter_script(&self, script: &str) -> String {
+        let path = self.filter_file("filter.sh");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, script).unwrap();
+        "exec sh .ovenspring/filter.sh".into()
+    }
+
+    /// A file reserved for a filter test's script, gate or counter.
+    pub fn filter_file(&self, name: &str) -> PathBuf {
+        self.repo.join(".ovenspring").join(name)
+    }
+
     pub fn state_base(&self) -> PathBuf {
         self.dir.path().canonicalize().unwrap().join("state")
     }
@@ -294,6 +355,7 @@ pub fn daemon_timed(
 pub const QUICK: ovenspring_daemon::Timing = ovenspring_daemon::Timing {
     github_poll: std::time::Duration::ZERO,
     tracker_poll: std::time::Duration::ZERO,
+    filter_timeout: std::time::Duration::from_secs(2),
     retry_wait: std::time::Duration::from_secs(1),
     bot_pending: std::time::Duration::ZERO,
     bot_absent: std::time::Duration::ZERO,
@@ -310,6 +372,7 @@ pub fn services(
         github: Some(github),
         channel,
         tracker: Some(tracker),
+        secrets: Vec::new(),
     }
 }
 

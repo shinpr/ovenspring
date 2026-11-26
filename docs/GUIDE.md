@@ -261,6 +261,33 @@ By default every run uses its CLI's auto mode, which checks risky actions. When 
 
 The dashboard listens on `127.0.0.1` only, and answers only requests addressed to `127.0.0.1` or `localhost`, so a page on another site can't reach it through your browser. An SSH port forward still works.
 
+### Tracker issue filter
+
+Set `[tracker] filter` in `.ovenspring/config.toml` to a shell command. For each candidate, the daemon runs it through `sh -c` from the repository root, in the daemon's environment, and sends one UTF-8 JSON object without a trailing newline on stdin:
+
+```json
+{"key":"...", "title":"...", "body":"...", "url":"...", "labels":["..."], "author":"...", "comments":[{"author":"...", "body":"..."}]}
+```
+
+`author` is the GitHub login or Linear full name; it is empty when the tracker provides none. Each comment has `author` and `body`.
+
+Exit 0 admits the issue. Exit 2 drops it; the first line of stdout is the reason. Any other exit, a command that cannot start, or a run longer than 60 seconds is a failure, and the issue goes on as without a filter. A failure event records the issue key and what failed. The command's stderr is discarded. If it is still running after 60 seconds or when the daemon stops, the daemon stops its whole process group.
+
+For a drop, the daemon records the issue key, URL and reason in `events.jsonl`. It masks credentials held from the command's start until its result is taken and values in common token formats. Agents read this event log when they collect sprint facts.
+
+This example uses `jq`. Save it as `.ovenspring/filter-issue.sh` and make it executable with `chmod +x .ovenspring/filter-issue.sh`:
+
+```sh
+#!/bin/sh
+jq -e '(.labels | index("factory-ready")) != null' >/dev/null
+status=$?
+case "$status" in
+  0) exit 0 ;;
+  1) printf '%s\n' 'missing required label: factory-ready'; exit 2 ;;
+  *) exit 1 ;;
+esac
+```
+
 ## Configuration
 
 Setup writes `.ovenspring/config.toml`, and Settings edits it. The factory reads the file from your checkout, so you can also edit it directly, and a change applies from the next run. Committing it is optional; the factory works the same either way, and committing lets your team see the settings. Unknown keys are errors: the factory keeps running on the last valid file, and Settings shows what is wrong with the new one.
@@ -302,6 +329,7 @@ cli = "codex"
 [tracker]
 kind = "linear"                    # linear | github
 team = "ACME"
+filter = "./.ovenspring/filter-issue.sh"
 
 [slack]
 channel = "C0123456789"

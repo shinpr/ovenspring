@@ -40,6 +40,8 @@ struct RawIssue {
     number: u64,
     title: String,
     #[serde(default)]
+    user: Option<RawLogin>,
+    #[serde(default)]
     body: Option<String>,
     html_url: String,
     state: String,
@@ -109,6 +111,7 @@ impl<T: Transport> Tracker for GitHubApi<T> {
             out.push(TrackerIssue {
                 key: format!("{PREFIX}{}", i.number),
                 title: i.title,
+                author: i.user.map(|u| u.login).unwrap_or_default(),
                 body: i.body.unwrap_or_default(),
                 url: i.html_url,
                 state: i.state,

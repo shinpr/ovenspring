@@ -267,6 +267,9 @@ pub struct TrackerConfig {
     /// Linear team key; unused for GitHub Issues, which reads the repository's own issues.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub team: Option<String>,
+    /// Owner's command that decides which open issues enter intake.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub filter: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
@@ -573,6 +576,7 @@ owners = ["U0123456789"]
     fn minimal_configuration_takes_the_documented_defaults() {
         let c = Config::parse(MINIMAL, "config.toml").unwrap();
         assert_eq!(c.repo.base_branch, "main");
+        assert_eq!(c.tracker.filter, None);
         assert_eq!(c.merge.by, MergeBy::Factory);
         assert_eq!(c.agents.permissions, Permissions::Auto);
         assert_eq!(c.agents.mcp, Vec::<String>::new());
@@ -580,6 +584,19 @@ owners = ["U0123456789"]
         assert_eq!(c.limits.review_rounds, None);
         assert_eq!(c.limits.fix_ci_rounds, None);
         assert!(!c.app.settled());
+    }
+
+    #[test]
+    fn a_tracker_filter_is_read_from_configuration() {
+        let text = MINIMAL.replace(
+            "team = \"ACME\"",
+            "team = \"ACME\"\nfilter = \"scripts/issue-filter\"",
+        );
+        let config = Config::parse(&text, "config.toml").unwrap();
+        assert_eq!(
+            config.tracker.filter.as_deref(),
+            Some("scripts/issue-filter")
+        );
     }
 
     #[test]

@@ -53,6 +53,7 @@ fn slack_services(
         github: Some(gh),
         channel: slack,
         tracker: Some(tracker),
+        secrets: Vec::new(),
     }
 }
 
@@ -1052,6 +1053,7 @@ fn one_owner_event_that_fails_does_not_drop_the_others_taken_in_with_it() {
             github: Some(Arc::new(always_passing(&env, requiring_test()))),
             channel: channel.clone(),
             tracker: Some(Arc::new(RecordingTracker::default())),
+            secrets: Vec::new(),
         },
     );
     d.begin_issue("ACME-1", "Export", vec![]).unwrap();

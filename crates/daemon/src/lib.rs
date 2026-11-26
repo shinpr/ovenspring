@@ -17,6 +17,7 @@ pub mod conversation;
 pub mod download;
 pub(crate) mod handoff;
 pub mod history;
+pub(crate) mod intake;
 pub mod issues;
 pub mod overview;
 pub mod owner;
@@ -29,7 +30,7 @@ pub mod sprint;
 pub(crate) mod stops;
 pub mod worktree;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs::{self, File};
 use std::io::Write as _;
 use std::os::unix::process::CommandExt as _;
@@ -74,6 +75,8 @@ pub struct Services {
     pub github: Option<Arc<dyn GitHub>>,
     pub channel: Arc<dyn Channel>,
     pub tracker: Option<Arc<dyn Tracker>>,
+    /// Credential values held by the daemon, for masking owner-command output.
+    pub secrets: Vec<String>,
 }
 
 /// How long the daemon waits between looks and before trying again. Production uses
@@ -84,6 +87,8 @@ pub struct Timing {
     pub github_poll: Duration,
     /// Between reads of the tracker.
     pub tracker_poll: Duration,
+    /// Maximum time allowed for one tracker-filter command.
+    pub filter_timeout: Duration,
     /// Before a launch that failed on an overloaded provider runs again.
     pub retry_wait: Duration,
     /// The longest wait for a review bot whose review is under way.
@@ -99,6 +104,7 @@ impl Default for Timing {
         Timing {
             github_poll: Duration::from_secs(30),
             tracker_poll: Duration::from_secs(60),
+            filter_timeout: Duration::from_secs(60),
             retry_wait: Duration::from_secs(300),
             bot_pending: Duration::from_secs(30 * 60),
             bot_absent: Duration::from_secs(3 * 60),
@@ -170,6 +176,14 @@ pub struct Daemon {
     /// Whether the tracker has answered since start.
     pub(crate) tracker_read: bool,
     pub(crate) open_issues: Vec<ovenspring_integrations::tracker::TrackerIssue>,
+    /// The latest successful tracker read and the hash of each issue's filter input.
+    pub(crate) tracker_issues: Vec<(ovenspring_integrations::tracker::TrackerIssue, [u8; 32])>,
+    /// The latest judgment for each candidate's content under the current filter.
+    pub(crate) verdicts: HashMap<String, intake::Judged>,
+    /// Candidates published as without a filter until a changed command judges them.
+    pub(crate) provisional: HashSet<String>,
+    /// The one filter command currently running, if any.
+    pub(crate) filter_run: Option<intake::FilterRun>,
     pub(crate) pause_announced: bool,
     /// The gate's last decision on the agreements pull request, logged once per change.
     pub(crate) agreements_waiting: Option<String>,
@@ -248,6 +262,10 @@ impl Daemon {
             last_reminder: Instant::now(),
             tracker_read: false,
             open_issues: Vec::new(),
+            tracker_issues: Vec::new(),
+            verdicts: HashMap::new(),
+            provisional: HashSet::new(),
+            filter_run: None,
             pause_announced,
             agreements_waiting: None,
             tracker_error: None,
@@ -268,6 +286,9 @@ impl Daemon {
     /// Replaces the services after the owner changed a connection or its credentials; dropping
     /// the old channel closes its Slack connection.
     pub fn replace_services(&mut self, services: Services) {
+        if let Some(run) = self.filter_run.as_mut() {
+            run.secrets.extend(services.secrets.iter().cloned());
+        }
         self.services = services;
         self.tracker_read = false;
         self.tracker_error = None;
@@ -288,7 +309,11 @@ impl Daemon {
         match Config::load(&self.paths.repo) {
             Ok(config) if config == self.config => Ok(()),
             Ok(config) => {
+                let filter_changed = config.tracker.filter != self.config.tracker.filter;
                 self.config = config;
+                if filter_changed {
+                    self.filter_changed();
+                }
                 self.last_prerequisites = None;
                 self.event(&json!({"event": "config-reloaded"}))
             }
@@ -348,6 +373,7 @@ impl Daemon {
     /// stop: the items stay `doing` and run again on the next start, with no earlier agent still at
     /// work and no app left running that nothing manages.
     pub fn stop_launches(&mut self) {
+        self.stop_filter();
         let names: Vec<String> = self.running.keys().cloned().collect();
         for name in names {
             if let Err(e) = self.stop_launch(&name) {
@@ -449,6 +475,8 @@ impl Daemon {
         if self.halt_file().exists() {
             return Ok(());
         }
+        let r = self.take_filter_run();
+        self.settle_part("taking in a finished tracker filter", r)?;
         let r = self.consume_finished();
         self.settle_part("taking in finished steps", r)?;
         let r = self.schedule();
