@@ -85,7 +85,7 @@ A single disposable capability probe is permitted only when every condition hold
 
 Run the probe in a temporary directory, treat repository inputs as read-only, and confine mutations to disposable local state. The probe budget is one bounded attempt for that finding, including guaranteed cleanup. Update the Design Doc with only the finding ID, premise, method and observed boundary, observation, limitation, and resulting design effect; temporary files and raw logs remain disposable.
 
-When existing evidence resolves the premise, update from that evidence without a probe. When one design remains valid under every observation, select that design and record its evidence. When the bounded attempt cannot decide a premise that still changes the design, return `{"status":"blocked","reason":"unresolved decision-changing premise and exact missing evidence"}` so the design stays at its current gate.
+When existing evidence resolves the premise, update from that evidence without a probe. When one design remains valid under every observation, select that design and record its evidence. When the bounded attempt cannot decide a premise that still changes the design, write `{"status":"blocked","reason":"unresolved decision-changing premise and exact missing evidence"}` to `out` so the design stays at its current gate.
 
 ## Update Mode
 
@@ -105,4 +105,4 @@ Update requested sections and dependent statements. Judge `correction_findings` 
 - The Design Doc remains the complete implementation design even when ADRs exist.
 - Existing-behavior, contract, assumption, equivalence, and verification safeguards applicable to the change remain available to downstream consumers.
 - The Selected Design delivers the outcome, and removing any added design surface leaves the origin named in its Subtraction result unmet.
-- The final response is one valid JSON object.
+- The output written to `out` is one valid JSON object.

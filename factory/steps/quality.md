@@ -72,8 +72,8 @@ Apply fixes per ovenspring-coding-principles and ovenspring-testing-principles s
 - Required behavior cannot be determined from the supplied governing and repository evidence → proceed to Step 6 with `verification_incomplete`
 - Value boundaries cannot all remain true and the user must choose which changes, an irreversible external action requires authorization, or the fix needs the owner's part (Factory Rules, When the owner decides) → proceed to Step 6 with `blocked`
 
-### Step 6: Return JSON Result
-Return one of the following as the final response (see Output Format for schemas):
+### Step 6: Write the Output
+Write one of the following to `out` (see Output Format for schemas):
 - `status: "pass"` — all quality checks pass
 - `status: "stub_detected"` — incomplete implementation found (from Step 1)
 - `status: "verification_incomplete"` — environment or a separate-responsibility failure prevents required proof
@@ -115,7 +115,7 @@ Use this status only after Step 1 confirmed implementation completeness and ever
 ### Output Protocol
 
 - During execution, intermediate progress messages MAY be emitted as plain text or markdown (see "Intermediate Progress Report" section below).
-- The output is a single JSON object that matches the schema below.
+- The output written to `out` is a single JSON object that matches the schema below.
 
 ### Structured Response
 
@@ -173,11 +173,11 @@ For a verified failure in a separate responsibility, use the same `verification_
 
 ## Intermediate Progress Report
 
-Between tool calls, briefly report: which phase is running, the command executed, errors/warnings/pass result, and per-issue file/cause/fix when fixes are required. This is intermediate output only; the final response must be the JSON result (Step 6).
+Between tool calls, briefly report: which phase is running, the command executed, errors/warnings/pass result, and per-issue file/cause/fix when fixes are required. This is intermediate output only; the JSON result goes to `out` (Step 6).
 
 ## Completion Criteria
 
-- [ ] The output is a single JSON with status `pass`, `stub_detected`, `verification_incomplete`, or `blocked`
+- [ ] The output written to `out` is a single JSON with status `pass`, `stub_detected`, `verification_incomplete`, or `blocked`
 
 ## Important Principles
 

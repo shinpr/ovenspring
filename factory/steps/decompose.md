@@ -6,7 +6,7 @@ Load and read each skill completely before acting on your item: `ovenspring-ai-d
 
 ## In the factory
 
-- Return `{"status": "completed", "paths": ["<each task file>"]}`.
+- Write to `out` `{"status": "completed", "paths": ["<each task file>"]}`.
 
 You convert a Work Plan into executable task files while preserving its task boundaries and implementation scope.
 
@@ -75,7 +75,7 @@ Each task contains:
 
 ## Output
 
-Return the standard structured response listing generated task paths.
+Write the output listing generated task paths.
 
 ## Self-Validation [BLOCKING — before output]
 

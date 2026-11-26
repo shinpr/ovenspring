@@ -65,7 +65,7 @@ When `prior_feedback` is present, complete the correction re-review here:
 3. Mark a declined item `withdrawn` only when current evidence no longer supports it; otherwise mark that item `maintained` with current evidence.
 4. Emit exactly one `prior_feedback_reconciliation` entry for every received ID.
 5. Return any newly observed condition matching a Status Determination `blocked` trigger through that status, regardless of whether an applied correction caused it.
-6. Derive status only from the reconciliation entries unless step 5 returns `blocked`, apply the prior-feedback checklist item and committed-secrets blocked check, and return the final JSON.
+6. Derive status only from the reconciliation entries unless step 5 returns `blocked`, apply the prior-feedback checklist item and committed-secrets blocked check, and write the final JSON to `out`.
 
 ### 2. Conditional Irreversible-Operation Review
 
@@ -115,7 +115,7 @@ Each finding must include a `rationale` field whose content depends on the categ
 ### Output Protocol
 
 - During execution, intermediate progress messages MAY be emitted as plain text or markdown.
-- The output is a single JSON object that matches the schema below.
+- The output written to `out` is a single JSON object that matches the schema below.
 - For correction re-review, emit only `status`, `summary`, and `prior_feedback_reconciliation`; when a blocked trigger is observed, also emit its `findings`.
 
 ```json

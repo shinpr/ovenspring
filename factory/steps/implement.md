@@ -158,15 +158,15 @@ Implement the behaviors the task delivers and prove them under ovenspring-testin
 
 Task implementation is complete when every implementation item is finished and the response records the observed operation-verification result. The workflow retains final acceptance of the supplied or derived observable verification condition.
 
-### 5. Return JSON Result
-Return the final response per Structured Response Specification.
+### 5. Write the Output
+Write the output to `out` per Structured Response Specification.
 
 ## Structured Response Specification
 
 ### Output Protocol
 
 - During execution, intermediate progress messages MAY be emitted as plain text or markdown.
-- The output is a single JSON object that matches one of the schemas below (Task Completion, Blocked, or Escalation Response).
+- The output written to `out` is a single JSON object that matches one of the schemas below (Task Completion, Blocked, or Escalation Response).
 
 ### Field Specifications
 
@@ -179,7 +179,7 @@ Return the final response per Structured Response Specification.
 **reuseDecisions**: Use `[]` when no plausible similar implementation was found. Otherwise include the decision-relevant candidates evaluated in Step 3 with `decision: "reuse" | "extend" | "separate"` and evidence covering responsibility, contract, lifecycle, and repository representativeness.
 
 ### 1. Task Completion Response
-Complete this agent's work by returning the following JSON; the quality assurance process performs quality checks and commits:
+Complete this agent's work by writing the following JSON to `out`; the quality assurance process performs quality checks and commits:
 
 ```json
 {
@@ -196,7 +196,7 @@ Complete this agent's work by returning the following JSON; the quality assuranc
 
 ### 2. Blocked Response
 
-When required implementation remains incomplete and available in-scope recovery supplies no advancing action, return `{"status":"blocked","taskName":"task","changeSummary":"completed work","remainingWork":["required unfinished result"],"evidence":["attempt and observed blocker"],"runnableCheck":{"result":"failed|skipped","reason":"exact affected proof"}}`. Preserve unfinished checkboxes. Verification unavailable after completed implementation remains a `completed` implementation result with an exact skipped/failed check for downstream quality assurance.
+When required implementation remains incomplete and available in-scope recovery supplies no advancing action, write to `out` `{"status":"blocked","taskName":"task","changeSummary":"completed work","remainingWork":["required unfinished result"],"evidence":["attempt and observed blocker"],"runnableCheck":{"result":"failed|skipped","reason":"exact affected proof"}}`. Preserve unfinished checkboxes. Verification unavailable after completed implementation remains a `completed` implementation result with an exact skipped/failed check for downstream quality assurance.
 
 ### 3. Escalation Response
 
@@ -214,7 +214,7 @@ Use this response when evidence establishes either authoritative escalation cond
 
 ## Completion Evidence Check
 
-This gate runs immediately before producing the final JSON response.
+This gate runs immediately before writing the output to `out`.
 
 ☐ All implementation items completed with evidence, or the response reports exact incomplete work or proves one authoritative escalation condition
 ☐ For task-file execution, each Completion Criteria item in the task file is satisfied, with its evidence in the response
@@ -223,4 +223,4 @@ This gate runs immediately before producing the final JSON response.
 ☐ `reuseDecisions` records decision-relevant similar implementations and its evidence-backed reuse, extend, or separate disposition
 ☐ Every available Operation Verification Method ran; each unavailable or failed check has its exact result and affected proof in `runnableCheck`
 ☐ Test runs cited as `runnableCheck` evidence meet the substantive and executable rules in the `runnableCheck.result` field specification
-☐ Final response is a single JSON with `status: "completed"`, `status: "blocked"`, or `status: "escalation_needed"` and matches the schema in Structured Response Specification
+☐ The output written to `out` is a single JSON with `status: "completed"`, `status: "blocked"`, or `status: "escalation_needed"` and matches the schema in Structured Response Specification

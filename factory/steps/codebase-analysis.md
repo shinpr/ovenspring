@@ -60,9 +60,9 @@ Preserve historical safeguards in the returned facts: dependency existence, beha
 - Record `verification` only for a required behavior, preserved contract, or material failure boundary.
 - Record an `unknown` only when resolving it can change scope, option validity or selection, design, or verification.
 
-### Step 4: Return JSON
+### Step 4: Write the Output
 
-Return exactly one JSON object matching this shape:
+Write exactly one JSON object matching this shape to `out`:
 
 ```json
 {
@@ -123,4 +123,4 @@ Use an empty array when its condition is absent. Populate an entry only from evi
 - Each focus area groups existing-behavior facts whose shared downstream disposition protects an observable contract.
 - Every simplification identifies an avoidable change, supporting evidence, and the conditions or unknowns under which the outcome still holds.
 - Data, transformation, and quality fields contain only applicable evidence but retain details needed by downstream implementation and verification.
-- The response is one valid JSON object.
+- The output written to `out` is one valid JSON object.

@@ -67,4 +67,4 @@ Update requested sections and dependent statements. Judge `correction_findings` 
 
 - Every change, including revisions to existing code, keeps the outcome, requirements, and non-goals unchanged.
 - Every created ADR passes both filters and records the owner's answer as its selected option.
-- The final response is one valid JSON object.
+- The output written to `out` is one valid JSON object.

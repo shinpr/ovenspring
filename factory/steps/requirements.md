@@ -44,7 +44,7 @@ Return the evidence for orchestrator judgment.
 
 ## Output
 
-Return exactly one JSON object:
+Write exactly one JSON object to `out`:
 
 ```json
 {
@@ -76,7 +76,7 @@ Return exactly one JSON object:
 - `executionRoute.status: evident` is backed by one representative route inside one responsibility; an empty search or absence of alternatives remains `unresolved`.
 - Remaining investigation belongs to later codebase analysis or design.
 - Product requirements and exclusions remain assigned to the user; convergence readiness, Structural Scale, and implementation-scope decisions remain assigned to the orchestrator.
-- The response is one valid JSON object.
+- The output written to `out` is one valid JSON object.
 
 ## The orchestrator's judgment
 

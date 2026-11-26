@@ -30,7 +30,7 @@ For each selected test, identify the governing criterion and the observable resu
 
 ## Output
 
-Return a selection explanation followed by the result JSON. Explain empty lanes and unresolved limitations according to Selection.
+Write the result JSON to `out`, and explain empty lanes and unresolved limitations according to Selection in your result.
 
 ```json
 {
@@ -44,7 +44,7 @@ Return a selection explanation followed by the result JSON. Explain empty lanes 
 }
 ```
 
-Each lane value is an existing file path when generated, otherwise JSON `null`. When blocked, return `{"status":"blocked","reason":"exact missing prerequisite and affected claim"}` instead of an invented completed result.
+Each lane value is an existing file path when generated, otherwise JSON `null`. When blocked, write `{"status":"blocked","reason":"exact missing prerequisite and affected claim"}` instead of an invented completed result.
 
 ## Completion Check
 

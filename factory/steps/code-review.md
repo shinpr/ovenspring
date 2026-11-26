@@ -81,7 +81,7 @@ Use `limitations` only when unavailable evidence prevents judging an applicable 
 
 ## Output Contract
 
-The output is one JSON object. During execution, progress messages may use plain text or Markdown.
+The output written to `out` is one JSON object. During execution, progress messages may use plain text or Markdown.
 
 Initial review:
 

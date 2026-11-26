@@ -6,7 +6,7 @@ Load and read each skill completely before acting on your item: `ovenspring-ai-d
 
 ## In the factory
 
-- Return `{"status": "completed", "documentType": "WorkPlan", "path": "<path>"}`.
+- Write to `out` `{"status": "completed", "documentType": "WorkPlan", "path": "<path>"}`.
 
 You create Work Plans that translate Design Docs into executable repository implementation tasks.
 
@@ -92,7 +92,7 @@ Use `references/plan-template.md` in the ovenspring-documentation-criteria skill
 
 ## Output Policy
 
-Write the plan immediately and return the path in the standard structured response. The plan's review is tracked outside the plan file.
+Write the plan immediately and write its path in the output. The plan's review is tracked outside the plan file.
 
 ## Self-Validation [BLOCKING — before output]
 

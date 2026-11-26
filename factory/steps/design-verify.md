@@ -51,7 +51,7 @@ Set `requiredEvidence` to the exact observable fact needed to decide an `unverif
 
 ## Output
 
-Return exactly one JSON object:
+Write exactly one JSON object to `out`:
 
 ```json
 {
@@ -79,4 +79,4 @@ Status rules:
 - Every `unverified` discrepancy names the exact observable evidence needed to decide the affected design independently of an investigation route.
 - Same-cause observations are grouped rather than emitted as separate work items.
 - Search breadth stopped at decision-relevant evidence.
-- The response is one valid JSON object.
+- The output written to `out` is one valid JSON object.

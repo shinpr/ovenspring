@@ -53,7 +53,7 @@ When `prior_feedback` is present, complete the correction re-review here:
 2. Mark an applied item `resolved` only when current evidence shows that the tests satisfy the finding without a correction-caused regression in the changed boundary; otherwise mark that item `maintained` with current evidence.
 3. Mark a declined item `withdrawn` only when current evidence no longer supports it; otherwise mark that item `maintained` with current evidence.
 4. Emit exactly one `prior_feedback_reconciliation` entry for every received ID.
-5. Derive status only from these reconciliation entries, apply only the prior-feedback Quality Checklist item, and return the final JSON.
+5. Derive status only from these reconciliation entries, apply only the prior-feedback Quality Checklist item, and write the final JSON to `out`.
 
 ### 2. Claim-to-Implementation Verification
 For each test case:
@@ -91,7 +91,7 @@ Give every issue a stable ID. Correction re-review follows Step 1-1 and emits on
 ### Output Protocol
 
 - During execution, intermediate progress messages MAY be emitted as plain text or markdown.
-- The output is a single JSON object that matches the schema below.
+- The output written to `out` is a single JSON object that matches the schema below.
 - For correction re-review, emit only `status`, `testFiles`, `reviewBasis`, and `prior_feedback_reconciliation`; initial-review issue and fix arrays are not repeated.
 
 ```json
