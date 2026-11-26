@@ -266,6 +266,7 @@ impl Daemon {
             r.pushed_at = Some(jiff::Timestamp::now().to_string());
         })?;
         self.event(&json!({"event": "pushed", "issue": key, "sha": sha, "pr": pull.number}))?;
+        self.answer_comments(key, true)?;
         Ok(Some(Fact::Pushed))
     }
 
@@ -547,46 +548,48 @@ impl Daemon {
     }
 
     /// Replies in each judged comment's thread: the commit that applied it, or the reason it was
-    /// declined. The reviewer names each finding by the comment it judges. A reply that cannot be
-    /// posted is recorded as a `reply-failed` event naming the comment and why.
-    pub(crate) fn answer_comments(&mut self, key: &str) -> Result<(), DaemonError> {
+    /// declined. A batch is answered at once when it applies nothing, and otherwise once `pushed`
+    /// says a push carried the commits that applied it. A reply that cannot be posted is recorded
+    /// as a `reply-failed` event naming the comment and why. Each reply is dropped from the record
+    /// once posted or recorded, so a stop in between leaves only the rest owed.
+    pub(crate) fn answer_comments(&mut self, key: &str, pushed: bool) -> Result<(), DaemonError> {
         let record = self.record_of(key)?;
         let Some(pr) = record.flow.pr else {
             return Ok(());
         };
-        let Some(StepOutput::Executor(judged)) =
-            record.output_at(Step::ReviewResponse, crate::handoff::CORRECTION_JUDGMENT)
-        else {
+        let due = record.replies;
+        let ready = pushed || due.iter().all(|r| r.disposition == Disposition::Decline);
+        if due.is_empty() || !ready {
             return Ok(());
-        };
+        }
         let gh = self.github()?;
         let all = gh.comments(pr).map_err(|e| e.to_string());
-        for d in &judged.dispositions {
-            let text = match d.disposition {
-                Disposition::Apply => record
-                    .last_commit
-                    .as_ref()
-                    .map(|commit| format!("Applied in {commit}."))
-                    .ok_or_else(|| "no commit of the correction is recorded".to_owned()),
-                Disposition::Decline => Ok(format!("Not applied: {}", d.reason)),
+        for reply in &due {
+            let text = match (reply.disposition, &reply.commit) {
+                (Disposition::Apply, Some(commit)) => Ok(format!("Applied in {commit}.")),
+                (Disposition::Apply, None) => {
+                    Err("no commit of the correction is recorded".to_owned())
+                }
+                (Disposition::Decline, _) => Ok(format!("Not applied: {}", reply.reason)),
             };
             let posted = text.and_then(|text| {
                 let comment = all
                     .as_ref()
                     .map_err(Clone::clone)?
                     .iter()
-                    .find(|c| c.key() == d.id)
+                    .find(|c| c.key() == reply.comment)
                     .ok_or_else(|| "no comment on the pull request has this key".to_owned())?;
                 gh.reply(pr, comment, &comments::factory_reply(&text))
                     .map(|()| text)
                     .map_err(|e| e.to_string())
             });
+            self.update_issue(key, |r| r.replies.retain(|r| r.comment != reply.comment))?;
             match posted {
                 Ok(text) => self.event(
-                    &json!({"event": "replied", "issue": key, "comment": d.id, "text": text}),
+                    &json!({"event": "replied", "issue": key, "comment": reply.comment, "text": text}),
                 )?,
                 Err(error) => self.event(
-                    &json!({"event": "reply-failed", "issue": key, "comment": d.id, "error": error}),
+                    &json!({"event": "reply-failed", "issue": key, "comment": reply.comment, "error": error}),
                 )?,
             }
         }

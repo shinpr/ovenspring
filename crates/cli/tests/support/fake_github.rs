@@ -67,6 +67,8 @@ pub struct FakeGitHub {
     pub unreachable: std::sync::atomic::AtomicBool,
     /// While set, replying to a comment is refused (HTTP 403).
     pub refuse_replies: std::sync::atomic::AtomicBool,
+    /// While set, sending a reply panics: the daemon stops as it sends its first reply.
+    pub stop_at_reply: std::sync::atomic::AtomicBool,
     /// While set, reading the pull request of this branch is refused (HTTP 403).
     pub refuse_pull_of: Mutex<Option<String>>,
     /// While set, a pull request reads with this head, as GitHub does for a moment after a push.
@@ -105,6 +107,7 @@ impl FakeGitHub {
             fail_next_open: std::sync::atomic::AtomicBool::new(false),
             unreachable: std::sync::atomic::AtomicBool::new(false),
             refuse_replies: std::sync::atomic::AtomicBool::new(false),
+            stop_at_reply: std::sync::atomic::AtomicBool::new(false),
             refuse_pull_of: Mutex::new(None),
             stale_head: Mutex::new(None),
             checks,
@@ -152,7 +155,7 @@ impl FakeGitHub {
         self.calls.lock().unwrap().clone()
     }
 
-    /// Replies sent, as (comment key, body).
+    /// Replies sent, as `reply <pull request> <comment key> <body>`.
     pub fn replies(&self) -> Vec<String> {
         self.calls()
             .into_iter()
@@ -191,6 +194,12 @@ impl FakeGitHub {
             state,
             mergeable: Some(mergeable),
         })
+    }
+
+    /// The number of the pull request opened from `head`.
+    pub fn pull_from(&self, head: &str) -> u64 {
+        let st = self.state.lock().unwrap();
+        st.pulls.iter().find(|p| p.1 == head).unwrap().0
     }
 
     /// A pull request the factory opened before (for restart tests). Returns its number.
@@ -440,6 +449,10 @@ impl GitHub for FakeGitHub {
     }
 
     fn reply(&self, number: u64, to: &Comment, body: &str) -> Result<(), HttpError> {
+        assert!(
+            !self.stop_at_reply.load(std::sync::atomic::Ordering::SeqCst),
+            "the daemon stops as it sends a reply"
+        );
         if self
             .refuse_replies
             .load(std::sync::atomic::Ordering::SeqCst)

@@ -510,7 +510,8 @@ pub enum Action {
     /// Ask the owner to approve the PRD, the prototype, what the design adds, or a held merge.
     RequestApproval,
     WaitForBots,
-    /// Reply in each judged comment's thread and request review from those who asked for changes.
+    /// Reply in the threads of comments judged without applying any. A push answers a batch that
+    /// applied some, once it carries the commit that applied them.
     AnswerComments,
     RunGate,
     /// Tell the owner the pull request is ready to merge.
@@ -1091,8 +1092,8 @@ fn after_commit(s: &mut IssueState, after: CommitPoint, limits: Limits) -> Vec<A
                 run(s, Step::Design)
             }
             Some(Origin::Round) => recheck_round(s, limits),
-            // The comments are answered once the commit that applied them is pushed.
             Some(Origin::PrComments) => {
+                s.origin = None;
                 s.stage = Stage::Pushing;
                 vec![Action::Push]
             }
@@ -1572,12 +1573,7 @@ fn pull_request(s: &mut IssueState, fact: &Fact, limits: Limits) -> Vec<Action> 
         Fact::Pushed if s.stage == Stage::Pushing => {
             s.refused = None;
             s.stage = Stage::Ci;
-            if s.origin == Some(Origin::PrComments) {
-                s.origin = None;
-                vec![Action::AnswerComments]
-            } else {
-                vec![]
-            }
+            vec![]
         }
         Fact::ChecksPassed if s.stage == Stage::Ci => {
             s.stage = Stage::WaitingBots;
@@ -2342,7 +2338,6 @@ mod tests {
                 ),
                 (answered(&json!([apply("doc", None)])), vec!["quality"]),
                 (quality("pass"), vec!["commit after quality", "Push"]),
-                (Fact::Pushed, vec!["AnswerComments"]),
             ],
             Limits::default(),
         );
@@ -2740,7 +2735,6 @@ mod tests {
                     vec!["quality"],
                 ),
                 (quality("pass"), vec!["commit after quality", "Push"]),
-                (Fact::Pushed, vec!["AnswerComments"]),
             ],
             Limits::default(),
         );

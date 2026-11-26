@@ -1855,10 +1855,11 @@ fn a_work_turn_that_cannot_resume_starts_over_in_a_new_session() {
     assert!(!d.halt_file().exists());
 }
 
-/// ACME-160 passes every step until its pull request gets two comments from a writer. The
-/// executor applies the first and declines the second, and its correction asks for a test review;
-/// the test review finds `T002`, which the executor applies, then passes; quality runs and the
-/// correction is pushed.
+/// ACME-160 passes every step until its pull request gets two comments from a writer and one from
+/// a reader. The executor applies the first, declines the second, and also names the reader's
+/// comment, which was never handed to it; its correction asks for a test review; the test review
+/// finds `T002`, which the executor applies, then passes; quality runs and the correction is
+/// pushed.
 fn comments_then_test_review_script() -> Value {
     let mut script = straight("ACME-160");
     script.insert(
@@ -1868,7 +1869,8 @@ fn comments_then_test_review_script() -> Value {
              "output": {"status": "completed", "taskName": "comments", "changeSummary": "Subtract refunds",
                         "requiresTestReview": true, "dispositions": [
                             {"id": "$COMMENT_1", "disposition": "apply", "reason": "the total must subtract refunds"},
-                            {"id": "$COMMENT_2", "disposition": "decline", "reason": "archived orders widen the outcome"}]}},
+                            {"id": "$COMMENT_2", "disposition": "decline", "reason": "archived orders widen the outcome"},
+                            {"id": "review-comment-3", "disposition": "decline", "reason": "a reader's comment"}]}},
             {"change": {"path": "tests/ACME-160.test.ts", "content": "asserts the total\n"},
              "output": {"status": "completed", "taskName": "T002", "changeSummary": "Assert the refunded total",
                         "requiresTestReview": true, "dispositions": [
@@ -1887,29 +1889,58 @@ fn comments_then_test_review_script() -> Value {
     Value::Object(script)
 }
 
-/// Runs ACME-160 until it merges, after its correction of the comments was pushed.
-fn run_comments_then_test_review(refuse_replies: bool) -> (Env, Arc<FakeGitHub>) {
-    let env = Env::new();
-    env.configure(CONFIG);
-    env.add_branch("develop");
-    env.script_agents(&comments_then_test_review_script());
-    let mut gh = always_passing(&env, requiring_test());
+/// ACME-160's correction of the two writer comments, without a test review: the executor applies
+/// the first and declines the second.
+fn comments_script() -> serde_json::Map<String, Value> {
+    let mut script = straight("ACME-160");
+    script.insert(
+        "review-response@ACME-160".into(),
+        json!([
+            {"change": {"path": "src/ACME-160.ts", "content": "refunds\n"},
+             "output": {"status": "completed", "taskName": "comments", "changeSummary": "Subtract refunds",
+                        "requiresTestReview": false, "dispositions": [
+                            {"id": "$COMMENT_1", "disposition": "apply", "reason": "the total must subtract refunds"},
+                            {"id": "$COMMENT_2", "disposition": "decline", "reason": "archived orders widen the outcome"}]}}
+        ]),
+    );
+    script
+}
+
+/// A GitHub whose pull request for ACME-160 gets two comments from a writer and one from a reader.
+fn github_commenting_on_acme_160(env: &Env) -> FakeGitHub {
+    let mut gh = always_passing(env, requiring_test());
     gh.permissions.insert("acme-dev".into(), Permission::Write);
+    gh.permissions
+        .insert("drive-by-user".into(), Permission::Read);
     gh.on_open = vec![
         writer_comment("ovenspring/ACME-160", "The total ignores refunds."),
         writer_comment("ovenspring/ACME-160", "Include archived orders too."),
+        Planned {
+            author: "drive-by-user".into(),
+            ..writer_comment("ovenspring/ACME-160", "Rename the total.")
+        },
     ];
-    gh.refuse_replies
-        .store(refuse_replies, std::sync::atomic::Ordering::SeqCst);
-    let gh = Arc::new(gh);
-    let mut d = daemon(
-        &env,
+    gh
+}
+
+fn acme_160_daemon(env: &Env, gh: &Arc<FakeGitHub>) -> ovenspring_daemon::Daemon {
+    daemon(
+        env,
         services(
             gh.clone(),
             Arc::new(RecordingChannel::default()),
             Arc::new(RecordingTracker::default()),
         ),
-    );
+    )
+}
+
+/// Runs ACME-160 with `script` until it merges.
+fn run_acme_160(env: &Env, script: &Value, gh: FakeGitHub) -> Arc<FakeGitHub> {
+    env.configure(CONFIG);
+    env.add_branch("develop");
+    env.script_agents(script);
+    let gh = Arc::new(gh);
+    let mut d = acme_160_daemon(env, &gh);
     d.begin_issue("ACME-160", "Order totals", vec![]).unwrap();
     run_until(
         &mut d,
@@ -1917,17 +1948,85 @@ fn run_comments_then_test_review(refuse_replies: bool) -> (Env, Arc<FakeGitHub>)
         |_| {},
         |d| stage(d, "ACME-160") == Stage::Merged,
     );
+    gh
+}
+
+/// Runs ACME-160 until it merges, after its correction of the comments was pushed.
+fn run_comments_then_test_review(refuse_replies: bool) -> (Env, Arc<FakeGitHub>) {
+    let env = Env::new();
+    let gh = github_commenting_on_acme_160(&env);
+    gh.refuse_replies
+        .store(refuse_replies, std::sync::atomic::Ordering::SeqCst);
+    let gh = run_acme_160(&env, &comments_then_test_review_script(), gh);
     (env, gh)
+}
+
+/// The commit that applied the comments: the first commit after they were accepted.
+fn applying_commit(env: &Env) -> String {
+    let events = env.events();
+    let accepted = events
+        .iter()
+        .position(|e| e["event"] == "comments-accepted")
+        .unwrap();
+    events[accepted..]
+        .iter()
+        .find(|e| e["event"] == "committed")
+        .unwrap()["sha"]
+        .as_str()
+        .unwrap()
+        .to_owned()
+}
+
+/// Asserts that the writer's two comments, and only they, have their replies on ACME-160's pull
+/// request, posted after a push carried `commit`: the applied one names `commit`, the declined one
+/// its reason.
+fn assert_answered_after_the_push_of(env: &Env, gh: &FakeGitHub, commit: &str) {
+    let events = env.events();
+    let committed = events
+        .iter()
+        .position(|e| e["event"] == "committed" && e["sha"] == commit)
+        .unwrap();
+    let pushed = committed
+        + events[committed..]
+            .iter()
+            .position(|e| e["event"] == "pushed")
+            .unwrap();
+    let answered: Vec<usize> = events
+        .iter()
+        .enumerate()
+        .filter(|(_, e)| e["event"] == "replied")
+        .map(|(i, _)| i)
+        .collect();
+    assert_eq!(answered.len(), 2, "{events:?}");
+    assert!(
+        answered.iter().all(|i| *i > pushed),
+        "{answered:?} before the push at {pushed}"
+    );
+    let pr = gh.pull_from("ovenspring/ACME-160");
+    let mut replies = gh.replies();
+    replies.sort();
+    assert_eq!(replies.len(), 2, "{replies:?}");
+    assert!(
+        replies[0].starts_with(&format!("reply {pr} review-comment-1 "))
+            && replies[0].contains(&format!("Applied in {commit}.")),
+        "{replies:?} answer no review-comment-1 on #{pr} naming {commit}"
+    );
+    assert!(
+        replies[1].starts_with(&format!("reply {pr} review-comment-2 "))
+            && replies[1].contains("Not applied: archived orders widen the outcome"),
+        "{replies:?} answer no review-comment-2 on #{pr}"
+    );
 }
 
 // AC: "each new comment from configured bots or write-access accounts is judged as a finding,
 //     and each is answered in its thread with the commit that applied it or the reason it was
-//     declined (AC-022)"; GH-17: also when a test review with findings, the executor's judgment
-//     of those findings and quality ran between the judgment and the push.
-// Behavior: two writer comments judged -> test review finds T002 -> the executor applies T002 ->
-//     the test review passes -> quality, handed the applied comment -> the correction is pushed
-//     -> after that push, each comment has its reply in its thread, the applied one naming the
-//     pushed commit.
+//     declined (AC-022)"; "Comments from accounts without write access ... receive no response
+//     (AC-023)"; GH-17: also when a test review with findings, the executor's judgment of those
+//     findings and quality ran between the judgment and the push.
+// Behavior: two writer comments judged, plus a disposition for a reader's comment -> test review
+//     finds T002 -> the executor applies T002 -> the test review passes -> quality, handed the
+//     applied comment -> the correction is pushed -> after that push, each writer comment has its
+//     reply in its thread, the applied one naming the correction's commit; the reader's has none.
 // @lane: integration
 // @dependency: daemon, flow, handoff, fake agent, FakeGitHub
 #[test]
@@ -1946,41 +2045,18 @@ fn each_judged_comment_is_answered_after_a_test_review_of_its_correction() {
             "quality"
         ]
     );
-    // The correction is the commit after its quality run; its push is the next push.
-    let events = env.events();
-    let committed = events
-        .iter()
-        .rposition(|e| e["event"] == "committed" && e["after"] == "quality")
-        .unwrap();
-    let pushed = committed
-        + events[committed..]
-            .iter()
-            .position(|e| e["event"] == "pushed")
-            .unwrap();
-    let correction = events[pushed]["sha"].as_str().unwrap();
-    let answered: Vec<(usize, &Value)> = events
-        .iter()
-        .enumerate()
-        .filter(|(_, e)| e["event"] == "replied")
+    // The executor's second run judges the test review's finding.
+    let judged: Vec<Value> = handoffs(&env, "review-response", None, "correction_findings")
+        .into_iter()
+        .flat_map(|c| c.as_array().cloned().unwrap_or_default())
+        .filter(|f| f["id"] == "T002")
         .collect();
-    assert!(
-        answered.iter().all(|(i, _)| *i > pushed),
-        "{answered:?} before the push at {pushed}"
+    assert_eq!(judged.len(), 1, "{judged:?}");
+    assert_eq!(
+        judged[0]["description"],
+        "The refund test asserts nothing about the total."
     );
-    let replies = gh.replies();
-    assert_eq!(replies.len(), 2, "{replies:?}");
-    assert!(
-        replies
-            .iter()
-            .any(|r| r.contains(&format!("review-comment-1 Applied in {correction}."))),
-        "{replies:?} name no {correction}"
-    );
-    assert!(
-        replies
-            .iter()
-            .any(|r| r.contains("review-comment-2 Not applied: archived orders widen the outcome")),
-        "{replies:?}"
-    );
+    assert_answered_after_the_push_of(&env, &gh, &applying_commit(&env));
     // The quality run after the correction checks the comment the executor applied.
     let scope = handoffs(&env, "quality", None, "correction_findings");
     let ids: Vec<&Value> = scope
@@ -2021,4 +2097,203 @@ fn a_reply_github_refuses_is_recorded_for_its_comment() {
             .all(|e| e["error"].as_str().unwrap().contains("403")),
         "{failed:?}"
     );
+}
+
+// AC: AC-022 "answered in its thread with the commit that applied it"; GH-17.
+// Behavior: the pre-push hook refuses the correction -> quality commits a separate fix, which is
+//     pushed -> the applied comment's reply names the correction's commit, not the fix's.
+// @lane: integration
+// @dependency: daemon, flow, fake agent, FakeGitHub, git hook
+#[test]
+fn the_reply_names_the_commit_that_applied_the_comment_after_a_refused_push() {
+    let env = Env::new();
+    let hook = env.repo.join(".git/hooks/pre-push");
+    std::fs::write(
+        &hook,
+        "#!/bin/sh\nif grep -q refunds src/ACME-160.ts && ! test -f lint-fixed; then\n  echo 'knip: unused export refunds' >&2; exit 1\nfi\n",
+    )
+    .unwrap();
+    std::process::Command::new("chmod")
+        .args(["+x", hook.to_str().unwrap()])
+        .status()
+        .unwrap();
+    let mut script = comments_script();
+    script.insert(
+        "quality@ACME-160".into(),
+        json!([quality_pass(), quality_pass(),
+               {"change": {"path": "lint-fixed", "content": "x"}, "output": quality_pass()["output"]}]),
+    );
+    let gh = run_acme_160(
+        &env,
+        &Value::Object(script),
+        github_commenting_on_acme_160(&env),
+    );
+
+    let applied = applying_commit(&env);
+    let events = env.events();
+    assert!(events.iter().any(|e| e["event"] == "push-refused"));
+    let head = events.iter().rfind(|e| e["event"] == "pushed").unwrap()["sha"]
+        .as_str()
+        .unwrap();
+    assert_ne!(head, applied, "the repair is its own commit");
+    assert_answered_after_the_push_of(&env, &gh, &applied);
+}
+
+// AC: AC-039 "No work is lost across a restart"; GH-17.
+// Behavior: the correction is committed and pushed, its pushed SHA saved, and the daemon stops as
+//     it sends the first reply -> a new daemon posts each reply.
+// @lane: integration
+// @dependency: daemon, flow, fake agent, FakeGitHub
+#[test]
+fn replies_owed_when_the_daemon_stopped_after_the_push_are_posted_after_the_restart() {
+    let env = Env::new();
+    env.configure(CONFIG);
+    env.add_branch("develop");
+    let mut script = comments_script();
+    script.insert(
+        "quality@ACME-160".into(),
+        json!([quality_pass(), {"wait": true, "output": quality_pass()["output"]}]),
+    );
+    env.script_agents(&Value::Object(script));
+    let gh = Arc::new(github_commenting_on_acme_160(&env));
+    let mut d = acme_160_daemon(&env, &gh);
+    d.begin_issue("ACME-160", "Order totals", vec![]).unwrap();
+    run_until(
+        &mut d,
+        60,
+        |_| {},
+        |d| {
+            stage(d, "ACME-160") == Stage::running(Step::Quality)
+                && d.issue("ACME-160")
+                    .unwrap()
+                    .is_some_and(|r| !r.replies.is_empty())
+        },
+    );
+    let root = env.fake_bin.parent().unwrap().to_path_buf();
+    std::fs::write(root.join("release-ACME-160-quality"), "").unwrap();
+    let quality_done = || {
+        d.store().active_items().unwrap().iter().any(|p| {
+            let front = d.store().read_item(p).unwrap().front;
+            front.step == Step::Quality && front.status == ovenspring_core::item::Status::Done
+        })
+    };
+    assert!(support::wait_until(30, quality_done));
+    // The pass that takes the quality run in commits and pushes, then stops at the first reply.
+    gh.stop_at_reply
+        .store(true, std::sync::atomic::Ordering::SeqCst);
+    let stopped = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| d.tick()));
+    assert!(stopped.is_err(), "the daemon reached a reply");
+    let applied = applying_commit(&env);
+    assert_eq!(
+        git(&env.origin, &["rev-parse", "ovenspring/ACME-160"]),
+        applied,
+        "the correction reached origin before the stop"
+    );
+    let saved: Value = d
+        .store()
+        .read_record("issues/ACME-160.json")
+        .unwrap()
+        .unwrap();
+    assert_eq!(saved["pushed_sha"], applied.as_str(), "{saved}");
+    assert_eq!(gh.replies(), Vec::<String>::new());
+    drop(d);
+
+    gh.stop_at_reply
+        .store(false, std::sync::atomic::Ordering::SeqCst);
+    let mut d = acme_160_daemon(&env, &gh);
+    run_until(
+        &mut d,
+        60,
+        |_| {},
+        |d| stage(d, "ACME-160") == Stage::Merged,
+    );
+    assert_answered_after_the_push_of(&env, &gh, &applied);
+}
+
+// AC: GH-17: "also when other checks and corrections ran between the judgment and the push";
+//     factory core design, steps: quality's `stub_detected` sends the work back to implement.
+// Behavior: quality after the correction finds a stub -> implement completes it -> quality ->
+//     the review round passes -> the push -> each comment has its reply, naming the commit that
+//     applied it.
+// @lane: integration
+// @dependency: daemon, flow, fake agent, FakeGitHub
+#[test]
+fn comments_corrected_through_a_stub_repair_and_a_review_round_are_answered() {
+    let env = Env::new();
+    let mut script = comments_script();
+    script.insert(
+        "quality@ACME-160".into(),
+        json!([quality_pass(),
+               {"output": {"status": "stub_detected", "incompleteImplementations": [
+                   {"file": "src/ACME-160.ts", "reason": "refunds are a placeholder"}]}},
+               quality_pass()]),
+    );
+    script.insert(
+        "implement@ACME-160".into(),
+        json!([
+            support::scripts::implement_run("src/ACME-160.ts"),
+            support::scripts::implement_run("src/ACME-160.ts")
+        ]),
+    );
+    let gh = run_acme_160(
+        &env,
+        &Value::Object(script),
+        github_commenting_on_acme_160(&env),
+    );
+
+    let steps = filed_steps(&env, "ACME-160");
+    let judged = steps.iter().position(|s| s == "review-response").unwrap();
+    assert_eq!(
+        steps[judged..],
+        [
+            "review-response",
+            "quality",
+            "implement",
+            "quality",
+            "code-review",
+            "security-review"
+        ]
+    );
+    assert_answered_after_the_push_of(&env, &gh, &applying_commit(&env));
+}
+
+// AC: AC-039 "No work is lost across a restart"; GH-17.
+// Behavior: the comments' correction was judged by a daemon of the previous version, whose record
+//     owes no reply -> after the upgrade, the correction's commit and push answer each comment.
+// @lane: integration
+// @dependency: daemon, flow, fake agent, FakeGitHub
+#[test]
+fn comments_judged_before_the_upgrade_are_answered_after_their_correction() {
+    let env = Env::new();
+    env.configure(CONFIG);
+    env.add_branch("develop");
+    env.script_agents(&Value::Object(comments_script()));
+    let gh = Arc::new(github_commenting_on_acme_160(&env));
+    let mut d = acme_160_daemon(&env, &gh);
+    d.begin_issue("ACME-160", "Order totals", vec![]).unwrap();
+    run_until(
+        &mut d,
+        60,
+        |_| {},
+        |d| {
+            stage(d, "ACME-160") == Stage::running(Step::Quality)
+                && d.issue("ACME-160")
+                    .unwrap()
+                    .is_some_and(|r| !r.replies.is_empty())
+        },
+    );
+    let path = "issues/ACME-160.json";
+    let mut saved: Value = d.store().read_record(path).unwrap().unwrap();
+    saved.as_object_mut().unwrap().remove("replies");
+    d.store().write_record(path, &saved).unwrap();
+    drop(d);
+
+    let mut d = acme_160_daemon(&env, &gh);
+    run_until(
+        &mut d,
+        60,
+        |_| {},
+        |d| stage(d, "ACME-160") == Stage::Merged,
+    );
+    assert_answered_after_the_push_of(&env, &gh, &applying_commit(&env));
 }
