@@ -10,10 +10,10 @@ workspace = true
 
 [dependencies]
 jiff = "1.0.1"
-ovenspring-agents = { version = "0.3.0", path = "../agents" }
-ovenspring-core = { version = "0.3.0", path = "../core" }
-ovenspring-integrations = { version = "0.3.0", path = "../integrations" }
-ovenspring-store = { version = "0.3.0", path = "../store" }
+ovenspring-agents = { version = "0.3.1", path = "../agents" }
+ovenspring-core = { version = "0.3.1", path = "../core" }
+ovenspring-integrations = { version = "0.3.1", path = "../integrations" }
+ovenspring-store = { version = "0.3.1", path = "../store" }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
 sha2 = "0.11.1"
