@@ -207,6 +207,8 @@ effort = "high"
 [tracker]
 kind = "linear"                    # linear | github
 team = "ACME"                      # linear team key; for github, the repository's own issues
+# optional, unset by default (no filter):
+# filter = "scripts/issue-filter"  # the owner's command that drops issues before any agent reads them (issue-filter design)
 
 [slack]
 channel = "C0123456789"
