@@ -64,7 +64,7 @@ Every open issue, with all its comments, is written to `sources/issues/<key>.md`
 
 #### Functional Requirements
 
-PRD AC-072, AC-073, AC-074, AC-075; AC-015 and AC-059 as they name the filter.
+PRD AC-072, AC-073, AC-074, AC-075; AC-015 as it names the filter.
 
 #### Non-Functional Requirements
 
@@ -94,7 +94,7 @@ PRD AC-072, AC-073, AC-074, AC-075; AC-015 and AC-059 as they name the filter.
 - [ ] **While** a filter is configured and a candidate is not awaiting its first judgment after a change of command (the command was already set when the daemon started, the candidate first appeared after the change, or the new command has judged it), the system shall leave the candidate's snapshot as it was until its new or changed content is judged: absent when it had none, the earlier content when it had one
 - [ ] **When** the daemon starts, the system shall judge every open candidate once before publishing any candidate that has no snapshot
 - [ ] **When** the tracker no longer reports an issue open, the system shall forget its verdict, so an issue reported open again is judged again
-- [ ] **If** the configured filter changed, the issue left the tracker's open list (even if reopened), or its content changed while a command judged it, or the issue is selected when the result arrives, **then** the system shall discard that result: no verdict, no publication change and no event come from it
+- [ ] **If** the configured filter changed, the issue left the tracker's open list (even if reopened), or its content when the result is taken differs from the content the command judged, or the issue is selected when the result arrives, **then** the system shall discard that result: no verdict, no publication change and no event come from it
 - [ ] The system shall start a filter run only for an issue that, when the run starts, is a candidate whose current content has no verdict under the configured filter
 
 ### End of intake (AC-074, AC-015)
@@ -106,9 +106,9 @@ PRD AC-072, AC-073, AC-074, AC-075; AC-015 and AC-059 as they name the filter.
 - [ ] **When** the owner approves a proposal, the system shall take each issue's title and URL for its issue record, and so for its requirements request, from the snapshot the lead selected
 - [ ] **When** a proposal with no issue ends and intake admitted an issue while the lead was proposing, the system shall publish that issue after the proposal ends and file a new proposal; an issue published before the proposal began shall not file another one
 
-### Configuration and guide (AC-059, AC-075)
+### Configuration and guide (AC-072, AC-075)
 
-- [ ] **When** the owner saves the tracker section in Settings, the system shall keep `[tracker] filter` as the file had it
+- [ ] **When** the owner saves the tracker section in Settings, the system shall write the Filter command field to `[tracker] filter`, and remove the key when the field is empty
 - [ ] The guide shall state the command's contract, that the reason is recorded in the factory's event log with credentials masked, and give a short example wrapper
 
 ## Existing Codebase Analysis
@@ -122,6 +122,8 @@ PRD AC-072, AC-073, AC-074, AC-075; AC-015 and AC-059 as they name the filter.
 | Existing | `crates/integrations/src/tracker/linear.rs` | `OPEN_ISSUES` gains `creator { name }`; `RawIssue` gains `creator: Option<Named>`; `author` = name, empty when null |
 | Existing | `crates/core/src/config.rs` | `TrackerConfig` gains `filter: Option<String>` |
 | Existing | `crates/server/src/setup.rs` | Setup's `TrackerConfig` literal sets `filter: None` |
+| Existing | `crates/server/src/settings.rs` | `TrackerSection` gains `filter`; a save writes it, an empty field removes it |
+| Existing | `dashboard/src/app/settings/sections.tsx` | The Issue tracker row gains the Filter command field |
 | Existing | `crates/cli/src/daemon_cmd.rs` | `services_for` fills `Services::secrets` with the held credentials and the GitHub token it used |
 | Existing | `dashboard/src/api/types.gen.ts` | Regenerated |
 | New | `crates/daemon/src/intake.rs` | Selection, verdicts, publication pass, the filter run |
@@ -157,7 +159,7 @@ PRD AC-072, AC-073, AC-074, AC-075; AC-015 and AC-059 as they name the filter.
 | `crates/daemon/src/download.rs:mask` | Masks held values and token formats; reused unchanged for the reason before it is logged |
 | `crates/cli/src/daemon_cmd.rs:services_for`, `connection_key` | Builds `Services` from the held credentials (and the signed-in `gh` token when none is held) and rebuilds them when the credentials file changes |
 | `docs/prd/oven-spring-prd.md` (Security: "Credentials never enter the repository, logs, downloads, or prompts"); `docs/design/factory-core-design.md` (Logging and Monitoring) | The reason is owner-command text written to `events.jsonl`, a log |
-| `crates/server/src/settings.rs:287-293` | Tracker save mutates the read config; `filter` is kept with no change |
+| `crates/server/src/settings.rs:287-293` | Tracker save mutates the read config; it writes `filter` from the Filter command field, and an empty field removes it |
 | `factory/steps/facts.md` (Inputs) | The facts step reads `events.jsonl`, so the drop reason reaches it |
 
 ### Fact Disposition Table
@@ -168,7 +170,7 @@ PRD AC-072, AC-073, AC-074, AC-075; AC-015 and AC-059 as they name the filter.
 | crates/daemon/src/issues.rs:poll_tracker+forget_closed_sources (selected issues) | Freezing intake for selected issues (AC-074) | transform | Selected = key in the current sprint state's plan or with any issue record; selected snapshots are never rewritten, removed by a verdict, or judged; a proposed key with no record keeps its snapshot when closed. A key with a finished record that the tracker still reports open is selected (it was in an approved proposal; `begin_issue` never restarts it), so it is not judged. Sprint start takes title and URL from the frozen snapshot | crates/daemon/src/issues.rs:1138-1140, 1186-1189; crates/core/src/sprint.rs:next (AwaitingApproval + Replied keeps state.plan); crates/daemon/src/sprint.rs:384-415 |
 | crates/daemon/src/sprint.rs:file_sprint_step (live sources/issues during planning) | Intake changes while the lead is writing the proposal | transform | While the sprint is in `Proposing`, the publication pass writes and removes no snapshot, closed issues' included; candidates without a snapshot are still judged. The lead's chosen issues keep the text the lead read up to `PlanDone`, when they become selected; what was held is published on the pass that runs as the sprint leaves `Proposing`, so an empty proposal is followed by `IssueOpened` for an issue admitted meanwhile | crates/daemon/src/sprint.rs:121-125 (refs the live directory); crates/daemon/src/sprint.rs:298 (PlanDone taken as is); crates/daemon/src/sprint.rs:396-400 (title fallback); factory/steps/sprint-plan.md:12 |
 | crates/integrations/src/tracker/mod.rs:TrackerIssue | Issue author for both trackers | transform | `author` added: GitHub `user.login`, Linear `creator.name`, empty string when absent, the same identity form as each tracker's comment authors. `render()` is unchanged, so admitted snapshots stay byte-identical | crates/integrations/src/tracker/github.rs:38-55 (RawIssue has no user), 77 (comment author = login); crates/integrations/src/tracker/linear.rs:13-24 (OPEN_ISSUES query has no creator), 276 (comment author = user.name) |
-| crates/core/src/config.rs:TrackerConfig | The `[tracker] filter` setting and the code that writes the config | transform | `filter: Option<String>` with `#[serde(default, skip_serializing_if = "Option::is_none")]`; setup literal sets `None`; Settings save keeps it because it mutates the config it read; generated types regenerated | crates/core/src/config.rs:263-270 (deny_unknown_fields, TS export); crates/server/src/setup.rs:464 (struct literal); crates/server/src/settings.rs:263-293 (save reads the file, mutates kind/team only); crates/server/src/types.rs:1-3, 93 (types.gen.ts must match); dashboard/src/api/types.gen.ts:655 |
+| crates/core/src/config.rs:TrackerConfig | The `[tracker] filter` setting and the code that writes the config | transform | `filter: Option<String>` with `#[serde(default, skip_serializing_if = "Option::is_none")]`; setup literal sets `None`; the Settings save writes `filter` from the Filter command field, and an empty field removes it; generated types regenerated | crates/core/src/config.rs:263-270 (deny_unknown_fields, TS export); crates/server/src/setup.rs:464 (struct literal); crates/server/src/settings.rs:263-293 (save reads the file, mutates kind/team/filter); crates/server/src/types.rs:1-3, 93 (types.gen.ts must match); dashboard/src/api/types.gen.ts:655 |
 | crates/daemon/src/lib.rs:Daemon::tick (blocking work) | Running the owner's command without stalling the event loop | transform | One filter run at a time, each on its own thread whose `JoinHandle` the tick polls; the daemon chooses each run from its current state as it starts it, so no queued job outlives a state change; the time limit and the daemon's normal stop stop the whole process group with `stop_group` | crates/daemon/src/lib.rs:430-470; docs/design/factory-core-design.md:222 (half-second loop, 5-second responsiveness target); crates/daemon/src/recovery.rs:170-193 and take_recoveries (thread + mpsc drained each tick); crates/daemon/src/product_run.rs:100-110 (JoinHandle polled each tick); crates/daemon/src/lib.rs:916-938 spawn (process_group(0)); crates/daemon/src/app.rs:250-268 stop_group (TERM then KILL to the process group) |
 | crates/daemon/src/lib.rs:Daemon (in-memory state, restart) | What the daemon remembers and what a restart or a command change re-checks | transform | Verdicts and provisional keys live only in memory. A start has no verdicts, so every open candidate is judged once; a candidate with no snapshot (a dropped one among them) is judged before it is published, one with a snapshot stays published until judged. A filter change while running makes the current candidates provisional instead (published as without a filter until judged) | crates/daemon/src/lib.rs:160-190 (in-memory fields: open_issues, tracker_read, config_text); crates/daemon/src/lib.rs:280-297 (reload_config); sources/issues/*.md persist across restarts (store) |
 
@@ -482,7 +484,7 @@ No data migration. Existing `config.toml` files parse unchanged. On the first st
 
 ## Security Considerations
 
-- **Authentication & Authorization**: N/A — no new entry point. The command is set only by whoever can edit `.ovenspring/config.toml`; a pull request changing it is held for the owner (AC-014).
+- **Authentication & Authorization**: N/A — no new entry point. The command is set by the owner in Settings, or by whoever can edit `.ovenspring/config.toml`; a pull request changing it is held for the owner (AC-014).
 - **Input Validation**: tracker text reaches the owner's command only on stdin as JSON, never on its command line or in its environment, so issue text cannot change what `sh -c` runs. The verdict is the exit status alone.
 - **Sensitive Data Handling**: events hold the key, URL, the command's reason and the failure kind; no issue body or stderr is logged by the factory. The reason is the owner's command's own text, recorded as written (AC-072) except for credentials: when the run's result is taken it passes through `download::mask` with every credential the daemon held from the command's start until that moment, and only the masked text is kept until it is appended to `events.jsonl`, so a credential the command prints (the command runs with the daemon's environment and user) stays out of the raw log, as the PRD (Non-Functional Requirements, Security) and the core design's logging invariant require; the drop and its event still apply. `events.jsonl` is read by the facts step at sprint end (`factory/steps/facts.md`, Inputs), so the guide says so and its example wrapper gives a reason that names the rule rather than quoting the issue. A reason that quotes the issue is the owner's choice under the contract.
 
@@ -524,7 +526,7 @@ N/A — no database; files under the state directory are asserted directly.
   - while `Proposing`, a new issue is admitted; an empty `PlanDone` → after the next tick a new `sprint-plan` item is filed; a second empty `PlanDone` with no new admission → the sprint stays in `WaitingForIssues` and no item is filed (AC-015)
   - `stop_launches` while a gated script with a child runs → the script's process group is gone
 - `crates/integrations/tests/tracker_contract.rs`: fixtures gain `user.login` (GitHub) and `creator { name }` (Linear, plus one `null`); assertions on `author`.
-- `crates/core` config test: `[tracker] filter` parses; `crates/server` settings test: a tracker save keeps `filter`; generated types match.
+- `crates/core` config test: `[tracker] filter` parses; `crates/server` settings test: a tracker save sets and clears `filter` (`tracker_settings_save_sets_and_clears_the_filter`); generated types match.
 
 ## Verification Strategy
 
@@ -570,7 +572,7 @@ N/A — no database; files under the state directory are asserted directly.
 
 ## References
 
-- `docs/prd/oven-spring-prd.md` (AC-015, AC-059, AC-072 to AC-075)
+- `docs/prd/oven-spring-prd.md` (AC-015, AC-072 to AC-075)
 - `docs/design/factory-core-design.md` (Sprint; Data Flow; Tracker; Logging and Monitoring)
 - `docs/design/distribution-design.md` (Configuration)
 - NOR-32 and the owner's answers `NOR-32-spec-2.md`, `NOR-32-prd-3.md`

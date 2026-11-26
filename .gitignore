@@ -10,3 +10,6 @@
 # OS
 .DS_Store
 /target/
+
+# pnpm content-addressable store
+/.pnpm-store/
