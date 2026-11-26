@@ -38,7 +38,7 @@ The factory owns dialogue with the owner and workflow routing.
 
 ### 1. Extract implementation obligations
 
-Read the governing documents and every supplied test skeleton. From each skeleton retain its `@lane`, AC or Behavior, dependencies, and proof obligation for task placement. Collect only information that changes a task's outcome, boundary, order, or verification:
+Read the governing documents and every supplied test skeleton. Collect only information that changes a task's outcome, boundary, order, or verification:
 
 - implementation targets and acceptance criteria;
 - named repository wiring, migrations, configuration, and contracts;
@@ -103,7 +103,7 @@ Complete every item before output. When an item is unsatisfied, return to the re
 - [ ] Together the tasks cover the complete implementation scope.
 - [ ] Task boundaries come only from dependencies or independently completable outcomes.
 - [ ] Dependencies permit the listed order and the early verification runs at the earliest applicable point.
-- [ ] Every supplied test skeleton was read and its path is preserved unchanged in the task selected by its `@lane` and proof boundary.
+- [ ] Every supplied test skeleton was read and its path is preserved unchanged in the task where its proof boundary first becomes executable.
 - [ ] Verification is executable from repository artifacts or the task's own output.
 - [ ] Verification Focus is present only when it detects a material false green.
 - [ ] The plan contains the minimum context required for task decomposition; design detail remains in governing documents.

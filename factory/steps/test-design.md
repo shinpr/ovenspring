@@ -26,19 +26,7 @@ Use the repository's language, directory and naming conventions. Each lane has a
 
 A skeleton is committed before implementation, so its committed form contains only comments: no imports of absent modules or executable test-runner blocks. Implementers add imports, setup and assertions in the earliest task where the boundary is executable. Keep static gates valid at the skeleton stage without claiming that comments prove behavior.
 
-Each selected test records:
-
-- original AC text and source Design Doc (or UI journey plus its governing AC);
-- trigger and observable result;
-- `@lane`, `@dependency` using ovenspring-integration-e2e-testing annotations;
-- selection evidence: uncovered claim and why existing or cheaper proof is insufficient;
-- primary failure mode: the regression this test must detect;
-- proof obligation: boundary to traverse, expected state/results, pass criteria, real dependencies and permissible substitutes;
-- a distinct branch, state, lifecycle or fallback path when the main path could remain green through a material regression.
-
-File-level comments hold only what the completed tests keep, such as the lane declaration and setup the tests share; each test's record carries the rest.
-
-Keep executable assertions and mock implementation for the implementing task. Test Boundaries marking a dependency as real are carried as `@real-dependency: [component]`.
+For each selected test, identify the governing criterion and the observable result. Include a dependency or substitute constraint when it changes what the test must exercise. The output maps each lane to its file.
 
 ## Output
 
@@ -56,12 +44,12 @@ Return a selection explanation followed by the result JSON. Explain empty lanes 
 }
 ```
 
-Each lane value is an existing file path when generated, otherwise JSON `null`. Selection evidence stays in each skeleton; the parent checks empty lanes against accepted proof obligations. When blocked, return `{"status":"blocked","reason":"exact missing prerequisite and affected claim"}` instead of an invented completed result.
+Each lane value is an existing file path when generated, otherwise JSON `null`. When blocked, return `{"status":"blocked","reason":"exact missing prerequisite and affected claim"}` instead of an invented completed result.
 
 ## Completion Check
 
 - Every required integration/E2E boundary has sufficient existing proof, a selected skeleton, or an explicit limitation; unresolved coverage is not a completed claim.
 - Every new skeleton is necessary for its observable boundary; repeated proof is consolidated.
 - Required real dependencies remain real in the proof contract.
-- Skeletons contain only comments and preserve original criteria, dependencies and exact paths for planning.
+- Skeletons contain only comments and identify the required proof and exact paths for planning.
 - Output includes all three lane keys when completed.

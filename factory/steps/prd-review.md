@@ -43,7 +43,7 @@ Verify current external facts from authoritative sources only when an ADR select
 
 - A future-state PRD contains one outcome, buildable current requirements, representative acceptance criteria, and any exclusions the user stated.
 - Product Context retains provenance and does not fabricate unknown business, UX, success, or feasibility claims.
-- Everything the PRD fixes (requirements, acceptance criteria, behaviors, values, success criteria, exclusions) is stated in the issue or the owner's answers; one derived, inferred, or added from the repository, research, or the author's reading is an issue, whatever the PRD calls it.
+- Trace each new or changed product obligation to the issue or the owner's answers. Existing contracts continue to govern where those sources leave them unchanged.
 
 ## Findings and Rechecks
 

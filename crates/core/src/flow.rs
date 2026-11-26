@@ -13,8 +13,8 @@ use ts_rs::TS;
 
 use crate::config::Role;
 use crate::output::{
-    self, Approval, CheckResult, CorrectionOwner, Decision, Disposition, DocumentStatus,
-    ExceptionAction, ExecutorStatus, FindingDisposition, QualityStatus, Review, Scale, StepOutput,
+    self, Approval, CheckResult, Decision, Disposition, DocumentStatus, ExceptionAction,
+    ExecutorStatus, FindingDisposition, QualityStatus, Review, Scale, StepOutput,
 };
 pub use crate::step::Step;
 use crate::step::{Check, Document};
@@ -280,9 +280,8 @@ pub struct Round {
     pub passed: BTreeSet<Review>,
     /// Reviews that own a finding under correction: they recheck after it.
     pub correcting: BTreeSet<Review>,
-    /// The Design Doc's author corrects after the executor's quality run: the executor found the
-    /// document, not the code, is what a finding shows wrong.
-    #[serde(default)]
+    /// Finish an author handoff already scheduled by a pre-upgrade review round.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub author_follows: bool,
     /// A step of the round that could not finish: a review, or `rerun-check`.
     pub stuck: Option<Step>,
@@ -1222,24 +1221,20 @@ fn corrected_by_executor(
     let Some(origin @ (Origin::Round | Origin::PrComments)) = s.origin else {
         return after_judgment(s, &e.dispositions, limits);
     };
-    let own = e
-        .dispositions
-        .iter()
-        .any(|d| d.disposition == Disposition::Apply && d.owner != Some(CorrectionOwner::Author));
+    // An executor launched before the upgrade could leave edits for the document author.
+    // Refile its original findings before clearing them or acknowledging PR comments.
+    if output::author_applies(&e.dispositions) {
+        return run(s, Step::ReviewResponse);
+    }
+    let applied = output::applies(&e.dispositions);
     if origin == Origin::Round {
         s.round.correcting = owning_reviews(&s.round, &e.dispositions);
         s.round.findings.clear();
         s.round.maintained.clear();
-        s.round.author_follows = output::author_applies(&e.dispositions);
-        if !own {
-            return if s.round.author_follows {
-                s.round.author_follows = false;
-                run(s, Step::Design)
-            } else {
-                round_converged(s)
-            };
+        if !applied {
+            return round_converged(s);
         }
-    } else if !own {
+    } else if !applied {
         s.origin = None;
         s.stage = Stage::Gate;
         return vec![Action::AnswerComments, Action::RunGate];
@@ -2328,44 +2323,26 @@ mod tests {
     }
 
     #[test]
-    fn a_design_doc_corrected_after_implementation_passes_its_own_checks_before_the_round_goes_on()
-    {
-        let s = drive(
-            at(running("quality")),
+    fn a_pre_upgrade_delegation_is_completed_by_the_executor_before_pr_comments_are_answered() {
+        drive(
+            at(Stage::WaitingReview),
             vec![
-                (quality("pass"), ROUND.to_vec()),
-                (reviewed("security-review", security_pass()), vec![]),
+                (Fact::CommentsArrived, vec!["review-response"]),
                 (
-                    reviewed("code-review/1", code_findings()),
+                    answered(
+                        &json!([{"id": "doc", "disposition": "apply", "owner": "author",
+                    "reason": "left for the author"}]),
+                    ),
                     vec!["review-response"],
                 ),
+                (answered(&json!([apply("doc", None)])), vec!["quality"]),
                 (
-                    answered(&json!([{"id": "F001", "disposition": "apply",
-                        "reason": "the code has the six columns the requirement names; the Design Doc names five",
-                        "owner": "author", "review": "code-review/1"}])),
-                    vec!["design"],
-                ),
-                (
-                    revised("design", &json!([apply("F001", Some("code-review/1"))])),
-                    vec!["design-review"],
-                ),
-                (doc_issues("design-review"), vec!["design"]),
-                (
-                    revised("design", &json!([apply("I001", None)])),
-                    vec!["design-review"],
-                ),
-                (
-                    doc_reconciled("design-review", "resolved"),
-                    vec!["design-sync"],
-                ),
-                (
-                    synced("NO_CONFLICTS"),
-                    vec!["commit after design-sync", "code-review/1", "rerun-check"],
+                    quality("pass"),
+                    vec!["commit after quality", "AnswerComments", "Push"],
                 ),
             ],
             Limits::default(),
         );
-        assert_eq!((s.stage, s.round.number), (Stage::Reviewing, 2));
     }
 
     #[test]
