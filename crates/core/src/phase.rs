@@ -191,10 +191,15 @@ impl IssueState {
 
     /// The phase a step runs in, given what the issue is correcting.
     fn phase_of(&self, step: Step) -> Phase {
-        // The Design Doc corrected for the review round, and its checks before the round goes on.
+        // The Design Doc corrected for the review round and its checks before the round goes on,
+        // and the implementation a round correction left incomplete.
         let round_correction =
             self.origin == Some(Origin::Round) || self.after == Some(After::ReturnToRound);
-        if round_correction && matches!(step, Step::Design | Step::DesignReview | Step::DesignSync)
+        if round_correction
+            && matches!(
+                step,
+                Step::Design | Step::DesignReview | Step::DesignSync | Step::Implement
+            )
         {
             return Phase::Review;
         }
@@ -336,6 +341,11 @@ mod tests {
             ..at(Stage::running(Step::Design))
         };
         assert_eq!(round_design.phase(), Some(Phase::Review));
+        let round_implement = IssueState {
+            origin: Some(Origin::Round),
+            ..at(Stage::running(Step::Implement))
+        };
+        assert_eq!(round_implement.phase(), Some(Phase::Review));
         let comments = IssueState {
             origin: Some(Origin::PrComments),
             ..at(Stage::running(Step::ReviewResponse))

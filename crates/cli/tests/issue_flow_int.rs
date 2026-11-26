@@ -1339,13 +1339,13 @@ fn a_test_review_receives_the_tests_a_task_changed_whatever_their_naming() {
     assert!(line.contains("tests/export_int.rs"), "{text}");
 }
 
-// AC: "`review-response` ... then `test-review` when required"; "`test-review` ... given the files
-//     the task changed" (factory core design, steps).
-// Behavior: ACME-151's code review finds something -> the executor's correction adds
+// AC: "`review-response` ... for pull request comments, `test-review` first when required";
+//     "`test-review` ... given the files the task changed" (factory core design, steps).
+// Behavior: a writer comments on ACME-151's pull request -> the executor's correction adds
 //     `tests/refund_int.rs` and asks for a test review -> the test-review item names the
 //     correction's file, not the files the implementation changed before it.
 // @lane: integration
-// @dependency: daemon, flow, handoff, fake agent
+// @dependency: daemon, flow, handoff, fake agent, FakeGitHub
 #[test]
 fn a_test_review_after_a_correction_receives_the_files_the_correction_changed() {
     let env = Env::new();
@@ -1353,23 +1353,24 @@ fn a_test_review_after_a_correction_receives_the_files_the_correction_changed() 
     env.add_branch("develop");
     let mut script = straight("ACME-151");
     script.insert(
-        "code-review@ACME-151".into(),
-        json!([{"output": {"verdict": "needs-improvement", "findings": [{"id": "F001", "location": "src/ACME-151.ts:1",
-                "description": "Refunds are not counted.", "suggestion": "Count them."}]}, "verdict": "findings"}]),
-    );
-    script.insert(
         "review-response@ACME-151".into(),
         json!([{"change": {"path": "tests/refund_int.rs", "content": "#[test] fn refund() {}\n"},
-                "output": {"status": "completed", "taskName": "F001", "changeSummary": "Count refunds",
+                "output": {"status": "completed", "taskName": "comments", "changeSummary": "Count refunds",
                            "requiresTestReview": true,
-                           "dispositions": [{"id": "F001", "review": "code-review/1", "disposition": "apply", "reason": "src/ACME-151.ts:1 leaves refunds out"}]}}]),
+                           "dispositions": [{"id": "review-comment-1", "disposition": "apply", "reason": "src/ACME-151.ts:1 leaves refunds out"}]}}]),
     );
     script.insert("test-review@ACME-151".into(), json!([{"hang": true}]));
     env.script_agents(&Value::Object(script));
+    let mut gh = always_passing(&env, requiring_test());
+    gh.permissions.insert("acme-dev".into(), Permission::Write);
+    gh.on_open = vec![writer_comment(
+        "ovenspring/ACME-151",
+        "The total ignores refunds.",
+    )];
     let mut d = daemon(
         &env,
         services(
-            Arc::new(always_passing(&env, requiring_test())),
+            Arc::new(gh),
             Arc::new(RecordingChannel::default()),
             Arc::new(RecordingTracker::default()),
         ),
