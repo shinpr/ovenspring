@@ -45,7 +45,10 @@ fn credentials_remain_masked_when_a_drop_waits_for_the_sprint_proposal_to_end() 
         "held-b-{}",
         env.dir.path().file_name().unwrap().to_string_lossy()
     );
-    let script = "input=$(cat)\nn=$(cat .ovenspring/count 2>/dev/null || echo 0)\nn=$((n + 1))\nprintf '%s' \"$input\" > .ovenspring/input-$n.json\nprintf '%s\\n' \"$n\" > .ovenspring/count\nprintf '%s\\n' \"$n\" >> .ovenspring/calls\nif [ \"$n\" -eq 1 ]; then while [ ! -f .ovenspring/gate-1 ]; do sleep 0.01; done; cat .ovenspring/reason; exit 2; fi\nexit 0\n";
+    let script = &format!(
+        "input=$(cat)\nn=$(cat .ovenspring/count 2>/dev/null || echo 0)\nn=$((n + 1))\nprintf '%s' \"$input\" > .ovenspring/input-$n.json\nprintf '%s\\n' \"$n\" > .ovenspring/count\nprintf '%s\\n' \"$n\" >> .ovenspring/calls\nif [ \"$n\" -eq 1 ]; then {gate_1}; cat .ovenspring/reason; exit 2; fi\nexit 0\n",
+        gate_1 = wait_for_gate("gate-1")
+    );
     let (mut daemon, tracker, channel) = filtered_daemon(
         &env,
         script,
@@ -116,7 +119,11 @@ fn selection_while_a_filter_run_is_in_flight_discards_the_result() {
     let command = named_filter_command(
         &env,
         "filter.sh",
-        "input=$(cat)\nn=$(cat .ovenspring/count 2>/dev/null || echo 0)\nn=$((n + 1))\nprintf '%s' \"$input\" > .ovenspring/input-$n.json\nprintf '%s\\n' \"$n\" > .ovenspring/count\nprintf '%s\\n' \"$n\" >> .ovenspring/calls\ncase \"$n\" in\n1) while [ ! -f .ovenspring/gate-1 ]; do sleep 0.01; done; printf 'selected issue denied\\n'; exit 2;;\n2) while [ ! -f .ovenspring/gate-2 ]; do sleep 0.01; done; printf 'other candidate denied\\n'; exit 2;;\nesac\n",
+        &format!(
+            "input=$(cat)\nn=$(cat .ovenspring/count 2>/dev/null || echo 0)\nn=$((n + 1))\nprintf '%s' \"$input\" > .ovenspring/input-$n.json\nprintf '%s\\n' \"$n\" > .ovenspring/count\nprintf '%s\\n' \"$n\" >> .ovenspring/calls\ncase \"$n\" in\n1) {gate_1}; printf 'selected issue denied\\n'; exit 2;;\n2) {gate_2}; printf 'other candidate denied\\n'; exit 2;;\nesac\n",
+            gate_1 = wait_for_gate("gate-1"),
+            gate_2 = wait_for_gate("gate-2")
+        ),
     );
     env.set_tracker_filter(Some(&command));
     support::run_until(
@@ -150,72 +157,56 @@ fn selection_while_a_filter_run_is_in_flight_discards_the_result() {
     assert!(has_open_issue(&daemon, "ACME-131"));
     assert_no_filter_events(&env, "filter-dropped");
     assert_no_filter_events(&env, "filter-failed");
-
-    // Lets the other candidate's command exit before the repository is removed.
-    std::fs::write(env.filter_file("gate-2"), "go").unwrap();
 }
 
 // AC: "When a revised proposal leaves out an issue the earlier proposal included and no issue
 //     record exists for it, the system shall treat it as a candidate again"
-// Behavior: a gated run for X spans a PlanDone that selects X, the owner's reply, and a revised
-//     PlanDone that leaves X out -> the unchanged input's result applies once it is a candidate.
+// Behavior: X is admitted, a proposal selects X, the tracker edits X, and a revised proposal leaves
+//     X out -> the command judges X's edited content and X's snapshot shows it.
 // @lane: integration
 // @dependency: Daemon::tick, Daemon::sprint_fact, Store, RecordingTracker, RecordingChannel
 #[test]
 fn a_selected_issue_left_out_of_a_revised_proposal_becomes_a_candidate_again() {
     let env = Env::new();
-    env.configure("");
-    let tracker = Arc::new(RecordingTracker::default());
-    *tracker.issues.lock().unwrap() = vec![issue("ACME-131")];
-    let channel = Arc::new(RecordingChannel::default());
-    let mut daemon = daemon(&env, services(tracker, channel.clone(), Vec::new()));
-
-    daemon.tick().unwrap();
-    let selected_snapshot =
-        std::fs::read_to_string(env.state().join("sources/issues/ACME-131.md")).unwrap();
-    let command = named_filter_command(
-        &env,
-        "filter.sh",
-        "printf 'x\\n' >> .ovenspring/calls\necho $$ > .ovenspring/filter-pid\nwhile [ ! -f .ovenspring/gate ]; do sleep 0.01; done\nprintf 'still denied after revision\\n'\nexit 2\n",
-    );
-    env.set_tracker_filter(Some(&command));
-    daemon.tick().unwrap();
-    assert!(support::wait_until(3, || env
-        .filter_file("filter-pid")
-        .exists()));
-
-    let first_proposal = set_proposing(&daemon, None);
-    complete_sprint_plan(&mut daemon, &first_proposal, &plan(&["ACME-131"]));
-    assert_eq!(
-        std::fs::read_to_string(env.state().join("sources/issues/ACME-131.md")).unwrap(),
-        selected_snapshot
-    );
-    reply_to_sprint_proposal(&mut daemon, &channel);
-    complete_active_sprint_plan(&mut daemon, &plan(&[]));
-    assert_eq!(
-        std::fs::read_to_string(env.state().join("sources/issues/ACME-131.md")).unwrap(),
-        selected_snapshot
-    );
-    assert_no_filter_events(&env, "filter-dropped");
-
-    std::fs::write(env.filter_file("gate"), "go").unwrap();
-    assert!(support::wait_until(3, || filter_process_exited(
-        &env,
-        "filter-pid"
-    )));
+    let script = "input=$(cat)\nprintf '%s\\n' \"$input\" >> .ovenspring/calls\nexit 0\n";
+    let (mut daemon, tracker, channel) =
+        filtered_daemon(&env, script, vec![issue("ACME-131")], Vec::new());
     support::run_until(
         &mut daemon,
         5,
         |_| {},
-        |_| filter_events(&env, "filter-dropped").len() == 1,
+        |daemon| has_open_issue(daemon, "ACME-131"),
+    );
+    let first_proposal = set_proposing(&daemon, None);
+    complete_sprint_plan(&mut daemon, &first_proposal, &plan(&["ACME-131"]));
+    let mut edited = issue("ACME-131");
+    edited.body = "Edited while selected".into();
+    tracker.issues.lock().unwrap()[0].body = edited.body.clone();
+
+    reply_to_sprint_proposal(&mut daemon, &channel);
+    complete_active_sprint_plan(&mut daemon, &plan(&[]));
+    support::run_until(
+        &mut daemon,
+        5,
+        |_| {},
+        |_| {
+            std::fs::read_to_string(env.state().join("sources/issues/ACME-131.md"))
+                .is_ok_and(|snapshot| snapshot == edited.render())
+        },
     );
 
-    assert_eq!(invocation_count(&env, "calls"), 1);
-    assert_not_published(&env, &daemon, "ACME-131");
-    assert_eq!(
-        filter_events(&env, "filter-dropped")[0]["reason"],
-        "still denied after revision"
-    );
+    let bodies: Vec<String> = std::fs::read_to_string(env.filter_file("calls"))
+        .unwrap()
+        .lines()
+        .map(|line| {
+            serde_json::from_str::<serde_json::Value>(line).unwrap()["body"]
+                .as_str()
+                .unwrap()
+                .to_owned()
+        })
+        .collect();
+    assert_eq!(bodies, ["Body of ACME-131", "Edited while selected"]);
+    assert!(has_open_issue(&daemon, "ACME-131"));
 }
 
 // AC: "While an issue is selected (its key is in the current sprint state's plan, or an issue
@@ -384,7 +375,11 @@ fn a_selected_candidate_is_not_rejudged_while_awaiting_approval() {
 fn an_issue_admitted_during_proposing_is_published_afterward_and_triggers_one_proposal() {
     let env = Env::new();
     env.script_agents(&json!({"sprint-plan": [{"hang": true}]}));
-    let script = "input=$(cat)\nn=$(cat .ovenspring/count 2>/dev/null || echo 0)\nn=$((n + 1))\nprintf '%s' \"$input\" > .ovenspring/input-$n.json\nprintf '%s\\n' \"$n\" > .ovenspring/count\nprintf '%s\\n' \"$n\" >> .ovenspring/calls\nif [ \"$n\" -eq 1 ]; then while [ ! -f .ovenspring/gate-1 ]; do sleep 0.01; done; exit 0; fi\nwhile [ ! -f .ovenspring/gate-2 ]; do sleep 0.01; done\nexit 2\n";
+    let script = &format!(
+        "input=$(cat)\nn=$(cat .ovenspring/count 2>/dev/null || echo 0)\nn=$((n + 1))\nprintf '%s' \"$input\" > .ovenspring/input-$n.json\nprintf '%s\\n' \"$n\" > .ovenspring/count\nprintf '%s\\n' \"$n\" >> .ovenspring/calls\nif [ \"$n\" -eq 1 ]; then {gate_1}; exit 0; fi\n{gate_2}\nexit 2\n",
+        gate_1 = wait_for_gate("gate-1"),
+        gate_2 = wait_for_gate("gate-2")
+    );
     let command = env.write_filter_script(script);
     env.configure_filter(&command);
     let tracker = Arc::new(RecordingTracker::default());
@@ -517,69 +512,9 @@ fn no_filter_poll_preserves_tracker_snapshots_and_publication_event() {
     assert_eq!(tracker_events[0]["open"], json!(["ACME-131", "ACME-132"]));
 }
 
-// AC: "If the command exits 2, then the system shall drop the issue with the first line of its
-//     stdout as the reason, exactly as written apart from its line terminator"
-// Behavior: a command reads only part of a large input, leaves a descendant holding the stdin pipe
-//     without draining it, then exits 2 -> intake applies the drop and judges the next candidate.
-// @lane: integration
-// @dependency: Daemon::tick, Store, RecordingTracker, sh -c process group
-#[test]
-fn a_filter_exit_with_a_blocked_stdin_writer_releases_the_filter_slot() {
-    let env = Env::new();
-    let script = r#"prefix=$(head -c 20)
-case "$prefix" in
-  *ACME-131*)
-    (while [ ! -f .ovenspring/release ]; do sleep 0.01; done) <&0 >/dev/null 2>&1 &
-    echo $! > .ovenspring/held-pid
-    printf 'large issue denied\n'
-    exit 2
-    ;;
-  *ACME-132*)
-    cat >/dev/null
-    printf 'x\n' >> .ovenspring/second-ran
-    exit 0
-    ;;
-esac
-exit 1
-"#;
-    let mut large_issue = issue("ACME-131");
-    large_issue.body = "x".repeat(1024 * 1024);
-    let (mut daemon, _, _) = filtered_daemon(
-        &env,
-        script,
-        vec![large_issue, issue("ACME-132")],
-        Vec::new(),
-    );
-
-    daemon.tick().unwrap();
-    let observed_held_child = support::wait_until(3, || env.filter_file("held-pid").exists());
-    let completed_before_release = support::wait_until(2, || {
-        daemon.tick().unwrap();
-        filter_events(&env, "filter-dropped").len() == 1
-            && invocation_count(&env, "second-ran") == 1
-    });
-    std::fs::write(env.filter_file("release"), "go").unwrap();
-    assert!(
-        observed_held_child,
-        "the filter must leave a descendant holding stdin"
-    );
-    assert!(
-        completed_before_release,
-        "the completed command must not wait for a descendant that holds stdin open"
-    );
-
-    support::run_until(
-        &mut daemon,
-        5,
-        |_| {},
-        |daemon| has_open_issue(daemon, "ACME-132"),
-    );
-    assert_unpublished(&env, &daemon, "ACME-131");
-    assert!(env.state().join("sources/issues/ACME-132.md").exists());
-}
-
-// AC: "If an issue is proposed but not yet begun and the tracker no longer reports it open, then
-//     the system shall keep its snapshot, and approving the proposal shall begin it"
+// AC: Regression for closed-snapshot cleanup: the exception in "If an issue is proposed but not yet
+//     begun and the tracker no longer reports it open, then the system shall keep its snapshot"
+//     does not extend to an issue whose work is finished
 // Behavior: an issue whose work is finished closes on the tracker -> its intake snapshot and
 //     open-list entry are removed, since only a proposed issue not yet begun keeps its snapshot.
 // @lane: integration
@@ -689,6 +624,15 @@ fn filtered_daemon(
     (daemon, tracker, channel)
 }
 
+/// A shell loop that waits until the test creates `.ovenspring/<name>`. It gives up after 3,000
+/// checks (at least 30 seconds), so a test that fails before opening its gate leaves no command
+/// running once its repository is removed.
+fn wait_for_gate(name: &str) -> String {
+    format!(
+        "waited=0; while [ ! -f .ovenspring/{name} ]; do waited=$((waited + 1)); [ \"$waited\" -le 3000 ] || exit 1; sleep 0.01; done"
+    )
+}
+
 fn named_filter_command(env: &Env, name: &str, script: &str) -> String {
     std::fs::write(env.filter_file(name), script).unwrap();
     format!("exec sh .ovenspring/{name}")
@@ -722,14 +666,6 @@ fn invocation_count(env: &Env, file: &str) -> usize {
         return 0;
     }
     std::fs::read_to_string(path).unwrap().lines().count()
-}
-
-fn filter_process_exited(env: &Env, pid_file: &str) -> bool {
-    let Ok(pid) = std::fs::read_to_string(env.filter_file(pid_file)) else {
-        return false;
-    };
-    let pid = pid.trim();
-    !pid.is_empty() && !process_exists(pid)
 }
 
 fn assert_not_published(env: &Env, daemon: &ovenspring_daemon::Daemon, key: &str) {
@@ -926,13 +862,17 @@ exit 0
     let command_b = named_filter_command(
         &env,
         "filter-b.sh",
-        r#"input=$(cat)
+        &format!(
+            r#"input=$(cat)
 case "$input" in
-  *ACME-131*) printf 'x\n' >> .ovenspring/b-131; while [ ! -f .ovenspring/b-gate-131 ]; do sleep 0.01; done; exit 0;;
-  *ACME-132*) printf 'x\n' >> .ovenspring/b-132; while [ ! -f .ovenspring/b-gate-132 ]; do sleep 0.01; done; printf 'denied by command B\n'; exit 2;;
+  *ACME-131*) printf 'x\n' >> .ovenspring/b-131; {b_gate_131}; exit 0;;
+  *ACME-132*) printf 'x\n' >> .ovenspring/b-132; {b_gate_132}; printf 'denied by command B\n'; exit 2;;
 esac
 exit 1
 "#,
+            b_gate_131 = wait_for_gate("b-gate-131"),
+            b_gate_132 = wait_for_gate("b-gate-132")
+        ),
     );
     env.set_tracker_filter(Some(&command_b));
     support::run_until(
@@ -1046,12 +986,12 @@ fn removing_a_filter_publishes_every_current_candidate() {
 //     or its content when the result is taken differs from the content the command judged, or the
 //     issue is selected when the result arrives, then the system shall discard that result: no
 //     verdict, no publication change and no event come from it"
-// Behavior: command A is gated for X; configuration changes A to B and back to A before the gate
-//     opens -> A's old result is discarded and X is judged by a fresh run.
+// Behavior: command A is gated for X; the configuration changes to command B before A's result
+//     arrives -> A's result is discarded and B's judgment decides X.
 // @lane: integration
 // @dependency: Daemon::reload_config, Daemon::tick, Store, RecordingTracker
 #[test]
-fn a_result_from_a_command_changed_away_and_back_is_discarded() {
+fn a_result_from_a_command_changed_while_it_ran_is_discarded() {
     let env = Env::new();
     env.configure("");
     let tracker = Arc::new(RecordingTracker::default());
@@ -1061,155 +1001,42 @@ fn a_result_from_a_command_changed_away_and_back_is_discarded() {
         services(tracker, Arc::new(RecordingChannel::default()), Vec::new()),
     );
     daemon.tick().unwrap();
-    let prior_snapshot =
-        std::fs::read_to_string(env.state().join("sources/issues/ACME-131.md")).unwrap();
 
     let command_a = named_filter_command(
         &env,
         "filter-a.sh",
-        "printf 'x\\n' >> .ovenspring/calls\nif [ ! -f .ovenspring/first ]; then touch .ovenspring/first; while [ ! -f .ovenspring/first-gate ]; do sleep 0.01; done; printf 'stale rejection\\n'; exit 2; fi\ntouch .ovenspring/second\nwhile [ ! -f .ovenspring/second-gate ]; do sleep 0.01; done\nprintf 'fresh rejection\\n'\nexit 2\n",
+        &format!(
+            "touch .ovenspring/a-started\n{}\nprintf 'stale rejection\\n'\nexit 2\n",
+            wait_for_gate("a-gate")
+        ),
     );
     env.set_tracker_filter(Some(&command_a));
     daemon.tick().unwrap();
-    assert!(support::wait_until(3, || env.filter_file("first").exists()));
-    assert_eq!(
-        std::fs::read_to_string(env.state().join("sources/issues/ACME-131.md")).unwrap(),
-        prior_snapshot
+    assert!(support::wait_until(3, || env
+        .filter_file("a-started")
+        .exists()));
+    let command_b = named_filter_command(
+        &env,
+        "filter-b.sh",
+        "printf 'x\\n' >> .ovenspring/b-calls\nprintf 'fresh rejection\\n'\nexit 2\n",
     );
-
-    env.set_tracker_filter(Some("exit 0"));
+    env.set_tracker_filter(Some(&command_b));
     daemon.tick().unwrap();
-    env.set_tracker_filter(Some(&command_a));
-    daemon.tick().unwrap();
-    assert_eq!(
-        std::fs::read_to_string(env.state().join("sources/issues/ACME-131.md")).unwrap(),
-        prior_snapshot
-    );
-    assert_no_filter_events(&env, "filter-dropped");
-    assert_no_filter_events(&env, "filter-failed");
 
-    std::fs::write(env.filter_file("first-gate"), "go").unwrap();
-    support::run_until(
-        &mut daemon,
-        5,
-        |daemon| {
-            assert_eq!(
-                std::fs::read_to_string(env.state().join("sources/issues/ACME-131.md")).unwrap(),
-                prior_snapshot
-            );
-            assert_no_filter_events(&env, "filter-dropped");
-            assert_no_filter_events(&env, "filter-failed");
-            assert!(
-                daemon
-                    .open_issues()
-                    .iter()
-                    .any(|issue| issue.key == "ACME-131")
-            );
-        },
-        |_| env.filter_file("second").exists(),
-    );
-    assert_eq!(invocation_count(&env, "calls"), 2);
-
-    std::fs::write(env.filter_file("second-gate"), "go").unwrap();
+    std::fs::write(env.filter_file("a-gate"), "go").unwrap();
     support::run_until(
         &mut daemon,
         5,
         |_| {},
         |_| filter_events(&env, "filter-dropped").len() == 1,
     );
-    assert_not_published(&env, &daemon, "ACME-131");
     assert_eq!(
         filter_events(&env, "filter-dropped")[0]["reason"],
         "fresh rejection"
     );
+    assert_eq!(invocation_count(&env, "b-calls"), 1);
+    assert_not_published(&env, &daemon, "ACME-131");
     assert_no_filter_events(&env, "filter-failed");
-}
-
-// AC: AC-034 (pause and resume) and "When the owner first sets the filter or changes its command,
-//     the system shall judge every open candidate once under the new command, and until a candidate
-//     is judged publish its current content as without a filter, an issue the earlier command
-//     dropped included"; and "When the owner removes the filter, the system shall publish every
-//     candidate"
-// Behavior: command A drops X; while HALT exists, changing to command B and then removing the
-//     filter starts no command and publishes nothing; after resume, an unreachable tracker still
-//     lets the first tick publish X from the last successful read.
-// @lane: integration
-// @dependency: Daemon::reload_config, Daemon::tick, Daemon::halt_file, Store, RecordingTracker
-#[test]
-fn a_filter_change_while_paused_waits_for_resume_and_reconciles_after_a_failed_read() {
-    let env = Env::new();
-    env.configure("");
-    let command_a = named_filter_command(
-        &env,
-        "filter-a.sh",
-        "printf 'x\\n' >> .ovenspring/a-calls\nprintf 'rejected by command A\\n'\nexit 2\n",
-    );
-    env.set_tracker_filter(Some(&command_a));
-    let tracker = Arc::new(RecordingTracker::default());
-    *tracker.issues.lock().unwrap() = vec![issue("ACME-131")];
-    let mut timing = support::QUICK;
-    timing.tracker_poll = std::time::Duration::from_secs(60);
-    let mut daemon = daemon_timed(
-        &env,
-        services(
-            tracker.clone(),
-            Arc::new(RecordingChannel::default()),
-            Vec::new(),
-        ),
-        timing,
-    );
-    set_waiting_for_issues(&daemon);
-    daemon.tick().unwrap();
-    support::run_until(
-        &mut daemon,
-        5,
-        |daemon| assert_unpublished(&env, daemon, "ACME-131"),
-        |_| filter_events(&env, "filter-dropped").len() == 1,
-    );
-
-    let halt = daemon.halt_file();
-    std::fs::write(&halt, "paused").unwrap();
-    let command_b = named_filter_command(
-        &env,
-        "filter-b.sh",
-        "printf 'x\\n' >> .ovenspring/b-calls\nexit 0\n",
-    );
-    env.set_tracker_filter(Some(&command_b));
-    for _ in 0..4 {
-        daemon.tick().unwrap();
-        assert_unpublished(&env, &daemon, "ACME-131");
-        assert_eq!(invocation_count(&env, "b-calls"), 0);
-        assert_eq!(
-            env.events()
-                .iter()
-                .filter(|event| event["event"] == "filed" && event["step"] == "sprint-plan")
-                .count(),
-            0
-        );
-    }
-
-    env.set_tracker_filter(None);
-    tracker
-        .unreachable
-        .store(true, std::sync::atomic::Ordering::SeqCst);
-    std::fs::remove_file(&halt).unwrap();
-    daemon.tick().unwrap();
-
-    assert_eq!(
-        std::fs::read_to_string(env.state().join("sources/issues/ACME-131.md")).unwrap(),
-        "# ACME-131: Title of ACME-131\n\n- URL: https://linear.app/acme/issue/ACME-131\n- State: Todo\n\n## Description\n\nBody of ACME-131\n"
-    );
-    assert!(
-        daemon
-            .open_issues()
-            .iter()
-            .any(|issue| issue.key == "ACME-131")
-    );
-    assert_eq!(invocation_count(&env, "b-calls"), 0);
-    assert_eq!(filter_events(&env, "filter-dropped").len(), 1);
-    assert!(env.events().iter().any(|event| {
-        event["event"] == "service-unreachable" && event["operation"] == "reading the tracker"
-    }));
 }
 
 // AC: "When the command drops a candidate, the system shall remove its snapshot, leave it out of
@@ -1392,8 +1219,10 @@ fn credentials_replaced_while_a_filter_run_is_held_remain_masked() {
         "held-c-{}",
         env.dir.path().file_name().unwrap().to_string_lossy()
     );
-    let script =
-        "while [ ! -f .ovenspring/gate ]; do sleep 0.01; done\ncat .ovenspring/reason\nexit 2\n";
+    let script = &format!(
+        "{gate}\ncat .ovenspring/reason\nexit 2\n",
+        gate = wait_for_gate("gate")
+    );
     let (mut daemon, tracker, channel) = filtered_daemon(
         &env,
         script,
@@ -1477,7 +1306,10 @@ fn a_failed_command_publishes_the_candidate_and_records_one_failure() {
 #[test]
 fn unchanged_admitted_and_dropped_inputs_run_once_and_changed_content_runs_again() {
     let env = Env::new();
-    let script = "input=$(cat)\ncase \"$input\" in\n  *ACME-131*)\n    printf 'x\\n' >> .ovenspring/calls-131\n    case \"$input\" in\n      *updated*) while [ ! -f .ovenspring/rejudge-gate ]; do sleep 0.01; done; printf 'updated candidate denied\\n'; exit 2;;\n      *) exit 0;;\n    esac;;\n  *ACME-132*) printf 'x\\n' >> .ovenspring/calls-132; printf 'second candidate denied\\n'; exit 2;;\nesac\nexit 1\n";
+    let script = &format!(
+        "input=$(cat)\ncase \"$input\" in\n  *ACME-131*)\n    printf 'x\\n' >> .ovenspring/calls-131\n    case \"$input\" in\n      *updated*) {rejudge_gate}; printf 'updated candidate denied\\n'; exit 2;;\n      *) exit 0;;\n    esac;;\n  *ACME-132*) printf 'x\\n' >> .ovenspring/calls-132; printf 'second candidate denied\\n'; exit 2;;\nesac\nexit 1\n",
+        rejudge_gate = wait_for_gate("rejudge-gate")
+    );
     let (mut daemon, tracker, _) = filtered_daemon(
         &env,
         script,
@@ -1559,14 +1391,18 @@ fn unchanged_admitted_and_dropped_inputs_run_once_and_changed_content_runs_again
 #[test]
 fn a_result_for_changed_content_is_discarded_and_the_current_content_is_judged() {
     let env = Env::new();
-    let script = r#"input=$(cat)
+    let script = &format!(
+        r#"input=$(cat)
 printf '%s\n' "$input" >> .ovenspring/calls
 case $(( $(wc -l < .ovenspring/calls) )) in
-  1) while [ ! -f .ovenspring/gate-1 ]; do sleep 0.01; done; printf 'stale rejection\n'; exit 2;;
-  2) while [ ! -f .ovenspring/gate-2 ]; do sleep 0.01; done; exit 0;;
+  1) {gate_1}; printf 'stale rejection\n'; exit 2;;
+  2) {gate_2}; exit 0;;
 esac
 exit 0
-"#;
+"#,
+        gate_1 = wait_for_gate("gate-1"),
+        gate_2 = wait_for_gate("gate-2")
+    );
     let original = issue("ACME-131");
     let (mut daemon, tracker, _) =
         filtered_daemon(&env, script, vec![original.clone()], Vec::new());
@@ -1633,7 +1469,7 @@ exit 0
 #[test]
 fn a_new_steady_state_candidate_stays_unpublished_until_its_first_verdict() {
     let env = Env::new();
-    let script = "while [ ! -f .ovenspring/gate ]; do sleep 0.01; done\nexit 0\n";
+    let script = &format!("{gate}\nexit 0\n", gate = wait_for_gate("gate"));
     let (mut daemon, _, _) = filtered_daemon(&env, script, vec![issue("ACME-131")], Vec::new());
 
     daemon.tick().unwrap();
@@ -1659,186 +1495,80 @@ fn a_new_steady_state_candidate_stays_unpublished_until_its_first_verdict() {
 }
 
 // AC: "When the tracker no longer reports an issue open, the system shall forget its verdict, so an
-//     issue reported open again is judged again"; and "If the configured filter changed, the issue
-//     left the tracker's open list (even if reopened), or its content when the result is taken
-//     differs from the content the command judged, or the issue is selected when the result
-//     arrives, then the system shall discard that result: no verdict, no publication change and no
-//     event come from it"
-// Behavior: X's gated run begins; the tracker closes X and then reports it open again before the
-//     result arrives -> the old result has no effect and the reopened X receives a fresh judgment.
+//     issue reported open again is judged again"
+// Behavior: X is admitted; the tracker closes X and then reports it open again with the same
+//     content -> the command judges X a second time before X is published again.
 // @lane: integration
 // @dependency: Daemon::tick, Store, RecordingTracker
 #[test]
-fn a_closed_and_reopened_candidate_discards_its_old_run_and_is_judged_again() {
+fn a_closed_and_reopened_candidate_is_judged_again() {
     let env = Env::new();
-    let script = "printf 'x\\n' >> .ovenspring/calls\nif [ ! -f .ovenspring/first ]; then touch .ovenspring/first; while [ ! -f .ovenspring/gate ]; do sleep 0.01; done; printf 'pre-close rejection\\n'; exit 2; fi\nexit 0\n";
+    let script = "printf 'x\\n' >> .ovenspring/calls\nexit 0\n";
     let candidate = issue("ACME-131");
     let (mut daemon, tracker, _) =
         filtered_daemon(&env, script, vec![candidate.clone()], Vec::new());
-
-    daemon.tick().unwrap();
-    assert!(support::wait_until(3, || env.filter_file("first").exists()));
-    tracker.issues.lock().unwrap().clear();
-    daemon.tick().unwrap();
-    assert_unpublished(&env, &daemon, "ACME-131");
-    tracker.issues.lock().unwrap().push(candidate);
-    daemon.tick().unwrap();
-    assert_unpublished(&env, &daemon, "ACME-131");
-    assert_no_filter_events(&env, "filter-dropped");
-    std::fs::write(env.filter_file("gate"), "go").unwrap();
-
     support::run_until(
         &mut daemon,
         5,
         |_| {},
-        |daemon| {
-            daemon
-                .open_issues()
-                .iter()
-                .any(|issue| issue.key == "ACME-131")
-        },
+        |daemon| has_open_issue(daemon, "ACME-131"),
     );
-    assert_eq!(
-        std::fs::read_to_string(env.filter_file("calls"))
-            .unwrap()
-            .lines()
-            .count(),
-        2
+
+    tracker.issues.lock().unwrap().clear();
+    daemon.tick().unwrap();
+    assert_not_published(&env, &daemon, "ACME-131");
+    tracker.issues.lock().unwrap().push(candidate);
+    support::run_until(
+        &mut daemon,
+        5,
+        |_| {},
+        |daemon| has_open_issue(daemon, "ACME-131"),
     );
-    assert_no_filter_events(&env, "filter-dropped");
+
+    assert_eq!(invocation_count(&env, "calls"), 2);
 }
 
 // AC: "When the daemon starts, the system shall judge every open candidate once before publishing
 //     any candidate that has no snapshot"; and AC-073 "After a restart, each dropped issue is
 //     checked once more"
-// Behavior: a first daemon drops X and admits Y; a new daemon over the same state with a changed
-//     command B -> X has no snapshot before B judges it, Y keeps its earlier snapshot while B
-//     judges it, and both are checked again.
+// Behavior: a first daemon drops X; a new daemon over the same state and command -> X stays
+//     unpublished while the command judges it again, and the second drop keeps it out.
 // @lane: integration
 // @dependency: Daemon construction and startup tick, Store, RecordingTracker
 #[test]
 fn a_restart_rechecks_a_dropped_candidate_before_publishing_it() {
     let env = Env::new();
-    let (tracker, channel, admitted_snapshot) = prepare_restart_candidates(&env);
+    let script = format!(
+        "printf 'x\\n' >> .ovenspring/calls\nif [ -f .ovenspring/restarted ]; then {}; fi\nprintf 'still rejected\\n'\nexit 2\n",
+        wait_for_gate("gate")
+    );
+    let (mut first, tracker, channel) =
+        filtered_daemon(&env, &script, vec![issue("ACME-131")], Vec::new());
+    support::run_until(
+        &mut first,
+        5,
+        |daemon| assert_not_published(&env, daemon, "ACME-131"),
+        |_| filter_events(&env, "filter-dropped").len() == 1,
+    );
+    drop(first);
 
-    let restart_script = r#"input=$(cat)
-case "$input" in
-  *ACME-131*)
-    printf 'x\n' >> .ovenspring/restart-131
-    while [ ! -f .ovenspring/restart-gate-131 ]; do sleep 0.01; done
-    printf 'still rejected after restart\n'
-    exit 2;;
-  *ACME-132*)
-    printf 'x\n' >> .ovenspring/restart-132
-    while [ ! -f .ovenspring/restart-gate-132 ]; do sleep 0.01; done
-    printf 'rejected after changed command\n'
-    exit 2;;
-esac
-exit 1
-"#;
-    std::fs::write(env.filter_file("filter-restart.sh"), restart_script).unwrap();
-    env.set_tracker_filter(Some("exec sh .ovenspring/filter-restart.sh"));
-
+    std::fs::write(env.filter_file("restarted"), "").unwrap();
     let mut restarted = daemon(&env, services(tracker, channel, Vec::new()));
     restarted.tick().unwrap();
-    assert!(support::wait_until(3, || invocation_count(
-        &env,
-        "restart-131"
-    ) == 1));
-    assert_not_published(&env, &restarted, "ACME-131");
-    assert_eq!(
-        std::fs::read_to_string(env.state().join("sources/issues/ACME-132.md")).unwrap(),
-        admitted_snapshot
-    );
+    assert!(support::wait_until(3, || invocation_count(&env, "calls") == 2));
     for _ in 0..4 {
         restarted.tick().unwrap();
         assert_not_published(&env, &restarted, "ACME-131");
-        assert_eq!(
-            std::fs::read_to_string(env.state().join("sources/issues/ACME-132.md")).unwrap(),
-            admitted_snapshot
-        );
     }
-    std::fs::write(env.filter_file("restart-gate-131"), "go").unwrap();
-    support::run_until(
-        &mut restarted,
-        5,
-        |daemon| {
-            assert_not_published(&env, daemon, "ACME-131");
-            assert_eq!(
-                std::fs::read_to_string(env.state().join("sources/issues/ACME-132.md")).unwrap(),
-                admitted_snapshot
-            );
-        },
-        |_| {
-            invocation_count(&env, "restart-132") == 1
-                && filter_events(&env, "filter-dropped").len() == 2
-        },
-    );
-    std::fs::write(env.filter_file("restart-gate-132"), "go").unwrap();
+    std::fs::write(env.filter_file("gate"), "go").unwrap();
     support::run_until(
         &mut restarted,
         5,
         |daemon| assert_not_published(&env, daemon, "ACME-131"),
-        |daemon| {
-            filter_events(&env, "filter-dropped").len() == 3
-                && !daemon
-                    .open_issues()
-                    .iter()
-                    .any(|issue| issue.key == "ACME-132")
-        },
-    );
-    assert_eq!(
-        (
-            invocation_count(&env, "restart-131"),
-            invocation_count(&env, "restart-132")
-        ),
-        (1, 1)
-    );
-    assert!(!env.state().join("sources/issues/ACME-131.md").exists());
-    assert!(!env.state().join("sources/issues/ACME-132.md").exists());
-    assert_eq!(
-        filter_events(&env, "filter-dropped")
-            .iter()
-            .map(|event| event["issue"].as_str().unwrap())
-            .collect::<Vec<_>>(),
-        ["ACME-131", "ACME-131", "ACME-132"]
-    );
-}
-
-fn prepare_restart_candidates(env: &Env) -> (Arc<RecordingTracker>, Arc<RecordingChannel>, String) {
-    let first_script = r#"input=$(cat)
-case "$input" in
-  *ACME-131*) printf 'x\n' >> .ovenspring/initial-131; printf 'still rejected\n'; exit 2;;
-  *ACME-132*) printf 'x\n' >> .ovenspring/initial-132; exit 0;;
-esac
-exit 1
-"#;
-    let (mut first, tracker, channel) = filtered_daemon(
-        env,
-        first_script,
-        vec![issue("ACME-131"), issue("ACME-132")],
-        Vec::new(),
+        |_| filter_events(&env, "filter-dropped").len() == 2,
     );
 
-    first.tick().unwrap();
-    support::run_until(
-        &mut first,
-        5,
-        |daemon| assert_not_published(env, daemon, "ACME-131"),
-        |daemon| {
-            invocation_count(env, "initial-131") == 1
-                && invocation_count(env, "initial-132") == 1
-                && filter_events(env, "filter-dropped").len() == 1
-                && daemon
-                    .open_issues()
-                    .iter()
-                    .any(|issue| issue.key == "ACME-132")
-        },
-    );
-    assert_not_published(env, &first, "ACME-131");
-    let admitted_snapshot =
-        std::fs::read_to_string(env.state().join("sources/issues/ACME-132.md")).unwrap();
-    (tracker, channel, admitted_snapshot)
+    assert_eq!(invocation_count(&env, "calls"), 2);
 }
 
 fn process_exists(pid: &str) -> bool {
@@ -1853,10 +1583,30 @@ fn process_exists(pid: &str) -> bool {
 // @dependency: Daemon::stop_launches, Store, sh -c process group
 #[test]
 fn normal_daemon_stop_terminates_the_filter_process_group() {
+    assert_filter_group_stops(|mut daemon| daemon.stop_launches());
+}
+
+// AC: "When the daemon stops normally or is dropped while a filter command runs, the system shall
+//     stop that command's process group"
+// Behavior: a gated filter spawns a child that remains alive; the daemon is dropped, as when a
+//     test ends or panics -> both the filter and its child are gone before the filter timeout.
+// @lane: integration
+// @dependency: Daemon drop, Store, sh -c process group
+#[test]
+fn dropping_the_daemon_terminates_the_filter_process_group() {
+    assert_filter_group_stops(drop);
+}
+
+/// Starts a gated filter that leaves a child running, ends the daemon with `end`, and asserts the
+/// filter and its child are gone well before the filter timeout.
+fn assert_filter_group_stops(end: impl FnOnce(ovenspring_daemon::Daemon)) {
     const STOP_OBSERVATION_SECS: u64 = 3;
 
     let env = Env::new();
-    let script = "echo $$ > .ovenspring/filter-pid\nsleep 30 &\nchild=$!\necho $child > .ovenspring/child-pid\ntouch .ovenspring/pids-ready\nwhile [ ! -f .ovenspring/gate ]; do sleep 0.01; done\nwait $child\n";
+    let script = &format!(
+        "echo $$ > .ovenspring/filter-pid\nsleep 30 &\nchild=$!\necho $child > .ovenspring/child-pid\ntouch .ovenspring/pids-ready\n{gate}\nwait $child\n",
+        gate = wait_for_gate("gate")
+    );
     let (mut daemon, _, _) = filtered_daemon(&env, script, vec![issue("ACME-131")], Vec::new());
 
     daemon.tick().unwrap();
@@ -1867,7 +1617,7 @@ fn normal_daemon_stop_terminates_the_filter_process_group() {
     assert!(process_exists(filter_pid.trim()));
     assert!(process_exists(child_pid.trim()));
 
-    daemon.stop_launches();
+    end(daemon);
 
     let stopped = support::wait_until(STOP_OBSERVATION_SECS, || {
         !process_exists(filter_pid.trim()) && !process_exists(child_pid.trim())

@@ -204,6 +204,14 @@ pub struct Daemon {
     pub(crate) product_check: Option<std::thread::JoinHandle<()>>,
 }
 
+/// A filter command belongs to the daemon that started it, so no path that ends the daemon
+/// without `stop_launches` (an early error return, a test that ends or panics) leaves it running.
+impl Drop for Daemon {
+    fn drop(&mut self) {
+        self.stop_filter();
+    }
+}
+
 fn unended_launch(lines: &[records::LaunchLine], item: &str) -> Option<records::LaunchStart> {
     let mut left: Option<records::LaunchStart> = None;
     for line in lines {
