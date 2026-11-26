@@ -1,16 +1,16 @@
 //! What each issue step receives: the input entries its source agent declares, as `field: value`
 //! lines extracted mechanically from the records, and the review handoffs the sources define:
 //! `prior_feedback` for a check that rechecks, `correction_findings` for the author or executor
-//! that corrects.
+//! that judges and corrects.
 
 use std::path::Path;
 
 use ovenspring_core::flow::{Filing, Origin};
 use ovenspring_core::output::{
-    CorrectionOwner, Disposition, FindingDisposition, PrototypeOutput, ResolutionOutput, Review,
+    CheckResult, CorrectionOwner, Disposition, FindingDisposition, PrototypeOutput, Review,
     StepOutput, output_key,
 };
-use ovenspring_core::step::{Document, Step};
+use ovenspring_core::step::{Check, Document, Step};
 use serde_json::{Value, json};
 
 use crate::issues::IssueRecord;
@@ -79,12 +79,28 @@ fn requirement_context(record: &IssueRecord) -> Option<Entry> {
     }
 }
 
-/// Dispositions of the latest resolution that belong to `key`'s findings.
+/// The step a check's findings are handed to: the author of the document it reviewed, or the
+/// executor (the test review, the review round, the pull request's comments).
+fn receiver(key: &str) -> Step {
+    key.parse::<Step>()
+        .ok()
+        .and_then(Step::check)
+        .and_then(Check::document)
+        .map_or(Step::ReviewResponse, Document::step)
+}
+
+/// The judgments a step recorded for the findings it was handed.
+fn judgments(record: &IssueRecord, step: Step) -> Vec<FindingDisposition> {
+    match record.output(step) {
+        Some(StepOutput::Document(d)) => d.dispositions,
+        Some(StepOutput::Executor(e)) => e.dispositions,
+        _ => vec![],
+    }
+}
+
+/// The judgments of `key`'s findings by the step they were handed to.
 fn dispositions_for(record: &IssueRecord, key: &str) -> Vec<FindingDisposition> {
-    let Some(StepOutput::Resolution(r)) = record.output(Step::Resolution) else {
-        return vec![];
-    };
-    r.dispositions
+    judgments(record, receiver(key))
         .into_iter()
         .filter(|d| belongs_to(d, key))
         .collect()
@@ -97,39 +113,16 @@ fn belongs_to(d: &FindingDisposition, key: &str) -> bool {
     review.is_none() || d.review.is_none() || d.review == review
 }
 
-/// The findings the running `resolution` was filed for that it leaves without a disposition.
-pub(crate) fn undisposed(record: &IssueRecord, resolution: &ResolutionOutput) -> Vec<String> {
-    let flow = &record.flow;
-    let keys: Vec<String> = match flow.origin {
-        Some(Origin::Round) => flow
-            .round
-            .findings
-            .iter()
-            .map(|r| String::from(*r))
-            .collect(),
-        Some(Origin::Document | Origin::TestReview) => flow
-            .check
-            .map(|c| output_key(c.step(), None))
-            .into_iter()
-            .collect(),
-        Some(Origin::PrComments) => vec![COMMENTS.to_owned()],
-        None => vec![],
-    };
-    keys.iter()
-        .flat_map(|key| {
-            record
-                .findings
-                .get(key)
-                .into_iter()
-                .flatten()
-                .filter_map(|f| f.get("id").and_then(Value::as_str))
-                .filter(|id| {
-                    !resolution
-                        .dispositions
-                        .iter()
-                        .any(|d| d.id == *id && belongs_to(d, key))
-                })
-                .map(move |id| format!("{key} {id}"))
+/// The findings handed to a step that it leaves without a disposition.
+pub(crate) fn undisposed(record: &IssueRecord, dispositions: &[FindingDisposition]) -> Vec<String> {
+    handed(record)
+        .into_iter()
+        .filter_map(|(key, f)| {
+            let id = f.get("id").and_then(Value::as_str)?.to_owned();
+            (!dispositions
+                .iter()
+                .any(|d| d.id == id && belongs_to(d, &key)))
+            .then(|| format!("{key} {id}"))
         })
         .collect()
 }
@@ -146,23 +139,32 @@ fn finding(record: &IssueRecord, key: &str, id: &str) -> Value {
         .unwrap_or_else(|| json!({"id": id}))
 }
 
-/// `prior_feedback` for a check that rechecks after a correction: one entry per disposition the
-/// resolution recorded for its findings, the original finding carried in `evidence`.
+/// `prior_feedback` for a check that rechecks after a correction: one entry per judgment the
+/// receiver of its findings recorded, the original finding carried in `evidence`.
 fn prior_feedback(record: &IssueRecord, key: &str) -> Value {
+    let outstanding = maintained_findings(record, key);
+    // An exception can correct the document itself. Its output records the lead's
+    // decision; an exception from an earlier round is unrelated to this correction.
+    let correction = latest_exception(record).map_or_else(|| correction_ref(record), str::to_owned);
     let entries: Vec<Value> = dispositions_for(record, key)
         .iter()
-        .map(|d| {
-            json!({
+        .filter_map(|d| {
+            let original = match &outstanding {
+                Some(findings) => findings
+                    .iter()
+                    .find(|f| f["id"].as_str() == Some(&d.id))?
+                    .clone(),
+                None => finding(record, key, &d.id),
+            };
+            Some(json!({
                 "id": d.id,
                 "disposition": d.disposition.as_str(),
                 "reason": d.reason,
                 "evidence": {
-                    "finding": finding(record, key, &d.id),
-                    "basis": d.basis,
-                    "evidence": d.evidence,
-                    "correction": correction_ref(record),
+                    "finding": original,
+                    "correction": correction,
                 },
-            })
+            }))
         })
         .collect();
     if [Step::DesignVerify, Step::DesignSync]
@@ -179,6 +181,12 @@ fn prior_feedback(record: &IssueRecord, key: &str) -> Value {
     Value::Array(entries)
 }
 
+fn latest_exception(record: &IssueRecord) -> Option<&str> {
+    let item = Path::new(record.last_item.as_ref()?);
+    let exception = record.outputs.get(Step::Exception.as_str())?;
+    (item.file_stem() == Path::new(exception).file_stem()).then_some(exception.as_str())
+}
+
 fn correction_ref(record: &IssueRecord) -> String {
     match &record.last_commit {
         Some(sha) => format!("the changes since commit {sha}"),
@@ -186,65 +194,104 @@ fn correction_ref(record: &IssueRecord) -> String {
     }
 }
 
-/// The check whose applied findings a correction answers, by origin.
+/// The checks whose findings the current correction answers, by output key.
 fn corrected_checks(record: &IssueRecord) -> Vec<String> {
-    match record.flow.origin {
-        Some(Origin::Round) => record
+    let flow = &record.flow;
+    match flow.origin {
+        Some(Origin::Round) => flow
+            .round
             .findings
-            .keys()
-            .filter(|k| Review::try_from((*k).clone()).is_ok())
-            .cloned()
+            .union(&flow.round.maintained)
+            .map(|r| String::from(*r))
             .collect(),
         Some(Origin::PrComments) => vec![COMMENTS.to_owned()],
-        _ => record
-            .flow
-            .check
-            .iter()
-            .map(|c| c.step().to_string())
-            .collect(),
+        _ => flow.check.iter().map(|c| c.step().to_string()).collect(),
     }
 }
 
-/// `correction_findings` for `owner`: each applied finding as its check returned it, with its
-/// disposition, and the reconciliation entry of one its check maintained.
-fn correction_findings(record: &IssueRecord, owner: CorrectionOwner) -> Value {
+/// The still-open applied findings when the last result was a reconciliation.
+fn maintained_findings(record: &IssueRecord, key: &str) -> Option<Vec<Value>> {
+    let maintained: Vec<Value> = record
+        .raw_output(key)
+        .and_then(|o| o.get("prior_feedback_reconciliation").cloned())
+        .and_then(|r| r.as_array().cloned())
+        .unwrap_or_default();
+    if maintained.is_empty() {
+        return None;
+    }
+    Some(
+        maintained
+            .into_iter()
+            .filter(|m| m.get("status").and_then(Value::as_str) == Some("maintained"))
+            .filter(|m| m.get("prior_disposition").and_then(Value::as_str) == Some("apply"))
+            .map(|m| json!({"id": m.get("id"), "remaining": m.get("evidence")}))
+            .collect(),
+    )
+}
+
+/// The findings handed to the step that judges them, each as its check returned it, by output
+/// key: a check's new findings, or the findings its correction re-review maintained with the
+/// reconciliation entry. A round's findings name their review, since its code reviews number
+/// their findings alike.
+pub(crate) fn handed(record: &IssueRecord) -> Vec<(String, Value)> {
+    let round = record.flow.origin == Some(Origin::Round);
     let mut out = Vec::new();
     for key in corrected_checks(record) {
-        let maintained: Vec<Value> = record
-            .raw_output(&key)
-            .and_then(|o| o.get("prior_feedback_reconciliation").cloned())
-            .and_then(|r| r.as_array().cloned())
-            .unwrap_or_default();
-        for d in dispositions_for(record, &key) {
-            let mine = d.owner.unwrap_or(CorrectionOwner::Executor) == owner
-                || record.flow.origin != Some(Origin::Round);
-            if d.disposition != Disposition::Apply || !mine {
-                continue;
+        let found = maintained_findings(record, &key)
+            .unwrap_or_else(|| record.findings.get(&key).cloned().unwrap_or_default());
+        for mut f in found {
+            if round && let Some(obj) = f.as_object_mut() {
+                obj.insert("review".into(), json!(key));
             }
-            let entry = maintained
-                .iter()
-                .find(|m| m.get("id").and_then(Value::as_str) == Some(d.id.as_str()))
-                .cloned();
-            if !maintained.is_empty()
-                && entry
-                    .as_ref()
-                    .and_then(|e| e.get("status"))
-                    .and_then(Value::as_str)
-                    != Some("maintained")
-            {
-                continue;
-            }
-            let mut f = finding(record, &key, &d.id);
-            if let Some(obj) = f.as_object_mut() {
-                obj.insert("disposition".into(), json!("apply"));
-                if let Some(e) = entry {
-                    obj.insert("reconciliation".into(), e);
-                }
-            }
-            out.push(f);
+            out.push((key.clone(), f));
         }
     }
+    out
+}
+
+/// The findings the executor applied in `review-response` and kept for `owner`, each as its check
+/// returned it with the executor's judgment: the quality run's correction scope, or the Design
+/// Doc's author's share of a round.
+fn executor_applied(record: &IssueRecord, owner: CorrectionOwner) -> Value {
+    let check = record.flow.check.map(|c| c.step().to_string());
+    let keys: Vec<String> = record.findings.keys().cloned().collect();
+    let out: Vec<Value> = judgments(record, Step::ReviewResponse)
+        .into_iter()
+        .filter(|d| d.disposition == Disposition::Apply)
+        .filter(|d| d.owner.unwrap_or(CorrectionOwner::Executor) == owner)
+        .map(|d| {
+            let key = match (d.review, record.flow.origin) {
+                (Some(review), _) => Some(String::from(review)),
+                (None, Some(Origin::PrComments)) => Some(COMMENTS.to_owned()),
+                (None, Some(Origin::Round)) => keys
+                    .iter()
+                    .find(|k| {
+                        Review::try_from((*k).clone()).is_ok()
+                            && record.findings.get(*k).is_some_and(|found| {
+                                found
+                                    .iter()
+                                    .any(|f| f.get("id").and_then(Value::as_str) == Some(&d.id))
+                            })
+                    })
+                    .cloned(),
+                (None, _) => check.clone(),
+            };
+            let mut f = key.map_or_else(|| json!({"id": d.id}), |k| finding(record, &k, &d.id));
+            if let Some(obj) = f.as_object_mut() {
+                obj.insert(
+                    "executor".into(),
+                    json!({"disposition": "apply", "reason": d.reason}),
+                );
+            }
+            f
+        })
+        .collect();
     Value::Array(out)
+}
+
+/// `correction_findings`: the findings a step judges and corrects.
+fn correction_findings(record: &IssueRecord) -> Value {
+    Value::Array(handed(record).into_iter().map(|(_, f)| f).collect())
 }
 
 /// The work an executor's scope is: the task file, or a small issue's direct scope.
@@ -297,7 +344,7 @@ type Entries = Vec<(&'static str, Option<Entry>)>;
 
 impl Ctx<'_> {
     fn mode(&self) -> Entry {
-        text(if self.record.flow.correcting() {
+        text(if document(self.record, self.filing.step).is_some() {
             "update"
         } else {
             "create"
@@ -305,10 +352,14 @@ impl Ctx<'_> {
     }
 
     fn author_findings(&self) -> Option<Entry> {
-        self.record
-            .flow
-            .correcting()
-            .then(|| Entry::Json(correction_findings(self.record, CorrectionOwner::Author)))
+        let r = self.record;
+        r.flow.correcting().then(|| {
+            Entry::Json(if r.flow.origin == Some(Origin::Round) {
+                executor_applied(r, CorrectionOwner::Author)
+            } else {
+                correction_findings(r)
+            })
+        })
     }
 
     /// document-reviewer's entries.
@@ -317,7 +368,6 @@ impl Ctx<'_> {
         vec![
             ("doc_type", Some(text(doc_type))),
             ("target", document(r, step).map(text)),
-            ("review_context", Some(text("creation"))),
             ("requirements_verbatim", Some(text(self.issue))),
             ("requirement_context", requirement_context(r)),
             ("codebase_analysis", output(r, Step::CodebaseAnalysis)),
@@ -336,15 +386,7 @@ impl Ctx<'_> {
                     output(r, Step::Requirements),
                 ),
                 ("Convergence Result", output(r, Step::Requirements)),
-                (
-                    "Existing PRD",
-                    self.record
-                        .flow
-                        .correcting()
-                        .then(|| document(r, Step::Prd))
-                        .flatten()
-                        .map(text),
-                ),
+                ("Existing PRD", document(r, Step::Prd).map(text)),
                 ("correction_findings", self.author_findings()),
             ],
             Document::UiSpec => vec![
@@ -392,15 +434,7 @@ impl Ctx<'_> {
                         .flatten()
                         .map(text),
                 ),
-                (
-                    "existing_document",
-                    self.record
-                        .flow
-                        .correcting()
-                        .then(|| document(r, step))
-                        .flatten()
-                        .map(text),
-                ),
+                ("existing_document", document(r, step).map(text)),
                 ("correction_findings", self.author_findings()),
             ],
             Document::WorkPlan => vec![
@@ -410,7 +444,7 @@ impl Ctx<'_> {
                 ("prd", document(r, Step::Prd).map(text)),
                 ("adr", document(r, Step::Adr).map(text)),
                 ("testSkeletons", output(r, Step::TestDesign)),
-                ("updateContext", self.author_findings()),
+                ("correction_findings", self.author_findings()),
             ],
         }
     }
@@ -441,13 +475,15 @@ impl Ctx<'_> {
                     "description": refusal,
                 }]))),
             ));
-        } else if step != Step::Implement && r.flow.origin.is_some() {
+        } else if step == Step::ReviewResponse {
             v.push((
                 "correction_findings",
-                Some(Entry::Json(correction_findings(
-                    r,
-                    CorrectionOwner::Executor,
-                ))),
+                Some(Entry::Json(correction_findings(r))),
+            ));
+        } else if step == Step::Quality && r.flow.origin.is_some() {
+            v.push((
+                "correction_findings",
+                Some(Entry::Json(executor_applied(r, CorrectionOwner::Executor))),
             ));
         }
         v
@@ -512,6 +548,49 @@ impl Ctx<'_> {
         ]
     }
 
+    /// Use the previous judgment of this subject even when routing the correction restarted a stage.
+    fn review_scope(&self, v: &mut Entries) {
+        let step = self.filing.step;
+        let r = self.record;
+        if step == Step::TestReview && r.flow.origin != Some(Origin::TestReview) {
+            return; // A new task's tests are a different review subject.
+        }
+        let key = output_key(step, self.filing.unit);
+        let Some(previous) = r.outputs.get(&key) else {
+            return;
+        };
+        let result = r
+            .raw_output(&key)
+            .and_then(|raw| StepOutput::parse(step, raw).ok())
+            .and_then(|out| out.check_result());
+        match result {
+            Some(CheckResult::Findings | CheckResult::MaintainedApply) => {
+                let feedback = prior_feedback(r, &key);
+                if !feedback.as_array().is_some_and(Vec::is_empty) {
+                    v.push(("prior_feedback", Some(Entry::Json(feedback))));
+                    return;
+                }
+            }
+            Some(CheckResult::Clear) => {}
+            Some(CheckResult::Blocked) | None => return,
+        }
+        v.push(("previous_review", Some(text(previous))));
+        v.push(("change_to_review", r.last_item.clone().map(text)));
+        if let Some(review) = Review::of(step, self.filing.unit)
+            && let Some(StepOutput::RerunCheck(decision)) = r.output(Step::RerunCheck)
+            && let Some(affected) = decision.rerun.iter().find(|entry| entry.review == review)
+            && r.last_item.as_ref().and_then(|p| Path::new(p).file_stem())
+                == r.outputs
+                    .get(Step::RerunCheck.as_str())
+                    .and_then(|p| Path::new(p).file_stem())
+        {
+            v.push((
+                "affected_files",
+                Some(Entry::Json(json!(affected.implementation_files))),
+            ));
+        }
+    }
+
     /// The input entries of the item's step, in its source's terms. Steps that are the
     /// orchestrator's or the factory's own take their sources from the item's references instead.
     pub(crate) fn inputs(&self) -> Vec<(&'static str, Entry)> {
@@ -526,11 +605,7 @@ impl Ctx<'_> {
             Step::UiSpecReview => self.review("UISpec", Step::UiSpec),
             Step::AdrReview => self.review("ADRBatch", Step::Adr),
             Step::PlanReview => self.review("WorkPlan", Step::WorkPlan),
-            Step::DesignReview => {
-                let mut v = self.review("DesignDoc", Step::Design);
-                v.push(("verification_evidence", output(r, Step::DesignVerify)));
-                v
-            }
+            Step::DesignReview => self.review("DesignDoc", Step::Design),
             Step::CodebaseAnalysis | Step::UiAnalysis => vec![
                 (
                     "prd_path",
@@ -579,7 +654,6 @@ impl Ctx<'_> {
             Step::Requirements
             | Step::ScopeCheck
             | Step::Prototype
-            | Step::Resolution
             | Step::RerunCheck
             | Step::Exception
             | Step::SprintPlan
@@ -589,14 +663,12 @@ impl Ctx<'_> {
             | Step::Conversation
             | Step::RunCommands => vec![],
         };
-        if self.filing.round.is_some_and(|n| n > 1) {
-            v.push((
-                "prior_feedback",
-                Some(Entry::Json(prior_feedback(
-                    r,
-                    &output_key(self.filing.step, self.filing.unit),
-                ))),
-            ));
+        if self.filing.step.is_check() {
+            self.review_scope(&mut v);
+        } else if self.filing.step.document().is_some()
+            && let Some(decision) = latest_exception(r)
+        {
+            v.push(("lead_decision", Some(text(decision))));
         }
         v.into_iter()
             .filter_map(|(k, e)| e.map(|e| (k, e)))

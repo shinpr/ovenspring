@@ -117,10 +117,6 @@ pub fn designed(
                 "output": {"status": "completed", "documentType": "DesignDoc", "path": doc, "approvals": approvals}
             }]),
         ),
-        (
-            "design-verify",
-            json!([{"output": {"summary": {"docType": "design-doc", "status": "consistent"}, "discrepancies": [], "limitations": []}, "verdict": "pass"}]),
-        ),
         ("design-review", json!([document_pass()])),
         (
             "design-sync",

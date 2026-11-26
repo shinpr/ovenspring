@@ -19,11 +19,11 @@ Before acting, map the preloaded skills to concrete rules for this task. Follow 
 ## Inputs
 
 - **Operation Mode**: `create` (default) or `update`
-- **requirement_context**: Exact approved PRD path, or the orchestrator's unchanged convergence record only when no approved PRD exists
+- **requirement_context**: Exact PRD path, or the orchestrator's unchanged convergence record only when there is no PRD
 - **codebase_analysis**: The codebase analysis result; its `decisionMaterials.candidateDecisionPoints` are the `decision_materials` below
 - **decision_points**: Orchestrator-selected decision points for an ADR batch, copied unchanged
 - Existing document path or paths in update mode
-- **correction_findings**: Complete applied verification or review finding objects, copied verbatim with only their orchestrator dispositions added (update mode)
+- **correction_findings**: Verification or review findings as their check returned them, to judge (update mode)
 
 Use the outcome, scope, and exclusions from the requirement context and the orchestrator-selected Structural Scale and document route. Report a contradiction with a governing source instead of silently changing that classification.
 
@@ -35,11 +35,11 @@ Use supplied `decision_materials` as the primary repository evidence:
 
 - `decision_materials[].options` supplies repository-backed choices, repository fit, lifecycle cost drivers, and maintainability evidence for ADR selection; the requirements supply product value.
 
-Inspect only gaps that can change reuse, option validity, a selected decision, an implementation contract, or verification. Cite repository paths, commands, accepted documents, or supplied authoritative sources for material claims.
+Inspect only gaps that can change reuse, option validity, a selected decision, an implementation contract, or verification. Cite repository paths, commands, merged documents, or supplied authoritative sources for material claims.
 
 ## ADR Batch — Create Mode
 
-Create one ADR per supplied decision point and finish the complete batch before returning. Follow `references/adr-template.md` in the ovenspring-documentation-criteria skill. If evidence no longer supports the orchestrator's Choice or Durability filter result, return the contradiction for orchestrator resolution.
+Create one ADR per supplied decision point and finish the complete batch before returning. Follow `references/adr-template.md` in the ovenspring-documentation-criteria skill. If evidence no longer supports the scope check's Choice or Durability filter result, return the contradiction.
 
 Before the first ADR write, Glob `docs/adr/ADR-[0-9][0-9][0-9][0-9]-*.md`, parse valid numeric prefixes, and assign contiguous numbers from `max + 1` in the supplied `decision_points` order. Use `0001` when no numbered ADR exists. Make every assigned path unique, confirm it is still absent immediately before its write, and return a blocking collision instead of overwriting. Use the assigned path order in the result.
 
@@ -53,7 +53,7 @@ For each ADR:
 
 ## Update Mode
 
-Update requested sections and dependent statements. For `correction_findings`, resolve the received defects at the cause they share, within the requirements, using existing responsibilities. Treat a finding's proposed correction as one candidate. Accepted design decisions record the current means, so removing or narrowing one is valid when the outcome, desired-future requirements, and non-goals stay true. If the outcome cannot otherwise be achieved, return the failing condition and evidence before changing that design. Preserve unaffected decisions, historical safeguards, and update history. Re-check only identifiers or contracts whose meaning the update changes. An update operates on one existing ADR.
+Update requested sections and dependent statements. Judge `correction_findings` as Factory Rules, Your item describes. If the outcome cannot otherwise be achieved, return the failing condition and evidence before changing that design. Preserve unaffected decisions and safeguards. Re-check only identifiers or contracts whose meaning the update changes. An update operates on one existing ADR.
 
 ## Output
 

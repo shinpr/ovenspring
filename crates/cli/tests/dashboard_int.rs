@@ -1077,7 +1077,8 @@ fn start_runs_one_daemon_and_opens_its_dashboard_and_stop_ends_it() {
     assert!(stopped_again.status.success(), "{stopped_again:?}");
 }
 
-/// A medium issue whose design review applies one finding, stopped at its Work Plan.
+/// A medium issue whose design review finds one thing its author applies, stopped at its Work
+/// Plan.
 fn recorded_issue_script() -> Value {
     json!({
         "requirements": [{"output": {"convergence": {"outcome": "Owners export their orders as CSV.", "nonGoals": ["XLSX"]},
@@ -1085,13 +1086,16 @@ fn recorded_issue_script() -> Value {
                                      "structuralScale": "medium", "decision": "proceed"}}],
         "codebase-analysis": [{"output": {}}],
         "scope-check": [{"output": {"decision": "proceed", "structuralScale": "medium"}}],
-        "design": [support::scripts::document_run("docs/design/ACME-123.md", "DesignDoc")],
-        "design-verify": [{"output": {"summary": {"status": "consistent"}, "discrepancies": []}, "verdict": "pass"}],
+        "design": [
+            support::scripts::document_run("docs/design/ACME-123.md", "DesignDoc"),
+            {"change": {"path": "docs/design/ACME-123.md", "content": "Test the header row.\n"},
+             "output": {"status": "completed", "documentType": "DesignDoc", "path": "docs/design/ACME-123.md",
+                        "dispositions": [{"id": "I001", "disposition": "apply", "reason": "A test now reads the header."}]}}
+        ],
         "design-review": [
             {"output": {"verdict": {"decision": "needs_revision"}, "issues": [{"id": "I001", "location": "s 2", "description": "The header row is untested.", "correction": "Test it."}]}, "verdict": "findings"},
             {"output": {"verdict": {"decision": "pass"}, "prior_feedback_reconciliation": [{"id": "I001", "prior_disposition": "apply", "status": "resolved", "evidence": "e"}]}, "verdict": "pass"}
         ],
-        "resolution": [{"output": {"decision": "proceed", "dispositions": [{"id": "I001", "disposition": "apply", "owner": "author", "basis": "AC 1", "evidence": "A test now reads the header."}]}}],
         "design-sync": [{"output": {"sync_status": "SKIPPED"}, "verdict": "pass"}],
         "test-design": [{"output": {"status": "completed", "feature": "f", "generatedFiles": {}}}],
         "work-plan": [{"hang": true}]
@@ -1102,7 +1106,7 @@ fn recorded_issue_script() -> Value {
 //     links, launches and cost (AC-044)" — UI Spec S-02, IssueHeader; owner-interface design
 //     § Dashboard server `GET /issues/{key}`.
 // Behavior: ACME-123 runs through the factory with fake agents: requirements, design, a design
-//     review with one finding, its answer, a passing review, and a plan still running ->
+//     review with one finding, the author's answer, a passing review, and a plan still running ->
 //     `GET /api/v1/issues/ACME-123` reads the records the run left.
 // @lane: integration
 // @dependency: daemon, launcher, fake agents, dashboard server, history

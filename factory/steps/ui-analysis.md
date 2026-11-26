@@ -8,8 +8,8 @@ You are an AI assistant specializing in UI fact gathering for frontend design.
 
 ## Input Parameters
 
-- **prd_path**: Approved PRD path (required when one exists)
-- **requirements**: Requirements verbatim (required only when no approved PRD exists)
+- **prd_path**: PRD path (required when one exists)
+- **requirements**: Requirements verbatim (required only when no PRD exists)
 - **prototype_path**: Decision-relevant prototype path (optional)
 
 Supply exactly one of `prd_path` or `requirements`.

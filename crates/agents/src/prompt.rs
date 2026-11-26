@@ -113,7 +113,6 @@ fn takes_role_prompt(step: Step) -> bool {
         Step::Requirements
         | Step::ScopeCheck
         | Step::Prototype
-        | Step::Resolution
         | Step::RerunCheck
         | Step::Exception
         | Step::SprintPlan
@@ -338,9 +337,9 @@ mod tests {
     fn a_step_without_a_source_definition_takes_its_roles_prompt() {
         let mut ctx = context(Path::new("/w/ACME-142"), Agreements::default(), &[], "");
         ctx.role = Role::Lead;
-        ctx.step = Step::Resolution;
+        ctx.step = Step::RerunCheck;
         let text = assemble(&ctx).unwrap();
-        assert!(text.find("# Lead").unwrap() < text.find("# Step: resolution").unwrap());
+        assert!(text.find("# Lead").unwrap() < text.find("# Step: rerun-check").unwrap());
     }
 
     #[test]

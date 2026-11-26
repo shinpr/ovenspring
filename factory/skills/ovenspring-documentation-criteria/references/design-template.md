@@ -30,7 +30,7 @@ Lists each external resource this feature depends on with its feature-specific i
 Records exclusions **the user decided** at requirement time. Mark the first two bullets `N/A — covered by PRD [path]` when a PRD holds them. Fields the owner left open stay here in every case because design readiness depends on them. This section contains the user-selected requirements and boundaries; evaluation requests, speculative ideas, and unselected mechanisms remain only in active convergence context.
 
 - **Outcome**: [one observable result this change must produce]
-- **Non-Goals**: [capability the user excluded | None — user confirmed there are none]
+- **Non-Goals**: [capability the user excluded | None stated]
 - **Left open by the owner**: [field the owner agreed to leave weak-but-explicit, with their words | None]
 
 ### Standards and Assumptions
@@ -40,7 +40,7 @@ Records exclusions **the user decided** at requirement time. Mark the first two 
 - [ ] [Observed pattern] `[implicit]` - Evidence: [file paths] - Confirmed: [Yes/No]
 
 #### Assumed Behaviors
-Behavioral or factual claims the design relies on (framework/library defaults, capabilities assumed already provided, features assumed already implemented). Each claim carries evidence. Before verification, use `Confirmed: No` for a specific unresolved premise and state the exact evidence needed and its design effect. A premise that can change the Selected Design must be resolved before approval. After verification, `Confirmed: No` is valid only for residual implementation uncertainty whose possible outcomes leave the Selected Design valid, with a matching Risks and Mitigation row that restates the claim as its Risk and names how it will be verified or guarded. Mark the subsection N/A when the design relies on no such claims.
+Behavioral or factual claims the design relies on (framework/library defaults, capabilities assumed already provided, features assumed already implemented). Each claim carries evidence. Before verification, use `Confirmed: No` for a specific unresolved premise and state the exact evidence needed and its design effect. A premise that can change the Selected Design must be resolved before the owner passes the design. After verification, `Confirmed: No` is valid only for residual implementation uncertainty whose possible outcomes leave the Selected Design valid, with a matching Risks and Mitigation row that restates the claim as its Risk and names how it will be verified or guarded. Mark the subsection N/A when the design relies on no such claims.
 
 - [ ] [Claim — e.g., "framework X defaults to Y", "service already returns Z"] - Evidence: [file:line / command output / doc URL / exact evidence needed] - Design effect: [what changes if false | Selected Design remains valid] - Confirmed: [Yes/No]
 
@@ -93,7 +93,7 @@ Keywords determine test type and reduce ambiguity.
 
 The rows below demonstrate EARS syntax only. Replace their domain, values, messages, and thresholds with requirements from the PRD or accepted requirement analysis; none is a default product requirement.
 
-Keep the smallest representative set of observable behaviors that has a stable repository-verifiable pass/fail condition. Use repository-controlled contract/interface proof instead of a live external connection. Include a performance threshold only with a sourced target and reproducible benchmark, and exact visual positioning only with an approved visual contract and deterministic comparison. Implementation details remain outside ACs.
+Keep the smallest representative set of observable behaviors that has a stable repository-verifiable pass/fail condition. Use repository-controlled contract/interface proof instead of a live external connection. Include a performance threshold only with a sourced target and reproducible benchmark, and exact visual positioning only with a visual contract the owner gave and deterministic comparison. Implementation details remain outside ACs.
 
 ### [Functional Requirement 1]
 
@@ -327,7 +327,7 @@ Verification Strategy defines what correctness means and how to prove it at desi
 
 ### Correctness Proof Method
 
-- **Correctness definition**: [What "correct" means for this change — e.g., "output matches existing behavior", "generated queries execute without error on target DB"]
+- **Correctness definition**: [What "correct" means for this change, as strong as the requirements make it and no stronger — e.g., "output matches existing behavior", "generated queries execute without error on target DB"]
 - **Verification method**: [Specific technique — e.g., "compare new implementation output against existing implementation", "contract test with real API"]
 - **Verification timing**: [When verification occurs — e.g., "after first vertical slice", "per repository", "at integration phase"]
 
@@ -366,9 +366,3 @@ Include only evidenced residual risks that can change rollback, contract handlin
 ## References
 
 - [Related documentation and links]
-
-## Update History
-
-| Date | Version | Changes | Author |
-|------|---------|---------|--------|
-| YYYY-MM-DD | 1.0 | Initial version | [Name] |

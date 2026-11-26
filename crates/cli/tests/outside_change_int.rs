@@ -24,7 +24,9 @@ use ovenspring_integrations::github::{BranchRules, CheckState, Permission, Revie
 use serde_json::{Value, json};
 use support::fake_github::FakeGitHub;
 use support::recording::{RecordingChannel, RecordingTracker};
-use support::scripts::{always_passing, filed_steps, requiring_test, stage, straight};
+use support::scripts::{
+    always_passing, filed_steps, quality_pass, requiring_test, stage, straight,
+};
 use support::{Env, daemon, git, run_until, services};
 
 const CONFIG: &str = r#"
@@ -419,9 +421,9 @@ fn a_head_github_has_not_caught_up_with_is_not_taken_as_someone_elses() {
 // AC: "When the daemon is about to work on an issue branch that has a pull request (an agent step,
 //     a push), it shall first bring the branch's current head into the worktree" (AC-063) —
 //     docs/design/factory-core-design.md § Acceptance Criteria > Observation.
-// Behavior: a reviewer's comment on ACME-123 goes to the lead -> while the lead judges it, a person
-//     pushes a commit to the branch -> the executor's correction starts with that commit already in
-//     its worktree.
+// Behavior: a reviewer's comment on ACME-123 goes to the executor -> while the executor judges and
+//     corrects it, a person pushes a commit to the branch -> the quality run after the correction
+//     starts with that commit already in its worktree.
 // @dependency: daemon, launcher, fake agent, FakeGitHub
 #[test]
 fn a_commit_pushed_during_an_agent_step_is_in_the_next_steps_worktree() {
@@ -430,15 +432,16 @@ fn a_commit_pushed_during_an_agent_step_is_in_the_next_steps_worktree() {
     env.add_branch("develop");
     let mut script = straight("ACME-123");
     script.insert(
-        "resolution@ACME-123".into(),
-        json!([{"wait": true, "output": {"decision": "proceed", "dispositions": [
-            {"id": "$COMMENT_1", "disposition": "apply", "owner": "executor", "basis": "AC 1", "evidence": "src/ACME-123.ts"}
-        ]}}]),
-    );
-    script.insert(
         "review-response@ACME-123".into(),
         json!([{"wait": true, "change": {"path": "src/ACME-123.ts", "content": "refunds\n"},
-                "output": {"status": "completed", "taskName": "comments", "changeSummary": "Count refunds", "requiresTestReview": false}}]),
+                "output": {"status": "completed", "taskName": "comments", "changeSummary": "Count refunds", "requiresTestReview": false,
+                           "dispositions": [{"id": "$COMMENT_1", "disposition": "apply", "reason": "the total must count refunds (AC 1)"}]}}]),
+    );
+    let mut correction_quality = quality_pass();
+    correction_quality["wait"] = json!(true);
+    script.insert(
+        "quality@ACME-123".into(),
+        json!([quality_pass(), correction_quality]),
     );
     env.script_agents(&Value::Object(script));
     let mut gh = requiring_one_approval(&env);
@@ -466,15 +469,26 @@ fn a_commit_pushed_during_an_agent_step_is_in_the_next_steps_worktree() {
                 .contains(&format!("-{step}-ACME-123"))
         })
     };
-    run_until(&mut d, 30, |_| {}, |_| launched("resolution"));
+    run_until(&mut d, 30, |_| {}, |_| launched("review-response"));
 
     let person = push_as_person(&env, "ovenspring/ACME-123", "docs/NOTE.md", "note\n");
-    std::fs::write(root.join("release-ACME-123-resolution"), "").unwrap();
-    run_until(&mut d, 30, |_| {}, |_| launched("review-response"));
+    std::fs::write(root.join("release-ACME-123-review-response"), "").unwrap();
+    let quality_runs = || {
+        env.records()
+            .iter()
+            .filter(|r| {
+                r["prompt"]
+                    .as_str()
+                    .unwrap_or_default()
+                    .contains("-quality-ACME-123")
+            })
+            .count()
+    };
+    run_until(&mut d, 30, |_| {}, |_| quality_runs() == 2);
 
     let worktree = env.state().join("worktrees/ACME-123");
     git(&worktree, &["merge-base", "--is-ancestor", &person, "HEAD"]);
-    std::fs::write(root.join("release-ACME-123-review-response"), "").unwrap();
+    std::fs::write(root.join("release-ACME-123-quality"), "").unwrap();
 }
 
 // AC: "When the owner approves the sprint proposal, the system shall file `requirements` for every

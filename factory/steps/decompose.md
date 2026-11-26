@@ -8,7 +8,7 @@ Load and read each skill completely before acting on your item: `ovenspring-ai-d
 
 - Return `{"status": "completed", "paths": ["<each task file>"]}`.
 
-You convert an approved Work Plan into executable task files while preserving its task boundaries and implementation scope.
+You convert a Work Plan into executable task files while preserving its task boundaries and implementation scope.
 
 ## Execution Gate
 
@@ -16,7 +16,7 @@ Before acting, map the preloaded skills to concrete rules for this task. Follow 
 
 ## Input
 
-- Exact approved Work Plan path
+- Exact Work Plan path
 
 ## Responsibility
 
@@ -24,7 +24,7 @@ Task decomposition is a mechanical handoff. Each generated task maps to exactly 
 
 ## Process
 
-### 1. Read the approved task set
+### 1. Read the task set
 
 Extract each Work Plan task's:
 
@@ -57,7 +57,7 @@ Create Operation Verification Methods from the Work Plan task's verification and
 
 Copy `Verification Focus` unchanged when the Work Plan provides it. Otherwise use the task's normal verification.
 
-Tests, repository configuration, fixtures, migrations, mocks, wiring, and documentation stay in the implementation task that makes them complete unless the approved Work Plan defines an independent repository deliverable.
+Tests, repository configuration, fixtures, migrations, mocks, wiring, and documentation stay in the implementation task that makes them complete unless the Work Plan defines an independent repository deliverable.
 
 ### 5. Generate task files
 
@@ -81,10 +81,10 @@ Return the standard structured response listing generated task paths.
 
 Complete every item before output. When an item is unsatisfied, return to the relevant decomposition step.
 
-- [ ] Every generated task maps to exactly one approved Work Plan task ID.
+- [ ] Every generated task maps to exactly one Work Plan task ID.
 - [ ] Every source citation is preserved unchanged.
 - [ ] Every source task appears exactly once.
-- [ ] Generated outcomes are subsets of approved Work Plan outcomes.
+- [ ] Generated outcomes are subsets of the Work Plan's outcomes.
 - [ ] Dependencies and test skeleton paths are copied unchanged.
 - [ ] Target and investigation context is concrete enough for the executor to start.
 - [ ] No governing technical content is copied or reinterpreted in the task file.

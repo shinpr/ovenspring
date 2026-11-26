@@ -165,8 +165,8 @@ pub struct Daemon {
     pub(crate) timing: Timing,
     last_poll: Option<Instant>,
     last_tracker_poll: Option<Instant>,
-    /// When the owner was last reminded, or the daemon started.
-    last_reminder: Instant,
+    /// Earliest time another owner reminder could be due.
+    next_reminder_check: Instant,
     /// Whether the tracker has answered since start.
     pub(crate) tracker_read: bool,
     pub(crate) open_issues: Vec<ovenspring_integrations::tracker::TrackerIssue>,
@@ -245,7 +245,7 @@ impl Daemon {
             timing: parts.timing,
             last_poll: None,
             last_tracker_poll: None,
-            last_reminder: Instant::now(),
+            next_reminder_check: Instant::now() + parts.timing.remind,
             tracker_read: false,
             open_issues: Vec::new(),
             pause_announced,

@@ -58,23 +58,17 @@ fn script() -> Value {
     );
     put(
         &mut script,
-        "resolution",
-        json!([
-            {"output": {"decision": "proceed", "dispositions": [
-                {"id": "F001", "review": "code-review/1", "disposition": "apply", "owner": "executor", "basis": "AC 1", "evidence": "src/export.ts:1"}]}},
-            {"output": {"decision": "proceed", "dispositions": [
-                {"id": "$COMMENT_1", "disposition": "apply", "owner": "executor", "basis": "AC 2", "evidence": "the empty state breaks AC 2"},
-                {"id": "$COMMENT_2", "disposition": "decline", "basis": "src/orders.ts", "evidence": "src/orders.ts:4", "reason": "naming follows src/orders.ts"}]}}
-        ]),
-    );
-    put(
-        &mut script,
         "review-response",
         json!([
             {"change": {"path": "src/export.ts", "content": "last page\n"},
-             "output": {"status": "completed", "taskName": "F001", "changeSummary": "Keep the last page", "requiresTestReview": false}},
+             "output": {"status": "completed", "taskName": "F001", "changeSummary": "Keep the last page", "requiresTestReview": false,
+                        "dispositions": [
+                            {"id": "F001", "review": "code-review/1", "disposition": "apply", "reason": "src/export.ts:1 drops the last page, which AC 1 exports"}]}},
             {"change": {"path": "src/export.ts", "content": "empty state\n"},
-             "output": {"status": "completed", "taskName": "comments", "changeSummary": "Show the empty state", "requiresTestReview": false}}
+             "output": {"status": "completed", "taskName": "comments", "changeSummary": "Show the empty state", "requiresTestReview": false,
+                        "dispositions": [
+                            {"id": "$COMMENT_1", "disposition": "apply", "reason": "the empty state breaks AC 2"},
+                            {"id": "$COMMENT_2", "disposition": "decline", "reason": "naming follows src/orders.ts"}]}}
         ]),
     );
     put(
@@ -188,16 +182,16 @@ fn handoffs(env: &Env, step: &str, round: Option<u32>, field: &str) -> Vec<Value
         .collect()
 }
 
-/// The applied code-review finding reaches the executor as the review returned it, and the
-/// review's recheck receives the resolution's disposition of it.
+/// The code-review finding reaches the executor as the review returned it, naming its review, and
+/// the review's recheck receives the executor's disposition of it.
 fn assert_findings_reach_the_executor_and_the_recheck(env: &Env) {
-    let applied = json!({"id": "F001", "location": "src/export.ts:1", "description": "The last page is lost.",
-                         "suggestion": "Include it.", "disposition": "apply"});
+    let handed = json!({"id": "F001", "location": "src/export.ts:1", "description": "The last page is lost.",
+                        "suggestion": "Include it.", "review": "code-review/1"});
     assert!(
         handoffs(env, "review-response", None, "correction_findings")
             .iter()
-            .any(|c| c.as_array().is_some_and(|a| a.contains(&applied))),
-        "the executor receives the applied finding verbatim"
+            .any(|c| c.as_array().is_some_and(|a| a.contains(&handed))),
+        "the executor receives the finding verbatim"
     );
     let prior = handoffs(env, "code-review", Some(2), "prior_feedback");
     let entry = &prior[0][0];
@@ -209,6 +203,99 @@ fn assert_findings_reach_the_executor_and_the_recheck(env: &Env) {
         entry["evidence"]["finding"]["description"],
         "The last page is lost."
     );
+}
+
+/// A lead retries a design review after fixing its last open finding. Read what the
+/// daemon actually files for the reviewer, including the correction the item points to.
+#[test]
+fn a_review_return_receives_only_the_outstanding_finding() {
+    for action in ["redesign", "retry"] {
+        let env = Env::new();
+        env.configure("");
+        let key = "ACME-123";
+        let mut script = designed(key, &[], &[]);
+        let design = &mut script["design@ACME-123"];
+        let mut correction = design[0].clone();
+        correction["output"]["dispositions"] = json!([
+            {"id":"header","disposition":"apply","reason":"specified the header"},
+            {"id":"rows","disposition":"apply","reason":"specified the rows"}
+        ]);
+        design
+            .as_array_mut()
+            .unwrap()
+            .extend([correction.clone(), correction.clone()]);
+        correction["output"]["dispositions"] =
+            json!([{"id":"rows","disposition":"apply","reason":"Included the last row."}]);
+        design.as_array_mut().unwrap().push(correction);
+        let recheck = |header| {
+            json!({"output":{"verdict":{"decision":"needs_revision"},
+        "prior_feedback_reconciliation":[
+            {"id":"header","prior_disposition":"apply","status":header,"evidence":"header checked"},
+            {"id":"rows","prior_disposition":"apply","status":"maintained","evidence":"last row missing"}
+        ]},"verdict":"findings"})
+        };
+        script["design-review@ACME-123"] = json!([
+            {"output":{"verdict":{"decision":"needs_revision"},"issues":[
+                {"id":"header","description":"missing header"}, {"id":"rows","description":"missing rows"}
+            ]},"verdict":"findings"},
+            recheck("maintained"), recheck("resolved"), {"hang":true}
+        ]);
+        script.insert(
+            "exception".into(),
+            json!([{"output":{"action":action,"note":"Included the last row."}}]),
+        );
+        env.script_agents(&Value::Object(script));
+        env.tracker_issue(key, "Export orders", "Export every row.");
+        let mut d = daemon(
+            &env,
+            services(
+                Arc::new(always_passing(&env, requiring_test())),
+                Arc::new(RecordingChannel::default()),
+                Arc::new(RecordingTracker::default()),
+            ),
+        );
+        d.begin_issue(key, "Export orders", vec![]).unwrap();
+        run_until(
+            &mut d,
+            60,
+            |_| {},
+            |_| {
+                let steps = filed_steps(&env, key);
+                steps.contains(&"exception".into())
+                    && steps.last().is_some_and(|s| s == "design-review")
+            },
+        );
+        let item = d
+            .store()
+            .active_items()
+            .unwrap()
+            .into_iter()
+            .map(|path| d.store().read_item(&path).unwrap())
+            .find(|item| item.front.step == Step::DesignReview)
+            .unwrap();
+        let path = item
+            .body
+            .lines()
+            .find_map(|line| line.strip_prefix("prior_feedback: "))
+            .unwrap();
+        let read =
+            |path: &str| serde_json::from_slice::<Value>(&std::fs::read(path).unwrap()).unwrap();
+        let feedback = read(path);
+        let entries = feedback.as_array().unwrap();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(
+            entries[0]["evidence"]["finding"],
+            json!({"id":"rows","remaining":"last row missing"})
+        );
+        if action == "retry" {
+            assert_eq!(
+                read(entries[0]["evidence"]["correction"].as_str().unwrap())["note"],
+                "Included the last row."
+            );
+        } else {
+            assert_eq!(entries[0]["reason"], "Included the last row.");
+        }
+    }
 }
 
 /// One merge, of the head whose checks passed; the base then has the design and the code, and
@@ -283,22 +370,23 @@ fn assert_only_trusted_comments_reach_agents(env: &Env, gh: &FakeGitHub) {
 
 // AC: "When `decompose` is done, the system shall file one `implement` item per task file in
 //     dependency order, then `quality` once after the last task, and commit only after `quality`
-//     passes (AC-020)"; "If any review of a round finds anything, then once every review of the
-//     round has ended the system shall file one `resolution` for the lead over all their findings,
-//     pass only applied findings verbatim to their author, run `quality` after a code correction,
-//     recheck with the reviews that own an applied finding, and rerun a passed review only when
-//     `rerun-check` names it (AC-021)"; "If a check fails on the pushed commit, then the system
-//     shall file `fix-ci` for the executor (AC-036)"; "When checks pass, the system shall wait until
-//     each review bot whose review it can observe has finished on the pushed commit, and file
-//     `resolution` for the lead, judging each new comment from configured bots or write-access
-//     accounts as a finding (AC-022)"; "Comments from other accounts
+//     passes (AC-020)"; if any review of a round finds anything, then once every review of the
+//     round has ended the system files one `review-response` for the executor over all their
+//     findings verbatim, which judges each, runs `quality` after a code correction, rechecks with
+//     the reviews that own an applied finding, and reruns a passed review only when `rerun-check`
+//     names it (AC-021); "If a check fails on the pushed commit, then the system
+//     shall file `fix-ci` for the executor (AC-036)"; when checks pass, the system waits until
+//     each review bot whose review it can observe has finished on the pushed commit, and files
+//     `review-response` for the executor, judging each new comment from configured bots or
+//     write-access accounts as a finding (AC-022); "Comments from other accounts
 //     shall not be passed to any agent (AC-023)"; "When the merge setting is `factory`, the system
 //     shall merge only the head commit whose required checks passed, when the branch contains the
 //     base head, every required approval is present and every owner approval for that commit is
 //     recorded (AC-026, AC-028)".
 // Behavior: ACME-123 begins -> the daemon runs it through design, two tasks, the review round with
-//     one applied finding, a failed `e2e` check fixed by fix-ci, and the writer's pull request
-//     comments -> FakeGitHub merges the sha whose `e2e` check passed into origin's `develop`.
+//     one finding the executor applies, a failed `e2e` check fixed by fix-ci, and the pull request
+//     comments the executor applies or declines -> FakeGitHub merges the sha whose `e2e` check
+//     passed into origin's `develop`.
 // @lane: integration
 // @dependency: daemon, flow, gate, launcher, store, worktrees, fake agent, FakeGitHub,
 //     RecordingTracker, RecordingChannel
@@ -323,8 +411,7 @@ fn assert_each_launch_records_the_phase_it_ran_in(env: &Env) {
         ("implement", "build"),
         ("code-review", "review"),
         ("review-response", "review"),
-        ("resolution", "review"),
-        ("resolution", "merge"),
+        ("review-response", "merge"),
         ("fix-ci", "merge"),
     ] {
         assert!(
@@ -421,15 +508,22 @@ fn one_issue_runs_from_requirements_to_the_merge_of_its_checked_sha() {
     );
 }
 
-/// ACME-123 and ACME-124 pass every step, except that ACME-123's lead, judging its two comments,
-/// asks the owner and then waits.
+/// ACME-123 and ACME-124 pass every step, except that ACME-123's executor, judging its two
+/// comments, finds one would widen the outcome and escalates; the lead asks the owner and then
+/// waits.
 fn returned_comment_script() -> Value {
     let mut script = straight("ACME-123");
     script.extend(straight("ACME-124"));
     script.insert(
-        "resolution@ACME-123".into(),
+        "review-response@ACME-123".into(),
+        json!([{"output": {"status": "escalation_needed",
+                           "reason": "Including archived orders would widen the issue's outcome."}}]),
+    );
+    script.insert(
+        "exception@ACME-123".into(),
         json!([
-            {"output": {"decision": "ask", "question": "Should the export include archived orders? The comment asks for them; the issue does not."}},
+            {"output": {"action": "ask", "note": "A comment asks for more than the issue",
+                        "question": "Should the export include archived orders? The comment asks for them; the issue does not."}},
             {"hang": true}
         ]),
     );
@@ -447,15 +541,16 @@ fn github_with_two_writer_comments(env: &Env) -> FakeGitHub {
     gh
 }
 
-/// Nothing in ACME-123's returned output was acted on: no review response, reply, merge or push
-/// after the first, while ACME-124 merged.
+/// Nothing in ACME-123's escalated review response was acted on: no quality run, reply, merge or
+/// push after the first, while ACME-124 merged.
 fn assert_the_return_holds_acme_123(env: &Env, d: &ovenspring_daemon::Daemon, gh: &FakeGitHub) {
     let steps = filed_steps(env, "ACME-123");
-    assert_eq!(steps.last().map(String::as_str), Some("resolution"));
-    assert!(!steps.contains(&"review-response".to_owned()));
+    assert_eq!(steps.last().map(String::as_str), Some("exception"));
+    let responded = steps.iter().position(|s| s == "review-response").unwrap();
+    assert!(!steps[responded..].contains(&"quality".to_owned()));
     assert!(
         gh.replies().is_empty(),
-        "nothing answered before the lead resolves the return"
+        "nothing answered before the owner answers the lead"
     );
     let merges: Vec<String> = gh
         .calls()
@@ -522,17 +617,17 @@ fn assert_the_answer_reaches_the_leads_next_item(env: &Env, d: &ovenspring_daemo
     );
 }
 
-// AC: docs/design/factory-core-design.md § Acceptance Criteria > Issue: "If a `requirements`,
-//     `prd`, `scope-check` or `resolution` output carries a question for the owner, then the system
-//     shall post it and hold only that issue until the answer, which it passes to the step that
-//     asked (AC-025, AC-030)".
+// AC: docs/design/factory-core-design.md § Acceptance Criteria > Issue: a question for the owner
+//     is posted and holds only that issue until the answer, which is passed to the step that asked
+//     (AC-025, AC-030); the executor returns `escalation_needed` when a finding cannot be applied
+//     or declined within the value boundary, and the lead takes it.
 //     PRD AC-025: "When a finding's resolution would change the issue's outcome, its non-goals, or
-//     what the owner approved, then it reaches the owner instead of being applied or declined."
+//     what the owner decided, then it reaches the owner instead of being applied or declined."
 //     PRD AC-030: "When a decision is pending, only the work that depends on it waits."
-// Behavior: ACME-123's pull request gets two comments; the lead's resolution finds that one
-//     would widen the outcome and asks the owner -> a spec question for ACME-123 is posted through
-//     RecordingChannel while ACME-124 merges -> the owner's thread reply reaches the lead's next
-//     resolution item for ACME-123.
+// Behavior: ACME-123's pull request gets two comments; the executor's review response finds that
+//     one would widen the outcome and escalates -> the lead asks the owner -> a spec question for
+//     ACME-123 is posted through RecordingChannel while ACME-124 merges -> the owner's thread reply
+//     reaches the lead's next item for ACME-123.
 // @lane: integration
 // @dependency: daemon, flow, gate, decisions store, launcher, fake agent, FakeGitHub, RecordingChannel
 #[test]
@@ -558,7 +653,7 @@ fn returned_pr_comment_reaches_the_owner_through_the_lead_and_holds_only_that_is
         &mut d,
         60,
         |_| {},
-        |d| matches!(stage(d, "ACME-123"), Stage::Asking { .. }),
+        |d| matches!(stage(d, "ACME-123"), Stage::LeadAsking { .. }),
     );
     // ACME-124 starts and merges while ACME-123 waits for the owner.
     d.begin_issue("ACME-124", "Import orders", vec![]).unwrap();
@@ -568,7 +663,7 @@ fn returned_pr_comment_reaches_the_owner_through_the_lead_and_holds_only_that_is
         |_| {},
         |d| stage(d, "ACME-124") == Stage::Merged,
     );
-    assert!(matches!(stage(&d, "ACME-123"), Stage::Asking { .. }));
+    assert!(matches!(stage(&d, "ACME-123"), Stage::LeadAsking { .. }));
     assert_the_return_holds_acme_123(&env, &d, &gh);
     let question = the_posted_spec_question(&d, &channel);
 
@@ -587,7 +682,7 @@ fn returned_pr_comment_reaches_the_owner_through_the_lead_and_holds_only_that_is
         |_| {
             filed_steps(&env, "ACME-123")
                 .iter()
-                .filter(|s| *s == "resolution")
+                .filter(|s| *s == "exception")
                 .count()
                 == 2
         },
@@ -627,7 +722,7 @@ fn a_question_that_waits_on_the_owner_is_reminded_in_one_message_per_interval() 
         &mut d,
         60,
         |_| {},
-        |d| matches!(stage(d, "ACME-123"), Stage::Asking { .. }),
+        |d| matches!(stage(d, "ACME-123"), Stage::LeadAsking { .. }),
     );
     let reminders = |channel: &RecordingChannel| -> Vec<String> {
         channel
@@ -645,16 +740,23 @@ fn a_question_that_waits_on_the_owner_is_reminded_in_one_message_per_interval() 
             .collect()
     };
     let question = the_posted_spec_question(&d, &channel);
-    let link = d
+    let mut second = d
         .decisions()
         .unwrap()
         .into_iter()
         .find(|x| x.id == question)
-        .and_then(|x| x.message?.permalink)
         .unwrap();
+    let link = second.message.as_ref().unwrap().permalink.clone().unwrap();
     let before = reminders(&channel).len();
 
     std::thread::sleep(std::time::Duration::from_millis(350));
+    // A second delivered question appears just as the older question becomes due.
+    second.id = "ACME-123-spec-second".into();
+    let second_link = "https://slack.test/second";
+    second.message.as_mut().unwrap().permalink = Some(second_link.into());
+    d.store()
+        .write_isolated(&format!("decisions/{}.json", second.id), &second)
+        .unwrap();
     d.tick().unwrap();
     d.tick().unwrap();
 
@@ -664,23 +766,25 @@ fn a_question_that_waits_on_the_owner_is_reminded_in_one_message_per_interval() 
         sent.last().unwrap(),
         &format!("Still waiting for you:\n- [ACME-123: Export order history]({link})")
     );
+
+    std::thread::sleep(std::time::Duration::from_millis(350));
+    d.tick().unwrap();
+    let sent = reminders(&channel);
+    assert_eq!(sent.len(), before + 2);
+    let bundled = sent.last().unwrap();
+    assert!(bundled.contains(&link) && bundled.contains(second_link));
 }
 
-/// ACME-123 and ACME-124 pass every step, except that ACME-123's lead applies its comment and its
-/// review response commits the fix; the merged base comes in with the next push.
+/// ACME-123 and ACME-124 pass every step, except that ACME-123's review response applies its
+/// comment and the fix is committed; the merged base comes in with the next push.
 fn approval_script() -> Value {
     let mut script = straight("ACME-123");
     script.extend(straight("ACME-124"));
     script.insert(
-        "resolution@ACME-123".into(),
-        json!([{"output": {"decision": "proceed", "dispositions": [
-            {"id": "$COMMENT_1", "disposition": "apply", "owner": "executor", "basis": "AC 1", "evidence": "tests/total.test.ts"}
-        ]}}]),
-    );
-    script.insert(
         "review-response@ACME-123".into(),
         json!([{"change": {"path": "src/ACME-123.ts", "content": "refunds\n"},
-                "output": {"status": "completed", "taskName": "comments", "changeSummary": "Count refunds in the total", "requiresTestReview": false}}]),
+                "output": {"status": "completed", "taskName": "comments", "changeSummary": "Count refunds in the total", "requiresTestReview": false,
+                           "dispositions": [{"id": "$COMMENT_1", "disposition": "apply", "reason": "the total must count refunds (AC 1)"}]}}]),
     );
     Value::Object(script)
 }
@@ -769,7 +873,7 @@ fn assert_reviews_rerequested_after_pushes_and_no_merge(env: &Env, gh: &FakeGitH
 //     and requests approval again when a push dismissed an earlier one."
 // Behavior: branch rules require one approving review and dismiss stale approvals; on ACME-123
 //     `acme-lead` approved and `acme-dev` requested changes with a review comment; ACME-124 is
-//     approved -> ACME-124 merges while ACME-123 waits -> the lead applies acme-dev's comment,
+//     approved -> ACME-124 merges while ACME-123 waits -> the executor applies acme-dev's comment,
 //     the daemon pushes, FakeGitHub dismisses acme-lead's approval -> the daemon requests reviews
 //     from both -> both approve the new head -> ACME-123 merges with that head.
 // @lane: integration
@@ -1254,15 +1358,11 @@ fn a_test_review_after_a_correction_receives_the_files_the_correction_changed() 
                 "description": "Refunds are not counted.", "suggestion": "Count them."}]}, "verdict": "findings"}]),
     );
     script.insert(
-        "resolution@ACME-151".into(),
-        json!([{"output": {"decision": "proceed", "dispositions": [
-            {"id": "F001", "review": "code-review/1", "disposition": "apply", "owner": "executor", "basis": "AC 1", "evidence": "src/ACME-151.ts:1"}]}}]),
-    );
-    script.insert(
         "review-response@ACME-151".into(),
         json!([{"change": {"path": "tests/refund_int.rs", "content": "#[test] fn refund() {}\n"},
                 "output": {"status": "completed", "taskName": "F001", "changeSummary": "Count refunds",
-                           "requiresTestReview": true}}]),
+                           "requiresTestReview": true,
+                           "dispositions": [{"id": "F001", "review": "code-review/1", "disposition": "apply", "reason": "src/ACME-151.ts:1 leaves refunds out"}]}}]),
     );
     script.insert("test-review@ACME-151".into(), json!([{"hang": true}]));
     env.script_agents(&Value::Object(script));
@@ -1300,14 +1400,15 @@ fn a_test_review_after_a_correction_receives_the_files_the_correction_changed() 
 }
 
 // AC: "Each finding, from a reviewer or a bot, is judged before anything is changed" (AC-021);
-//     factory core design, the review round: every review's findings go to one `resolution`.
-// Behavior: ACME-152's code review finds F001 -> `resolution` proceeds without a disposition for
-//     it -> the output is not taken as a judgment: the lead gets the stopped resolution, and no
-//     correction or convergence follows.
+//     factory core design, the review round: every review's findings go to one `review-response`,
+//     which records a disposition for each.
+// Behavior: ACME-152's code review finds F001 -> `review-response` completes without a
+//     disposition for it -> the output is not taken as a judgment: the lead gets the stopped
+//     review response, and no quality run, recheck or push follows.
 // @lane: integration
 // @dependency: daemon, flow, handoff, fake agent
 #[test]
-fn a_resolution_that_leaves_a_finding_without_a_disposition_goes_to_the_lead() {
+fn a_review_response_that_leaves_a_finding_without_a_disposition_goes_to_the_lead() {
     let env = Env::new();
     env.configure(CONFIG);
     env.add_branch("develop");
@@ -1318,8 +1419,10 @@ fn a_resolution_that_leaves_a_finding_without_a_disposition_goes_to_the_lead() {
                 "description": "Refunds are not counted.", "suggestion": "Count them."}]}, "verdict": "findings"}]),
     );
     script.insert(
-        "resolution@ACME-152".into(),
-        json!([{"output": {"decision": "proceed", "dispositions": []}}]),
+        "review-response@ACME-152".into(),
+        json!([{"change": {"path": "src/ACME-152.ts", "content": "refunds\n"},
+                "output": {"status": "completed", "taskName": "F001", "changeSummary": "Count refunds",
+                           "requiresTestReview": false, "dispositions": []}}]),
     );
     script.insert("exception@ACME-152".into(), json!([{"hang": true}]));
     env.script_agents(&Value::Object(script));
@@ -1345,7 +1448,7 @@ fn a_resolution_that_leaves_a_finding_without_a_disposition_goes_to_the_lead() {
             stage(&d, "ACME-152"),
             Stage::Exception {
                 cause: Cause::Step {
-                    step: Step::Resolution
+                    step: Step::ReviewResponse
                 },
                 ..
             }
@@ -1353,7 +1456,15 @@ fn a_resolution_that_leaves_a_finding_without_a_disposition_goes_to_the_lead() {
         "{:?}",
         stage(&d, "ACME-152")
     );
-    assert!(!filed_steps(&env, "ACME-152").contains(&"review-response".to_owned()));
+    let steps = filed_steps(&env, "ACME-152");
+    let responded = steps.iter().position(|s| s == "review-response").unwrap();
+    assert_eq!(steps[responded + 1..], ["exception"], "{steps:?}");
+    assert!(
+        !env.events()
+            .iter()
+            .any(|e| e["event"] == "pushed" && e["issue"] == "ACME-152"),
+        "no convergence"
+    );
 }
 
 // AC: docs/design/owner-interface-design.md: "When a prototype is ready, its approval message shall

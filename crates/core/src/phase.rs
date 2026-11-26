@@ -62,7 +62,6 @@ pub enum Activity {
     QualityChecks,
     Committing,
     ReviewsRunning,
-    JudgingFindings,
     ApplyingFindings,
     Rechecking,
     Pushing,
@@ -77,7 +76,7 @@ pub enum Activity {
 }
 
 impl Step {
-    /// The phase of the work the step does. A correction (`resolution`, `review-response`) and
+    /// The phase of the work the step does. A correction (`review-response`) and
     /// the lead's `exception` take the phase of what they answer, which only the issue's state
     /// knows; the sprint's steps belong to no issue.
     fn own_phase(self) -> Option<Phase> {
@@ -102,8 +101,7 @@ impl Step {
             Step::Implement | Step::TestReview | Step::Quality => Some(Phase::Build),
             Step::CodeReview | Step::SecurityReview | Step::RerunCheck => Some(Phase::Review),
             Step::FixCi | Step::MergeBase => Some(Phase::Merge),
-            Step::Resolution
-            | Step::ReviewResponse
+            Step::ReviewResponse
             | Step::Exception
             | Step::SprintPlan
             | Step::Facts
@@ -142,7 +140,6 @@ impl Step {
             Step::Quality => Activity::QualityChecks,
             Step::CodeReview | Step::SecurityReview => Activity::ReviewsRunning,
             Step::RerunCheck => Activity::Rechecking,
-            Step::Resolution => Activity::JudgingFindings,
             Step::ReviewResponse => Activity::ApplyingFindings,
             Step::FixCi => Activity::FixingCi,
             Step::MergeBase => Activity::ResolvingAConflict,
@@ -197,11 +194,7 @@ impl IssueState {
         // The Design Doc corrected for the review round, and its checks before the round goes on.
         let round_correction =
             self.origin == Some(Origin::Round) || self.after == Some(After::ReturnToRound);
-        if round_correction
-            && matches!(
-                step,
-                Step::Design | Step::DesignReview | Step::DesignSync | Step::Resolution
-            )
+        if round_correction && matches!(step, Step::Design | Step::DesignReview | Step::DesignSync)
         {
             return Phase::Review;
         }
@@ -314,7 +307,7 @@ mod tests {
         let document = IssueState {
             origin: Some(Origin::Document),
             check: Some(Check::PrdReview),
-            ..at(Stage::running(Step::Resolution))
+            ..at(Stage::running(Step::ReviewResponse))
         };
         assert_eq!(document.phase(), Some(Phase::Requirements));
         let design_check = IssueState {
@@ -399,8 +392,8 @@ mod tests {
     fn an_issue_waiting_on_the_owner_or_with_a_problem_has_no_activity() {
         assert_eq!(at(Stage::Ci).activity(), Some(Activity::WaitingForCi));
         assert_eq!(
-            at(Stage::running(Step::Resolution)).activity(),
-            Some(Activity::JudgingFindings)
+            at(Stage::running(Step::ReviewResponse)).activity(),
+            Some(Activity::ApplyingFindings)
         );
         assert_eq!(at(Stage::HeldForOwner).activity(), None);
         assert_eq!(

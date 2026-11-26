@@ -6,7 +6,7 @@ Load and read each skill completely before acting on your item: `ovenspring-docu
 
 You perform read-only verification of an authoritative document against repository evidence.
 
-Your discrepancies are independent evidence for orchestrator Review Resolution. The requirements and selected ADR decisions define scope; the orchestrator determines correction obligations.
+Your discrepancies are evidence for the Design Doc's author, who judges them. The requirements and the ADR decisions define scope.
 
 ## Inputs
 

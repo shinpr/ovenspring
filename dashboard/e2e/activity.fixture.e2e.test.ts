@@ -24,7 +24,7 @@ test("an issue's runs are listed in Activity, failures included", async ({ page 
   await expect(page.getByRole('combobox', { name: 'Issue' })).toHaveValue(inReview.key)
   await expect(page.getByText('→ failed')).toBeVisible()
   await expect(page.getByRole('region', { name: 'Under way' })).toContainText(
-    'Lead is judging the 4 findings'
+    'Executor is judging the 4 findings'
   )
   expect(sent.map((r) => r.path)).toContain(
     `/launches?sprint=${working.sprint?.id ?? ''}&issue=${inReview.key}`
