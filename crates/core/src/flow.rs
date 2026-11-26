@@ -1239,7 +1239,9 @@ fn corrected_by_executor(
         s.stage = Stage::Gate;
         return vec![Action::AnswerComments, Action::RunGate];
     }
-    if e.requires_test_review {
+    // The round's reviews recheck the correction's tests themselves; only a pull request
+    // comment correction passes the test review.
+    if origin == Origin::PrComments && e.requires_test_review {
         s.after = Some(After::Correction(origin));
         check(s, Check::TestReview)
     } else {
@@ -1848,13 +1850,6 @@ mod tests {
         done(
             step,
             json!({"status": "pass", "summary": "s", "checksPerformed": {}, "fixesApplied": []}),
-        )
-    }
-
-    fn doc_pass_test_review() -> Fact {
-        done(
-            "test-review",
-            json!({"status": "pass", "testFiles": [], "reviewBasis": "skeleton"}),
         )
     }
 
@@ -2885,7 +2880,7 @@ mod tests {
     }
 
     #[test]
-    fn a_finding_kept_through_two_corrections_with_a_test_review_goes_to_the_lead() {
+    fn a_finding_kept_through_two_corrections_needing_a_test_review_goes_to_the_lead() {
         let kept = || {
             reviewed(
                 "code-review/1",
@@ -2909,8 +2904,7 @@ mod tests {
                 (quality("pass"), ROUND.to_vec()),
                 (reviewed("security-review", security_pass()), vec![]),
                 (kept(), vec!["review-response"]),
-                (corrected(), vec!["test-review"]),
-                (doc_pass_test_review(), vec!["quality"]),
+                (corrected(), vec!["quality"]),
                 (
                     quality("pass"),
                     vec!["commit after quality", "code-review/1", "rerun-check"],
