@@ -469,7 +469,11 @@ impl Drop for Env {
                 .parse::<u32>()
                 .is_ok_and(|n| n > 1)
         }) {
-            let _ = Command::new("kill").args(["-KILL", "--", &pid]).status();
+            // A process the test already stopped is gone; that is not worth reporting.
+            let _ = Command::new("kill")
+                .args(["-KILL", "--", &pid])
+                .stderr(std::process::Stdio::null())
+                .status();
         }
     }
 }

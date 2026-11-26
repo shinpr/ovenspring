@@ -597,6 +597,20 @@ mod tests {
         assert!(!process_exists(&pid.to_string()));
     }
 
+    #[test]
+    fn intake_judge_returns_when_a_descendant_holds_stdin_without_draining_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let command = "head -c 20 >/dev/null\nsleep 30 <&0 >/dev/null 2>&1 &\nprintf 'large issue denied\\n'\nexit 2";
+        let started = Instant::now();
+        let outcome = judge(
+            child(command, dir.path()),
+            vec![b'x'; 1024 * 1024],
+            Duration::from_secs(20),
+        );
+        assert_eq!(outcome, Outcome::Dropped("large issue denied".into()));
+        assert!(started.elapsed() < Duration::from_secs(10));
+    }
+
     fn process_exists(pid: &str) -> bool {
         pid.parse::<u32>().is_ok_and(crate::app::alive)
     }

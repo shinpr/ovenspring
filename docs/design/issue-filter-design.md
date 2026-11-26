@@ -80,7 +80,7 @@ PRD AC-072, AC-073, AC-074, AC-075; AC-015 as it names the filter.
 - [ ] **If** the command exits 0, **then** the system shall admit the issue
 - [ ] **If** the command exits 2, **then** the system shall drop the issue with the first line of its stdout as the reason, exactly as written apart from its line terminator (`\n` or `\r\n`): surrounding whitespace and its full length kept
 - [ ] **If** the command exits with any other status, ends by a signal, cannot start, or has not exited and closed its stdout 60 seconds after it started, **then** the system shall count a failure, stop the command's process group when it is still running, and let the issue go on as without a filter
-- [ ] **When** the daemon stops normally while a filter command runs, the system shall stop that command's process group
+- [ ] **When** the daemon stops normally or is dropped while a filter command runs, the system shall stop that command's process group
 
 ### Intake (AC-072, AC-073)
 
@@ -129,7 +129,7 @@ PRD AC-072, AC-073, AC-074, AC-075; AC-015 as it names the filter.
 | New | `crates/daemon/src/intake.rs` | Selection, verdicts, publication pass, the filter run |
 | Existing | `crates/daemon/src/issues.rs` | `poll_tracker` and `forget_closed_sources` move to `intake.rs` and are reshaped there; `begin_issue` no longer reads `open_issues` |
 | Existing | `crates/daemon/src/sprint.rs` | `start_sprint_issues` takes title and URL from the snapshot; `sprint_fact` runs the publication pass when the sprint leaves `Proposing` |
-| Existing | `crates/daemon/src/lib.rs` | `Services` gains `secrets: Vec<String>`; `Daemon` gains the intake state; `replace_services` adds the new `secrets` to a held filter run's; `Timing` gains `filter_timeout`; `tick` takes a finished filter run; `reload_config` handles a filter change; `stop_launches` stops a running filter group |
+| Existing | `crates/daemon/src/lib.rs` | `Services` gains `secrets: Vec<String>`; `Daemon` gains the intake state; `replace_services` adds the new `secrets` to a held filter run's; `Timing` gains `filter_timeout`; `tick` takes a finished filter run; `reload_config` handles a filter change; `stop_launches` and dropping the `Daemon` stop a running filter group |
 | Existing | `crates/daemon/Cargo.toml` | Adds `sha2 = "0.11.1"` (the version `store` and `agents` use) |
 | Existing | `docs/GUIDE.md` | Configuration example gains `filter`; new section under Safeguards |
 | New | `crates/cli/tests/intake_int.rs` | Daemon-level intake tests |
@@ -314,7 +314,7 @@ filter_run: Option<FilterRun>,          // FilterRun { key, hash, url, pid: Opti
 
 **Sprint start reads the selected content.** `start_sprint_issues` takes each planned issue's title and URL from `sources/issues/<key>.md` through `TrackerIssue::heading(key, snapshot)`, which reads back the `# <key>: <title>` and `- URL: <url>` lines `render()` writes; it lives beside `render()` so the format has one owner. The snapshot is the content the lead read and intake has kept since, so the issue record, and the requirements request built from `record.title`, carry the selected text even when the tracker's title changed or the issue closed in between. `start_sprint_issues` sets `url` in the `update_issue` call that already sets `sprint`, and `begin_issue` no longer reads `open_issues`. A missing or unreadable snapshot falls back as today: the key as title, no URL.
 
-**Daemon stop.** `stop_launches` calls `stop_filter`, which stops the process group of a run whose handle has not finished (`app::stop_group(pid)`). Nothing is queued to start after it, and the next start judges again.
+**Daemon stop.** `stop_launches` calls `stop_filter`, which stops the process group of a run whose handle has not finished (`app::stop_group(pid)`). Dropping the `Daemon` calls `stop_filter` too, so a path that ends the daemon without `stop_launches` (an early error return, a test that ends or panics) leaves no command running. Nothing is queued to start after it, and the next start judges again.
 
 **The filter run**:
 1. `Command::new("sh").arg("-c").arg(command).current_dir(repo)`, stdin and stdout piped, stderr null, `process_group(0)`. A spawn error is `Failed("could not start: <error>")`.
@@ -504,7 +504,7 @@ N/A — no database; files under the state directory are asserted directly.
 
 ### Integration Verification Points
 
-- `judge` unit tests in `crates/daemon/src/intake.rs`: stdin equals the expected JSON and `pwd` is the repo (script writes both to a file); exit 0; exit 2 with stdout `"  keep these spaces  \r\nsecond"` (reason = `"  keep these spaces  "`), with stdout `"reason\r"` and no `\n` (reason = `"reason\r"`), and with a 5,000-character first line (kept whole); exit 1; missing interpreter (`sh -c` exit 127 → failure); a non-existent working directory (cannot start); a script that sleeps past a 1-second limit and spawns a child (failure, and the child is gone).
+- `judge` unit tests in `crates/daemon/src/intake.rs`: stdin equals the expected JSON and `pwd` is the repo (script writes both to a file); exit 0; exit 2 with stdout `"  keep these spaces  \r\nsecond"` (reason = `"  keep these spaces  "`), with stdout `"reason\r"` and no `\n` (reason = `"reason\r"`), and with a 5,000-character first line (kept whole); exit 1; missing interpreter (`sh -c` exit 127 → failure); a non-existent working directory (cannot start); a script that sleeps past a 1-second limit and spawns a child (failure, and the child is gone); a script that leaves a descendant holding its stdin undrained and exits 2 (the drop returns without waiting for the descendant).
 - `TrackerIssue::heading` unit test in `crates/integrations/src/tracker/mod.rs`: reads back title and URL from `render()` of an issue whose title contains `: `.
 - `crates/cli/tests/intake_int.rs` with `RecordingTracker` and filter scripts that append their key to a counter file; where ordering matters, the script waits for a gate file the test creates:
   - exit 2 → snapshot absent, key absent from `d.open_issues()`, no `sprint-fact` `IssueOpened` for it, one `filter-dropped` with key, URL, reason (Done-when 1)
@@ -516,15 +516,14 @@ N/A — no database; files under the state directory are asserted directly.
   - two polls with unchanged issues, one admitted and one dropped → counter shows one run each; an edit → one more run (Done-when 4)
   - steady filter, a new issue with a gated script → no snapshot at any tick before the gate opens
   - transition: command A drops X; the config changes to gated command B → X's snapshot reappears before B's verdict; B drops X → removed, one `filter-dropped`
-  - change while paused: command A drops X; `HALT` is created; the config changes to counter command B → over several ticks B never runs, X has no snapshot and is absent from `d.open_issues()`, and no `sprint-plan` item is filed (AC-034); then the filter is removed, the tracker is made unreachable and `HALT` is removed → on the first tick X's snapshot is present from the last successful read, X is in `d.open_issues()`, and the counter is still empty
-  - void: a gated run for X; the config changes A→B→A (or the tracker read drops X then returns it) before the gate opens → no verdict and no event from that run, and X runs once more
+  - void: a gated run for X; the config changes A→B before the gate opens → no verdict and no event from A's run, and B's verdict decides X
+  - the tracker closes an admitted X and then reports it open again with the same content → X runs once more before it is published
   - selection during a run: a gated run for X; a `PlanDone` including X before the gate opens → no event, X not run again, its snapshot unchanged
-  - selected then left out during a run: a gated run for X exiting 2; a `PlanDone` including X, the owner's reply, and a revised `PlanDone` leaving X out, all before the gate opens, X's content unchanged → the run's verdict applies to X as a candidate: snapshot removed, one `filter-dropped`, and the counter shows no second run
   - a new `Daemon` on the same state → the dropped issue runs once more before any snapshot appears
   - proposal then tracker edit → the proposed issue's snapshot is byte-identical and the counter shows no run; owner reply then a `PlanDone` leaving it out → it is judged again (AC-074)
   - while `Proposing`, an admitted issue's tracker title changes and the issue closes; `PlanDone` with it, approval → snapshot present, issue record title equals the earlier title, the `requirements` item's request names the earlier title
   - while `Proposing`, a new issue is admitted; an empty `PlanDone` → after the next tick a new `sprint-plan` item is filed; a second empty `PlanDone` with no new admission → the sprint stays in `WaitingForIssues` and no item is filed (AC-015)
-  - `stop_launches` while a gated script with a child runs → the script's process group is gone
+  - `stop_launches`, or dropping the `Daemon`, while a gated script with a child runs → the script's process group is gone
 - `crates/integrations/tests/tracker_contract.rs`: fixtures gain `user.login` (GitHub) and `creator { name }` (Linear, plus one `null`); assertions on `author`.
 - `crates/core` config test: `[tracker] filter` parses; `crates/server` settings test: a tracker save sets and clears `filter` (`tracker_settings_save_sets_and_clears_the_filter`); generated types match.
 
