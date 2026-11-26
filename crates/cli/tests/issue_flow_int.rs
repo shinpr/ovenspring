@@ -1854,3 +1854,171 @@ fn a_work_turn_that_cannot_resume_starts_over_in_a_new_session() {
     assert!(prompt.contains("# Context"), "{prompt}");
     assert!(!d.halt_file().exists());
 }
+
+/// ACME-160 passes every step until its pull request gets two comments from a writer. The
+/// executor applies the first and declines the second, and its correction asks for a test review;
+/// the test review finds `T002`, which the executor applies, then passes; quality runs and the
+/// correction is pushed.
+fn comments_then_test_review_script() -> Value {
+    let mut script = straight("ACME-160");
+    script.insert(
+        "review-response@ACME-160".into(),
+        json!([
+            {"change": {"path": "src/ACME-160.ts", "content": "refunds\n"},
+             "output": {"status": "completed", "taskName": "comments", "changeSummary": "Subtract refunds",
+                        "requiresTestReview": true, "dispositions": [
+                            {"id": "$COMMENT_1", "disposition": "apply", "reason": "the total must subtract refunds"},
+                            {"id": "$COMMENT_2", "disposition": "decline", "reason": "archived orders widen the outcome"}]}},
+            {"change": {"path": "tests/ACME-160.test.ts", "content": "asserts the total\n"},
+             "output": {"status": "completed", "taskName": "T002", "changeSummary": "Assert the refunded total",
+                        "requiresTestReview": true, "dispositions": [
+                            {"id": "T002", "disposition": "apply", "reason": "the test asserts no total"}]}}
+        ]),
+    );
+    script.insert(
+        "test-review@ACME-160".into(),
+        json!([
+            {"output": {"status": "needs_revision", "qualityIssues": [
+                {"id": "T002", "description": "The refund test asserts nothing about the total."}]}},
+            {"output": {"status": "pass", "prior_feedback_reconciliation": [
+                {"id": "T002", "prior_disposition": "apply", "status": "resolved"}]}}
+        ]),
+    );
+    Value::Object(script)
+}
+
+/// Runs ACME-160 until it merges, after its correction of the comments was pushed.
+fn run_comments_then_test_review(refuse_replies: bool) -> (Env, Arc<FakeGitHub>) {
+    let env = Env::new();
+    env.configure(CONFIG);
+    env.add_branch("develop");
+    env.script_agents(&comments_then_test_review_script());
+    let mut gh = always_passing(&env, requiring_test());
+    gh.permissions.insert("acme-dev".into(), Permission::Write);
+    gh.on_open = vec![
+        writer_comment("ovenspring/ACME-160", "The total ignores refunds."),
+        writer_comment("ovenspring/ACME-160", "Include archived orders too."),
+    ];
+    gh.refuse_replies
+        .store(refuse_replies, std::sync::atomic::Ordering::SeqCst);
+    let gh = Arc::new(gh);
+    let mut d = daemon(
+        &env,
+        services(
+            gh.clone(),
+            Arc::new(RecordingChannel::default()),
+            Arc::new(RecordingTracker::default()),
+        ),
+    );
+    d.begin_issue("ACME-160", "Order totals", vec![]).unwrap();
+    run_until(
+        &mut d,
+        60,
+        |_| {},
+        |d| stage(d, "ACME-160") == Stage::Merged,
+    );
+    (env, gh)
+}
+
+// AC: "each new comment from configured bots or write-access accounts is judged as a finding,
+//     and each is answered in its thread with the commit that applied it or the reason it was
+//     declined (AC-022)"; GH-17: also when a test review with findings, the executor's judgment
+//     of those findings and quality ran between the judgment and the push.
+// Behavior: two writer comments judged -> test review finds T002 -> the executor applies T002 ->
+//     the test review passes -> quality, handed the applied comment -> the correction is pushed
+//     -> after that push, each comment has its reply in its thread, the applied one naming the
+//     pushed commit.
+// @lane: integration
+// @dependency: daemon, flow, handoff, fake agent, FakeGitHub
+#[test]
+fn each_judged_comment_is_answered_after_a_test_review_of_its_correction() {
+    let (env, gh) = run_comments_then_test_review(false);
+
+    let steps = filed_steps(&env, "ACME-160");
+    let judged = steps.iter().position(|s| s == "review-response").unwrap();
+    assert_eq!(
+        steps[judged..],
+        [
+            "review-response",
+            "test-review",
+            "review-response",
+            "test-review",
+            "quality"
+        ]
+    );
+    // The correction is the commit after its quality run; its push is the next push.
+    let events = env.events();
+    let committed = events
+        .iter()
+        .rposition(|e| e["event"] == "committed" && e["after"] == "quality")
+        .unwrap();
+    let pushed = committed
+        + events[committed..]
+            .iter()
+            .position(|e| e["event"] == "pushed")
+            .unwrap();
+    let correction = events[pushed]["sha"].as_str().unwrap();
+    let answered: Vec<(usize, &Value)> = events
+        .iter()
+        .enumerate()
+        .filter(|(_, e)| e["event"] == "replied")
+        .collect();
+    assert!(
+        answered.iter().all(|(i, _)| *i > pushed),
+        "{answered:?} before the push at {pushed}"
+    );
+    let replies = gh.replies();
+    assert_eq!(replies.len(), 2, "{replies:?}");
+    assert!(
+        replies
+            .iter()
+            .any(|r| r.contains(&format!("review-comment-1 Applied in {correction}."))),
+        "{replies:?} name no {correction}"
+    );
+    assert!(
+        replies
+            .iter()
+            .any(|r| r.contains("review-comment-2 Not applied: archived orders widen the outcome")),
+        "{replies:?}"
+    );
+    // The quality run after the correction checks the comment the executor applied.
+    let scope = handoffs(&env, "quality", None, "correction_findings");
+    let ids: Vec<&Value> = scope
+        .iter()
+        .flat_map(|s| s.as_array().unwrap())
+        .map(|f| &f["id"])
+        .collect();
+    assert_eq!(ids, [&json!("review-comment-1")], "{scope:?}");
+}
+
+// AC: GH-17: "A reply that cannot be posted leaves a record."
+// Behavior: GitHub refuses every reply -> each judged comment has a `reply-failed` event naming
+//     it and GitHub's answer.
+// @lane: integration
+// @dependency: daemon, flow, fake agent, FakeGitHub
+#[test]
+fn a_reply_github_refuses_is_recorded_for_its_comment() {
+    let (env, gh) = run_comments_then_test_review(true);
+
+    assert_eq!(gh.replies(), Vec::<String>::new());
+    let failed: Vec<Value> = env
+        .events()
+        .into_iter()
+        .filter(|e| e["event"] == "reply-failed")
+        .collect();
+    let comments: Vec<&str> = failed
+        .iter()
+        .map(|e| e["comment"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        comments,
+        ["review-comment-1", "review-comment-2"],
+        "{failed:?}"
+    );
+    assert!(
+        failed
+            .iter()
+            .all(|e| e["error"].as_str().unwrap().contains("403")),
+        "{failed:?}"
+    );
+}

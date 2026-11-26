@@ -1091,10 +1091,10 @@ fn after_commit(s: &mut IssueState, after: CommitPoint, limits: Limits) -> Vec<A
                 run(s, Step::Design)
             }
             Some(Origin::Round) => recheck_round(s, limits),
+            // The comments are answered once the commit that applied them is pushed.
             Some(Origin::PrComments) => {
-                s.origin = None;
                 s.stage = Stage::Pushing;
-                vec![Action::AnswerComments, Action::Push]
+                vec![Action::Push]
             }
             Some(Origin::Document | Origin::TestReview) | None => start_round(s),
         },
@@ -1572,7 +1572,12 @@ fn pull_request(s: &mut IssueState, fact: &Fact, limits: Limits) -> Vec<Action> 
         Fact::Pushed if s.stage == Stage::Pushing => {
             s.refused = None;
             s.stage = Stage::Ci;
-            vec![]
+            if s.origin == Some(Origin::PrComments) {
+                s.origin = None;
+                vec![Action::AnswerComments]
+            } else {
+                vec![]
+            }
         }
         Fact::ChecksPassed if s.stage == Stage::Ci => {
             s.stage = Stage::WaitingBots;
@@ -2336,10 +2341,8 @@ mod tests {
                     vec!["review-response"],
                 ),
                 (answered(&json!([apply("doc", None)])), vec!["quality"]),
-                (
-                    quality("pass"),
-                    vec!["commit after quality", "AnswerComments", "Push"],
-                ),
+                (quality("pass"), vec!["commit after quality", "Push"]),
+                (Fact::Pushed, vec!["AnswerComments"]),
             ],
             Limits::default(),
         );
@@ -2736,10 +2739,8 @@ mod tests {
                     answered(&json!([apply("review-comment-1", None)])),
                     vec!["quality"],
                 ),
-                (
-                    quality("pass"),
-                    vec!["commit after quality", "AnswerComments", "Push"],
-                ),
+                (quality("pass"), vec!["commit after quality", "Push"]),
+                (Fact::Pushed, vec!["AnswerComments"]),
             ],
             Limits::default(),
         );

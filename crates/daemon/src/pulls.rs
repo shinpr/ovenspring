@@ -547,36 +547,47 @@ impl Daemon {
     }
 
     /// Replies in each judged comment's thread: the commit that applied it, or the reason it was
-    /// declined. The reviewer names each finding by the comment it judges.
+    /// declined. The reviewer names each finding by the comment it judges. A reply that cannot be
+    /// posted is recorded as a `reply-failed` event naming the comment and why.
     pub(crate) fn answer_comments(&mut self, key: &str) -> Result<(), DaemonError> {
         let record = self.record_of(key)?;
         let Some(pr) = record.flow.pr else {
             return Ok(());
         };
-        let Some(StepOutput::Executor(judged)) = record.output(Step::ReviewResponse) else {
+        let Some(StepOutput::Executor(judged)) =
+            record.output_at(Step::ReviewResponse, crate::handoff::CORRECTION_JUDGMENT)
+        else {
             return Ok(());
         };
         let gh = self.github()?;
-        let all = match gh.comments(pr) {
-            Ok(c) => c,
-            Err(e) => return self.github_error(key, &e),
-        };
+        let all = gh.comments(pr).map_err(|e| e.to_string());
         for d in &judged.dispositions {
-            let Some(comment) = all.iter().find(|c| c.key() == d.id) else {
-                continue;
-            };
             let text = match d.disposition {
-                Disposition::Apply => match &record.last_commit {
-                    Some(commit) => format!("Applied in {commit}."),
-                    None => continue,
-                },
-                Disposition::Decline => format!("Not applied: {}", d.reason),
+                Disposition::Apply => record
+                    .last_commit
+                    .as_ref()
+                    .map(|commit| format!("Applied in {commit}."))
+                    .ok_or_else(|| "no commit of the correction is recorded".to_owned()),
+                Disposition::Decline => Ok(format!("Not applied: {}", d.reason)),
             };
-            match gh.reply(pr, comment, &comments::factory_reply(&text)) {
-                Ok(()) => self.event(
+            let posted = text.and_then(|text| {
+                let comment = all
+                    .as_ref()
+                    .map_err(Clone::clone)?
+                    .iter()
+                    .find(|c| c.key() == d.id)
+                    .ok_or_else(|| "no comment on the pull request has this key".to_owned())?;
+                gh.reply(pr, comment, &comments::factory_reply(&text))
+                    .map(|()| text)
+                    .map_err(|e| e.to_string())
+            });
+            match posted {
+                Ok(text) => self.event(
                     &json!({"event": "replied", "issue": key, "comment": d.id, "text": text}),
                 )?,
-                Err(e) => self.github_error(key, &e)?,
+                Err(error) => self.event(
+                    &json!({"event": "reply-failed", "issue": key, "comment": d.id, "error": error}),
+                )?,
             }
         }
         Ok(())

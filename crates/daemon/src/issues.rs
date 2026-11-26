@@ -153,7 +153,12 @@ impl IssueRecord {
     }
 
     pub fn output(&self, step: Step) -> Option<StepOutput> {
-        let path = self.outputs.get(step.as_str())?;
+        self.output_at(step, step.as_str())
+    }
+
+    /// The output of `step` kept under the output `key`.
+    pub fn output_at(&self, step: Step, key: &str) -> Option<StepOutput> {
+        let path = self.outputs.get(key)?;
         let value = serde_json::from_str(&fs::read_to_string(path).ok()?).ok()?;
         StepOutput::parse(step, value).ok()
     }
@@ -770,7 +775,7 @@ impl Daemon {
                 && !matches!(&fact, Fact::Done {output, ..}
                 if output.check_result() != Some(ovenspring_core::output::CheckResult::Blocked));
             if item.front.status == Status::Done && !failed_check {
-                let key = ovenspring_core::output::output_key(step, unit);
+                let key = crate::handoff::kept_under(r.flow.origin, step, unit);
                 let found = fs::read_to_string(&item.front.out)
                     .ok()
                     .and_then(|t| serde_json::from_str(&t).ok())
