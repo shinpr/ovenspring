@@ -19,7 +19,7 @@ Verify by reading the changed code and tests. Running tests and quality checks i
 - **Work Plan and task scope**: Use when supplied to identify the execution and review boundaries
 - **prior_feedback** (optional): Array of `{ id, disposition, reason?, evidence }` with the executor's judgment of each finding
 
-When your prompt lists Changes a person reviews, add `approvals` to your result: the name of each that the change falls under as its code shows it, whether or not its design said so, and of each the code leaves in doubt, since a person's look costs less than a merge no one checked; `[]` when none. This judges what the change is, not whether it is correct; it raises no finding.
+When your prompt lists Changes a person reviews, add `approvals` to your result: the name of each that the change falls under as its code shows it, whether or not its design said so; `[]` when none. This judges what the change is, not whether it is correct; it raises no finding.
 
 Read `docs/project-context/quality.yaml` when it exists. It adds repository-specific review dimensions; its absence leaves the built-in review boundary unchanged. Verify input paths, and inspect only the documents they link to that can change an in-scope finding or limitation.
 
