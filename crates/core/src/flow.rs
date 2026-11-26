@@ -1007,11 +1007,18 @@ fn executed(
     if step == Step::ReviewResponse {
         return corrected_by_executor(s, e, limits);
     }
-    if e.requires_test_review {
+    if test_review_follows(s, e) {
         s.after = Some(After::NextTask);
         return check(s, Check::TestReview);
     }
     next_task_or_redo(s)
+}
+
+/// Whether the executor's work passes the test review: when it asks for one, outside a review
+/// round. A round's reviews recheck the tests of its correction themselves, the completion of
+/// what that correction left incomplete included.
+fn test_review_follows(s: &IssueState, e: &crate::output::ExecutorOutput) -> bool {
+    e.requires_test_review && s.origin != Some(Origin::Round)
 }
 
 /// After the scope check, or after the PRD's analysis: the UI Spec, ADR and design documents.
@@ -1037,7 +1044,10 @@ fn next_task_or_redo(s: &mut IssueState) -> Vec<Action> {
         s.task += 1;
         return run(s, Step::Implement);
     }
-    s.origin = None;
+    // A round correction's origin carries its pending rechecks past the quality run.
+    if s.origin != Some(Origin::Round) {
+        s.origin = None;
+    }
     run(s, Step::Quality)
 }
 
@@ -1240,7 +1250,7 @@ fn corrected_by_executor(
         s.stage = Stage::Gate;
         return vec![Action::AnswerComments, Action::RunGate];
     }
-    if e.requires_test_review {
+    if test_review_follows(s, e) {
         s.after = Some(After::Correction(origin));
         check(s, Check::TestReview)
     } else {
@@ -1852,13 +1862,6 @@ mod tests {
         )
     }
 
-    fn doc_pass_test_review() -> Fact {
-        done(
-            "test-review",
-            json!({"status": "pass", "testFiles": [], "reviewBasis": "skeleton"}),
-        )
-    }
-
     fn synced(status: &str) -> Fact {
         done(
             "design-sync",
@@ -1927,13 +1930,17 @@ mod tests {
         json!({"id": id, "disposition": "decline", "reason": "optional hardening", "review": review})
     }
 
+    fn planned_tasks(tasks: usize) -> Vec<PlannedTask> {
+        (1..=tasks)
+            .map(|i| PlannedTask {
+                path: format!("tasks/plan-task-{i:02}.md"),
+            })
+            .collect()
+    }
+
     fn planned(tasks: usize, units: usize) -> Fact {
         Fact::Planned {
-            tasks: (1..=tasks)
-                .map(|i| PlannedTask {
-                    path: format!("tasks/plan-task-{i:02}.md"),
-                })
-                .collect(),
+            tasks: planned_tasks(tasks),
             units: (0..units).map(|u| vec![u]).collect(),
         }
     }
@@ -2483,6 +2490,53 @@ mod tests {
     }
 
     #[test]
+    fn stubs_after_a_round_correction_are_completed_in_review_and_the_rechecks_follow() {
+        // A small issue (no task files) and a planned one: the incomplete work is implemented
+        // again without a test review, and the quality run leads to the round's rechecks.
+        for tasks in [0, 2] {
+            let mut s = IssueState {
+                tasks: planned_tasks(tasks),
+                ..at(running("quality"))
+            };
+            let steps = vec![
+                (quality("pass"), ROUND.to_vec()),
+                (reviewed("code-review/1", code_findings()), vec![]),
+                (
+                    reviewed("security-review", security_pass()),
+                    vec!["review-response"],
+                ),
+                (
+                    answered(&json!([apply("F001", Some("code-review/1"))])),
+                    vec!["quality"],
+                ),
+                (quality("stub_detected"), vec![]),
+                (Fact::Stubs { tasks: vec![0] }, vec!["implement"]),
+                (implemented(true), vec!["quality"]),
+                (
+                    quality("pass"),
+                    vec!["commit after quality", "code-review/1", "rerun-check"],
+                ),
+            ];
+            for (i, (fact, expected)) in steps.into_iter().enumerate() {
+                let (n, actions) = step(&s, &fact, Limits::default());
+                assert_eq!(
+                    names(&actions),
+                    expected,
+                    "{tasks} tasks, fact {i}: {fact:?}"
+                );
+                if i >= 3 {
+                    assert_eq!(
+                        n.phase(),
+                        Some(crate::phase::Phase::Review),
+                        "{tasks} tasks, fact {i}"
+                    );
+                }
+                s = n;
+            }
+        }
+    }
+
+    #[test]
     fn a_review_that_could_not_run_waits_for_the_round_then_goes_to_the_lead_who_may_rerun_it() {
         let s = drive(
             at(running("quality")),
@@ -2880,7 +2934,43 @@ mod tests {
     }
 
     #[test]
-    fn a_finding_kept_through_two_corrections_with_a_test_review_goes_to_the_lead() {
+    fn a_round_correction_asking_for_a_test_review_goes_to_quality_then_the_rechecks() {
+        let s = drive(
+            at(running("quality")),
+            vec![
+                (quality("pass"), ROUND.to_vec()),
+                (reviewed("code-review/1", code_findings()), vec![]),
+                (
+                    reviewed("security-review", security_pass()),
+                    vec!["review-response"],
+                ),
+                (
+                    done(
+                        "review-response",
+                        json!({"status": "completed", "taskName": "t",
+                               "changeSummary": "Escape commas", "testsAdded": ["a.int.test.ts"],
+                               "requiresTestReview": true, "newTestsPassed": true,
+                               "dispositions": [apply("F001", Some("code-review/1"))]}),
+                    ),
+                    vec!["quality"],
+                ),
+            ],
+            Limits::default(),
+        );
+        assert_eq!(s.phase(), Some(crate::phase::Phase::Review));
+        let s = drive(
+            s,
+            vec![(
+                quality("pass"),
+                vec!["commit after quality", "code-review/1", "rerun-check"],
+            )],
+            Limits::default(),
+        );
+        assert_eq!(s.phase(), Some(crate::phase::Phase::Review));
+    }
+
+    #[test]
+    fn a_finding_kept_through_two_corrections_goes_to_the_lead() {
         let kept = || {
             reviewed(
                 "code-review/1",
@@ -2889,23 +2979,14 @@ mod tests {
                        [{"id": "F001", "prior_disposition": "apply", "status": "maintained", "evidence": "e"}]}),
             )
         };
-        let corrected = || {
-            done(
-                "review-response",
-                json!({"status": "completed", "taskName": "t", "changeSummary": "Escape commas",
-                       "filesModified": ["a.ts"], "testsAdded": ["a.test.ts"],
-                       "requiresTestReview": true, "newTestsPassed": true,
-                       "dispositions": [apply("F001", Some("code-review/1"))]}),
-            )
-        };
+        let corrected = || answered(&json!([apply("F001", Some("code-review/1"))]));
         let s = drive(
             at(running("quality")),
             vec![
                 (quality("pass"), ROUND.to_vec()),
                 (reviewed("security-review", security_pass()), vec![]),
                 (kept(), vec!["review-response"]),
-                (corrected(), vec!["test-review"]),
-                (doc_pass_test_review(), vec!["quality"]),
+                (corrected(), vec!["quality"]),
                 (
                     quality("pass"),
                     vec!["commit after quality", "code-review/1", "rerun-check"],
