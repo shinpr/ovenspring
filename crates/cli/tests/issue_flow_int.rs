@@ -2171,18 +2171,20 @@ fn replies_owed_when_the_daemon_stopped_after_the_push_are_posted_after_the_rest
     );
     let root = env.fake_bin.parent().unwrap().to_path_buf();
     std::fs::write(root.join("release-ACME-160-quality"), "").unwrap();
-    let quality_done = || {
-        d.store().active_items().unwrap().iter().any(|p| {
-            let front = d.store().read_item(p).unwrap().front;
-            front.step == Step::Quality && front.status == ovenspring_core::item::Status::Done
-        })
-    };
-    assert!(support::wait_until(30, quality_done));
-    // The pass that takes the quality run in commits and pushes, then stops at the first reply.
+    // The pass that takes the finished quality run in commits and pushes, then stops at the first
+    // reply. Passes before the agent's exit is processed take nothing.
     gh.stop_at_reply
         .store(true, std::sync::atomic::Ordering::SeqCst);
-    let stopped = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| d.tick()));
-    assert!(stopped.is_err(), "the daemon reached a reply");
+    let stopped = support::wait_until(30, || {
+        match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| d.tick())) {
+            Err(_) => true,
+            Ok(ticked) => {
+                ticked.unwrap();
+                false
+            }
+        }
+    });
+    assert!(stopped, "the daemon reached a reply");
     let applied = applying_commit(&env);
     assert_eq!(
         git(&env.origin, &["rev-parse", "ovenspring/ACME-160"]),
