@@ -1006,13 +1006,18 @@ fn executed(
     if step == Step::ReviewResponse {
         return corrected_by_executor(s, e, limits);
     }
-    // Completing what a round correction left incomplete stays in the review loop, whose reviews
-    // recheck the tests themselves.
-    if e.requires_test_review && s.origin != Some(Origin::Round) {
+    if test_review_follows(s, e) {
         s.after = Some(After::NextTask);
         return check(s, Check::TestReview);
     }
     next_task_or_redo(s)
+}
+
+/// Whether the executor's work passes the test review: when it asks for one, outside a review
+/// round. A round's reviews recheck the tests of its correction themselves, the completion of
+/// what that correction left incomplete included.
+fn test_review_follows(s: &IssueState, e: &crate::output::ExecutorOutput) -> bool {
+    e.requires_test_review && s.origin != Some(Origin::Round)
 }
 
 /// After the scope check, or after the PRD's analysis: the UI Spec, ADR and design documents.
@@ -1244,9 +1249,7 @@ fn corrected_by_executor(
         s.stage = Stage::Gate;
         return vec![Action::AnswerComments, Action::RunGate];
     }
-    // The round's reviews recheck the correction's tests themselves; only a pull request
-    // comment correction passes the test review.
-    if origin == Origin::PrComments && e.requires_test_review {
+    if test_review_follows(s, e) {
         s.after = Some(After::Correction(origin));
         check(s, Check::TestReview)
     } else {
@@ -2936,7 +2939,43 @@ mod tests {
     }
 
     #[test]
-    fn a_finding_kept_through_two_corrections_needing_a_test_review_goes_to_the_lead() {
+    fn a_round_correction_asking_for_a_test_review_goes_to_quality_then_the_rechecks() {
+        let s = drive(
+            at(running("quality")),
+            vec![
+                (quality("pass"), ROUND.to_vec()),
+                (reviewed("code-review/1", code_findings()), vec![]),
+                (
+                    reviewed("security-review", security_pass()),
+                    vec!["review-response"],
+                ),
+                (
+                    done(
+                        "review-response",
+                        json!({"status": "completed", "taskName": "t",
+                               "changeSummary": "Escape commas", "testsAdded": ["a.int.test.ts"],
+                               "requiresTestReview": true, "newTestsPassed": true,
+                               "dispositions": [apply("F001", Some("code-review/1"))]}),
+                    ),
+                    vec!["quality"],
+                ),
+            ],
+            Limits::default(),
+        );
+        assert_eq!(s.phase(), Some(crate::phase::Phase::Review));
+        let s = drive(
+            s,
+            vec![(
+                quality("pass"),
+                vec!["commit after quality", "code-review/1", "rerun-check"],
+            )],
+            Limits::default(),
+        );
+        assert_eq!(s.phase(), Some(crate::phase::Phase::Review));
+    }
+
+    #[test]
+    fn a_finding_kept_through_two_corrections_goes_to_the_lead() {
         let kept = || {
             reviewed(
                 "code-review/1",
@@ -2945,15 +2984,7 @@ mod tests {
                        [{"id": "F001", "prior_disposition": "apply", "status": "maintained", "evidence": "e"}]}),
             )
         };
-        let corrected = || {
-            done(
-                "review-response",
-                json!({"status": "completed", "taskName": "t", "changeSummary": "Escape commas",
-                       "filesModified": ["a.ts"], "testsAdded": ["a.test.ts"],
-                       "requiresTestReview": true, "newTestsPassed": true,
-                       "dispositions": [apply("F001", Some("code-review/1"))]}),
-            )
-        };
+        let corrected = || answered(&json!([apply("F001", Some("code-review/1"))]));
         let s = drive(
             at(running("quality")),
             vec![
