@@ -34,19 +34,19 @@ describe('runSentence', () => {
   it.each([
     [
       'a run under way, in the present',
-      run({ role: 'lead', step: 'resolution', result: 'running', endedAt: null }),
-      { who: 'Lead', what: 'is judging the findings' },
+      run({ role: 'executor', step: 'review-response', result: 'running', endedAt: null }),
+      { who: 'Executor', what: 'is judging the findings' },
     ],
     [
-      'a resolution under way with the findings it judges',
+      'a judgment under way with the findings it judges',
       run({
-        role: 'lead',
-        step: 'resolution',
+        role: 'executor',
+        step: 'review-response',
         result: 'running',
         endedAt: null,
         detail: { ...none, judging: 4 },
       }),
-      { who: 'Lead', what: 'is judging the 4 findings' },
+      { who: 'Executor', what: 'is judging the 4 findings' },
     ],
     [
       'a check with what it found',
@@ -64,9 +64,13 @@ describe('runSentence', () => {
       { who: 'Reviewer', what: 'checked the design against the code', result: 'consistent' },
     ],
     [
-      'a resolution with how it judged',
-      run({ role: 'lead', step: 'resolution', detail: { ...none, applied: 1, declined: 1 } }),
-      { who: 'Lead', what: 'judged the 2 findings', result: '1 applied · 1 declined' },
+      'a judgment with how it came out',
+      run({
+        role: 'executor',
+        step: 'review-response',
+        detail: { ...none, applied: 1, declined: 1 },
+      }),
+      { who: 'Executor', what: 'judged the 2 findings', result: '1 applied · 1 declined' },
     ],
     [
       'an implement with its task',

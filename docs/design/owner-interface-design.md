@@ -77,7 +77,7 @@ PRD R6, R9, AC-002, AC-007 to AC-012, AC-053, AC-055 to AC-060.
 ### Channel
 
 - [x] **When** the core requests an owner decision, the system shall post its message (UI Spec M-01 to M-07) and record a pending decision with the message's link (AC-029)
-- [x] **While** any delivered decision or ready-to-merge pull request waits on the owner, the system shall post one reminder (M-12) listing each with its link once every hour, counted from the daemon's start or the last reminder; the working agreements' pull request is not listed, since the review thread links it (AC-068)
+- [x] **While** any delivered decision or ready-to-merge pull request waits on the owner, the system shall post one reminder (M-12) listing only items waiting at least an hour since delivery or readiness, with their links, at most once an hour; the working agreements' pull request is not listed, since the review thread links it (AC-068)
 - [x] **When** an owner presses Approve, the system shall record the approval with the Slack user, the time, the message link and, for a merge, the commit sha shown, and update the message to show who approved (AC-032)
 - [x] **If** someone who is not an owner presses a button, **then** the system shall record nothing and tell that person privately why (AC-032)
 - [x] **When** an owner replies in a decision's thread, the system shall pass the reply to the waiting step as the answer; a merge request is answered only with its buttons (AC-029, AC-017)

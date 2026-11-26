@@ -33,7 +33,7 @@ Before implementation or execution, identify:
 - authentication setup;
 - required environment variables and external stubs.
 
-Use the repository's existing seed and authentication mechanisms. Create per-test data with unique identifiers and clean it through the supported API, database fixture, or teardown path. When a required prerequisite is unavailable and adding it is outside approved scope, return the missing prerequisite instead of substituting fixture behavior.
+Use the repository's existing seed and authentication mechanisms. Create per-test data with unique identifiers and clean it through the supported API, database fixture, or teardown path. When a required prerequisite is unavailable and adding it is outside the work's scope, return the missing prerequisite instead of substituting fixture behavior.
 
 ## Assertion and Viewport Rules
 

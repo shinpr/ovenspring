@@ -15,7 +15,7 @@ Each document fixes one class of decision that the repository alone cannot suppl
 
 - **ADR** — Records one durable technical choice and the options it beat, so later work can tell a deliberate decision from an accident. Without it a future change either re-runs the same comparison or silently reverses it. `Accepted` records the currently selected means, not an obligation to retain it: when later evidence supports a smaller sufficient choice, update or supersede the decision while the outcome, desired-future requirements, and non-goals remain true. End-to-end implementation design belongs to the Design Doc, schedule and repository tasks to the Work Plan.
 
-- **UI Spec** — Records screen structure, transitions, component/state contracts, and visual acceptance before components exist, so decomposition is decided before implementation instead of per-component during it. Create one when those decisions remain open; reuse an approved UI Spec or go straight to the Design Doc when one evident repository-supported pattern already determines them. Technical implementation and API contracts belong to the Design Doc.
+- **UI Spec** — Records screen structure, transitions, component/state contracts, and visual acceptance before components exist, so decomposition is decided before implementation instead of per-component during it. Create one when those decisions remain open; reuse an existing UI Spec or go straight to the Design Doc when one evident repository-supported pattern already determines them. Technical implementation and API contracts belong to the Design Doc.
 
 - **Design Doc** — Records the complete implementation design for the scope of the requirements: flows, contracts, change impact, and verification strategy. Task execution treats it as the primary technical baseline, so implementation does not silently invent missing How. The same baseline turns anything written in it into planned and implemented work, so release execution, production operation, and other work outside the repository change stay out of it; a requirement that describes such work is met by designing the capability it uses. When repository evidence invalidates technical How while the outcome, desired-future requirements, and non-goals remain true, correct the implementation and the affected technical artifact through their owning workflow without reopening product requirements. Technology selection rationale belongs to an ADR, schedule and assignments to the Work Plan.
 
@@ -27,7 +27,7 @@ Each document fixes one class of decision that the repository alone cannot suppl
 |------------------|----------------|----------------|
 | Small | None | Direct implementation |
 | Medium | Design Doc → Work Plan | Start with Design Doc |
-| Large | PRD → Design Doc → Work Plan | Continue after PRD approval |
+| Large | PRD → Design Doc → Work Plan | Continue after the owner passes the PRD |
 
 Build one path in this order:
 

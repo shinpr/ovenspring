@@ -3,7 +3,7 @@
 /**
  * What an issue in progress is doing: one per step it runs, and one per wait in its merge.
  */
-export type Activity = "reading-the-issue" | "writing-the-prd" | "reviewing-the-prd" | "reading-the-code" | "choosing-documents" | "making-a-prototype" | "reading-the-screens" | "writing-the-ui-spec" | "reviewing-the-ui-spec" | "recording-decisions" | "reviewing-decisions" | "writing-the-design" | "checking-the-design" | "reviewing-the-design" | "comparing-designs" | "writing-test-plans" | "planning" | "reviewing-the-plan" | "splitting-tasks" | "implementing" | "reviewing-tests" | "quality-checks" | "committing" | "reviews-running" | "judging-findings" | "applying-findings" | "rechecking" | "pushing" | "waiting-for-ci" | "fixing-ci" | "resolving-a-conflict" | "waiting-for-bots" | "waiting-for-approval" | "checking-merge" | "blocked-on-git-hub";
+export type Activity = "reading-the-issue" | "writing-the-prd" | "reviewing-the-prd" | "reading-the-code" | "choosing-documents" | "making-a-prototype" | "reading-the-screens" | "writing-the-ui-spec" | "reviewing-the-ui-spec" | "recording-decisions" | "reviewing-decisions" | "writing-the-design" | "checking-the-design" | "reviewing-the-design" | "comparing-designs" | "writing-test-plans" | "planning" | "reviewing-the-plan" | "splitting-tasks" | "implementing" | "reviewing-tests" | "quality-checks" | "committing" | "reviews-running" | "applying-findings" | "rechecking" | "pushing" | "waiting-for-ci" | "fixing-ci" | "resolving-a-conflict" | "waiting-for-bots" | "waiting-for-approval" | "checking-merge" | "blocked-on-git-hub";
 
 /**
  * What every launch gets, whatever its role.
@@ -427,11 +427,11 @@ round: number | null,
  */
 found: number | null, 
 /**
- * What a resolution applied and declined.
+ * What the step a check's findings were handed to applied and declined.
  */
 applied: number | null, declined: number | null, 
 /**
- * The findings a resolution under way is judging.
+ * The findings a step under way is judging.
  */
 judging: number | null, 
 /**
@@ -633,7 +633,7 @@ reviewPart: ReviewPart | null, };
 /**
  * Serialized by its name, the same as [`Step::as_str`].
  */
-export type Step = "requirements" | "prd" | "prd-review" | "codebase-analysis" | "scope-check" | "prototype" | "ui-analysis" | "ui-spec" | "ui-spec-review" | "adr" | "adr-review" | "design" | "design-verify" | "design-review" | "design-sync" | "test-design" | "work-plan" | "plan-review" | "decompose" | "implement" | "test-review" | "quality" | "code-review" | "security-review" | "rerun-check" | "resolution" | "review-response" | "fix-ci" | "merge-base" | "exception" | "sprint-plan" | "facts" | "sprint-review" | "agreements-check" | "conversation" | "run-commands";
+export type Step = "requirements" | "prd" | "prd-review" | "codebase-analysis" | "scope-check" | "prototype" | "ui-analysis" | "ui-spec" | "ui-spec-review" | "adr" | "adr-review" | "design" | "design-verify" | "design-review" | "design-sync" | "test-design" | "work-plan" | "plan-review" | "decompose" | "implement" | "test-review" | "quality" | "code-review" | "security-review" | "rerun-check" | "review-response" | "fix-ci" | "merge-base" | "exception" | "sprint-plan" | "facts" | "sprint-review" | "agreements-check" | "conversation" | "run-commands";
 
 export type TaskCount = { number: number, of: number, };
 

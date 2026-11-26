@@ -35,7 +35,7 @@ Tests here guarantee accepted behavior, and the next agent reads every existing 
 
 ## Data Layer Testing
 
-Mock-based tests are sufficient when data access is only a dependency of the behavior under test. Verify against the project's real database engine or its accepted equivalent when the subject is a query, repository implementation, schema constraint, or migration compatibility. Resolve the test environment from repository configuration; when no representative environment exists and adding one is outside the approved work, report the missing verification decision.
+Mock-based tests are sufficient when data access is only a dependency of the behavior under test. Verify against the project's real database engine or its accepted equivalent when the subject is a query, repository implementation, schema constraint, or migration compatibility. Resolve the test environment from repository configuration; when no representative environment exists and adding one is outside the work's scope, report the missing verification decision.
 
 Cross-check data-access code against the schema source named in the Design Doc or repository configuration. Schema-source verification is required to prove table, column, type, constraint, or dialect compatibility; successful mocks prove behavior only at the mocked boundary.
 
@@ -47,7 +47,7 @@ A capability probe passes when it uses the consumer's boundary and asserts the e
 
 ## Test Organization
 
-Follow the repository's established test paths, runner routing, and naming. When establishing an approved new convention, separate test types only when their setup, runner, or environment differs.
+Follow the repository's established test paths, runner routing, and naming. When establishing a new convention, separate test types only when their setup, runner, or environment differs.
 
 ## Regression Testing
 

@@ -25,7 +25,7 @@ export const InReview: Story = {
     const canvas = within(canvasElement)
     await expect(canvas.getByRole('heading', { level: 1 })).toHaveTextContent(inReview.title)
     await expect(canvas.getByText(/is judging findings/)).toHaveTextContent(
-      'Lead is judging findings · for 3 min follow'
+      'Executor is judging findings · for 3 min follow'
     )
     // The line's own "follow" comes before the path's.
     const follows = canvas.getAllByRole('button', { name: 'follow' })
@@ -36,7 +36,9 @@ export const InReview: Story = {
     await expect(within(path).getByText(/^now/)).toBeVisible()
     await userEvent.click(within(path).getByRole('button', { name: 'follow' }))
     await expect(args.onOpenRun).toHaveBeenCalledWith(runs[0]?.id)
-    await expect(within(path).getByText(/^Next: the executor corrects/)).toBeVisible()
+    await expect(
+      within(path).getByText(/^Next: the quality checks, then the reviews check again/)
+    ).toBeVisible()
     await expect(canvas.getByText('Medium')).toBeVisible()
     await expect(canvas.getByText('3 findings: 2 applied, 1 being judged.')).toBeVisible()
     await expect(

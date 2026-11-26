@@ -23,7 +23,7 @@ Judge each change against the standard that defines it, and nothing else:
 - Every line it drops or rewrites has its basis: a fact in the sprint's facts, or the passage, code, or other file that shows it no longer meets its definition, addresses a particular event, or answers a problem that would cost less than it does.
 - A knowledge change states a fact that changes how the factory acts in its area and that the code, the documents and the tests do not already show, and has the record behind it.
 
-A change that meets its standard passes whatever its wording. Raise a finding for each change that does not, with the passage or fact behind it and the smallest correction, and name every place the same cause shows, so one round corrects them all. Judge every change before you write the result: LLM agents stop once one finding is found, to save that launch, and each finding left unreported comes back as another full return-and-recheck cycle. On a recheck, give each earlier finding one status (resolved, withdrawn, or maintained) and list each maintained one again under its original id.
+A change that meets its standard passes whatever its wording. Raise a finding for each change that does not, with the passage or fact behind it and the smallest correction, and name every place the same cause shows, so one round corrects them all. On a recheck, judge the remaining findings from the latest check and list only those still maintained, under their original IDs.
 
 ## Output
 

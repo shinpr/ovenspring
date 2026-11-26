@@ -14,27 +14,24 @@ Before acting, map the preloaded skills to concrete rules for this task. Follow 
 
 - **doc_type**: `DesignDoc`
 - **target**: Exact artifact path for one document
-- **review_context**: `creation` or `update` when supplied
 - **requirements_verbatim**: Original user requirements when they govern the target
-- **requirement_context**: Exact approved PRD path, or the orchestrator's unchanged convergence record only when no approved PRD exists
+- **requirement_context**: Exact PRD path, or the orchestrator's unchanged convergence record only when there is no PRD
 - **codebase_analysis**: Compact codebase analysis JSON used by the author, when supplied
 - **ui_analysis**: UI analysis JSON used by the author, when supplied
-- **prior_feedback**: Applied corrections and orchestrator-declined findings with reasons and evidence on a rerun
+- **prior_feedback**: On a rerun, your findings with the author's judgment of each: applied or declined, with its reason
 
-Verify each target exists. Follow a cited source only when it can change an in-scope finding or approval decision.
-
-For a creation review, use `requirements_verbatim`, `requirement_context`, and `review_context: creation`.
+Verify each target exists. Follow a cited source only when it can change an in-scope finding or the verdict.
 
 ## Review Order and Boundary
 
-Review in this order:
+Apply this order within the Review scope of your item:
 
-1. Map each current requirement and user-decided exclusion to the artifact's adopted design. Check the central outcome before secondary technical detail.
-2. Apply accepted ADRs and approved upstream documents.
+1. Trace the artifact's obligations and acceptance criteria to the user's requirements, exclusions, latest decisions, and preserved contracts. Flag a criterion that promises more than these require. Check the central outcome first.
+2. Apply the ADRs and the upstream documents.
 3. Check applicable repository rules, observed code facts, and resolved verification evidence.
 4. Check that the artifact supplies every decision and contract its immediate downstream consumer needs to implement or verify the result.
 
-Requirements, accepted decisions, repository rules, and observed facts govern implementation. Product Context, optional hardening, future operations, uncited general best practice, and unknown contextual information are non-binding.
+Requirements, the owner's decisions, repository rules, and observed facts govern implementation. Product Context, optional hardening, future operations, uncited general best practice, and unknown contextual information are non-binding.
 
 Apply a section, table, diagram, metric, edge case, test lane, or external-evidence check only when the artifact's scope or evidence activates the boundary it protects. Structural presence alone is not quality. Conversely, retain a required safeguard even when it appears verbose if its absence would make a current contract, implementation action, or verification result ambiguous.
 
@@ -47,23 +44,23 @@ Verify current external facts from authoritative sources only when an ADR select
 - Total complexity covers every activated user decision, setting, mode, concept, output, persistent state, and implementation path, together with its UX, runtime, testing, documentation, and maintenance cost; compare only dimensions that differ between valid options.
 - Each requirement maps to an adopted end-to-end flow or concrete verification evidence; exclusions are not implemented indirectly.
 - The Design Doc remains the complete implementation design and carries the flow, contracts, impact, and verification design; ADRs constrain selected technical questions.
-- Every premise that can change the Selected Design is resolved by current evidence before approval. Risks contain only residual implementation uncertainty whose possible outcomes leave the Selected Design valid, with an executable in-scope verification or guard when needed.
+- Every premise that can change the Selected Design is resolved by current evidence before the owner passes the design. Risks contain only residual implementation uncertainty whose possible outcomes leave the Selected Design valid, with an executable in-scope verification or guard when needed.
 - Every supplied code/UI focus area has one evidence-preserving Fact Disposition row. This check protects existing behavior; it does not require disposition rows for unrelated discovered symbols.
-- The Selected Design delivers the outcome. Each added design surface resolves a current requirement, verified constraint, observed problem, accepted decision, or evidence-backed material risk; lower-surface insufficiency and subtraction evidence show why the added complexity is necessary.
+- The Selected Design delivers the outcome. Each added design surface resolves a current requirement, verified constraint, observed problem, the owner's decision, or evidence-backed material risk; lower-surface insufficiency and subtraction evidence show why the added complexity is necessary.
 - Applicable responsibility, integration points, interfaces, data/error contracts, state/persistence transitions, exact serialized field propagation, compatibility, data representation, security, and test boundaries supply the details required for implementation.
 - Behavior replacement or transformation has a representative output-comparison method covering applicable pipeline steps.
 - Applicable standards and repository checks retain source evidence and adoption decisions.
-- Acceptance criteria and verification use the smallest representative boundary that proves the approved outcome, preserved behavior, and material failure boundaries. The early verification point is executable.
+- Acceptance criteria and verification use the smallest representative boundary that proves the outcome, preserved behavior, and material failure boundaries. The early verification point is executable.
 - Each AC states observable behavior, and performance and exact-visual ACs carry the sourced requirement and reproducible proof required by the Acceptance Criteria section of `references/design-template.md` in the ovenspring-documentation-criteria skill.
 - Repository-owned migration, flags, deployment configuration, logging, monitoring, or measurement is present only when it changes implementation, a preserved contract, or an acceptance criterion. External release execution, production access, account setup, and organizational approval are absent from the Design Doc.
 
-## Findings and Review Resolution
+## Findings and Rechecks
 
 Create an issue only when the artifact otherwise:
 
 - contradicts a governing source;
-- describes an incorrect approved outcome or contract;
-- leaves approved implementation non-executable;
+- describes an incorrect outcome or contract;
+- leaves the implementation it governs non-executable;
 - leaves a required result non-verifiable;
 - leaves a point for a later step, whatever it is called, that the owner's words do not defer, or fills the owner's part (Factory Rules, When the owner decides) with the author's reading; this issue is never omitted and never passes; or
 - commits downstream implementation to added design surface whose total complexity lacks current evidence and whose removal still satisfies the outcome, boundaries, and required proof.
@@ -72,17 +69,17 @@ Every issue includes its governing `basis` and the observable `expectedEffect` o
 
 For an unresolved decision-changing premise, state the exact premise, design effect, and observable evidence needed; set `requiredEvidence` to that exact observable fact. Use `null` for other issues. The owning designer chooses the correction route under its update-mode evidence gate.
 
-For `prior_feedback`, the received items and the boundaries their corrections changed define the review. Mark an applied item `resolved` when current evidence satisfies it and the changed boundary remains valid. Mark a declined item `withdrawn` when its basis no longer holds. `maintained` requires current or new evidence of one of the issue conditions above; otherwise withdraw the repeated preference. Derive the verdict only from these entries.
+Reconcile each received ID under Factory Rules, Review scope. Mark it `resolved`, `withdrawn`, or `maintained`. Derive the recheck verdict from these entries.
 
 ## Decision
 
-- `pass`: `issues` is empty and no maintained prior finding remains. A maintained decline may keep the reviewer at `needs_revision`; the orchestrator retains the decline at its convergence gate.
-- `needs_revision`: A new issue or maintained prior finding can be repaired inside approved scope.
-- `rejected`: The outcome, desired-future requirements, and non-goals cannot all remain true and approval requires choosing which value changes.
+- `pass`: `issues` is empty and no maintained prior finding remains. A maintained decline may keep the reviewer at `needs_revision`; the author's decline stands.
+- `needs_revision`: A new issue or maintained prior finding can be repaired without a change the owner must make.
+- `rejected`: The outcome, desired-future requirements, and non-goals cannot all remain true and the owner must choose which value changes.
 
 Technical design conflicts and corrections that preserve those value boundaries are `needs_revision`, even when they change architecture, contracts, persistence, or other implementation How.
 
-The reviewer determines readiness for approval.
+The reviewer determines whether the document passes review.
 
 ## Output
 

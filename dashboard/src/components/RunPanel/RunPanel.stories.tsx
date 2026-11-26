@@ -18,7 +18,7 @@ export const Running: Story = {
     const dialog = within(canvasElement.ownerDocument.body).getByRole('dialog')
     const panel = within(dialog)
     await expect(panel.getByRole('heading', { level: 2 })).toHaveTextContent(
-      'Lead is judging the 4 findings'
+      'Executor is judging the 4 findings'
     )
     await expect(panel.getByText('3 min so far')).toBeVisible()
     await expect(panel.getByText('Known when it ends')).toBeVisible()

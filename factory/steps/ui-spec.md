@@ -29,11 +29,12 @@ Before decomposing screens into components, read `references/frontend.md` in the
 
 ## Input Parameters
 
-- **requirement_context**: Exact approved PRD path, or the unchanged convergence record only when no approved PRD exists (required)
+- **requirement_context**: Exact PRD path, or the unchanged convergence record only when there is no PRD (required)
 - **ui_analysis**: UI analysis JSON for existing UI behavior and external evidence (required)
 - **codebase_analysis**: Applicable codebase analysis evidence (optional)
-- **prototype_path**: The prototype page the owner approved, in `docs/ui-spec/assets/{feature-name}/` (optional)
+- **prototype_path**: The prototype page the owner passed, in `docs/ui-spec/assets/{feature-name}/` (optional)
 - **prototype_reference_strength**: `binding` or `reference`, accompanying `prototype_path`.
+- **correction_findings**: The UI Spec review's findings as it returned them, to judge (when revising)
 
 ## Mandatory Process Before UI Spec Creation
 
@@ -53,7 +54,7 @@ Before decomposing screens into components, read `references/frontend.md` in the
 1. **Analyze the prototype page**
    - Start from the screens mapped to the requirements
    - Extract screen structure, transitions, interactions, and conditional display as the page shows them
-   - Catalog only states represented by approved behavior or needed to understand the prototype
+   - Catalog only states represented by the requirements or the prototype or needed to understand the prototype
 
 2. **Build AC traceability**
    - Map each applicable acceptance criterion to prototype screens/elements
@@ -75,7 +76,7 @@ Apply evidenced `simplifications` when their recorded condition holds; otherwise
    - Document existing component path and required modifications
 
 3. **Identify design tokens and patterns**
-   - Record tokens and conventions used by the approved UI or preserved implementation
+   - Record tokens and conventions used by the prototype or preserved implementation
 
 ### Step 4: Draft UI Spec
 
@@ -83,7 +84,7 @@ Apply evidenced `simplifications` when their recorded condition holds; otherwise
 2. **Fill applicable sections**:
    - Screen list with entry conditions and transitions
    - Component tree with decomposition
-   - State x display matrix for each component state required by the requirements, approved UI direction, preserved behavior, or repository/design-system rules
+   - State x display matrix for each component state required by the requirements, the owner's UI direction, preserved behavior, or repository/design-system rules
    - Interaction definitions linked to existing AC IDs when present, otherwise to an unambiguous requirement
    - Existing component reuse map
    - Design tokens (from existing codebase)
@@ -94,9 +95,9 @@ Apply evidenced `simplifications` when their recorded condition holds; otherwise
 
 ## Output Policy
 
-Execute file output immediately (considered approved at execution).
+Write the file immediately.
 
-When revising from review findings, resolve only the supplied defects within the UI outcome and accepted UI decisions. Return the conflicting evidence before changing that boundary.
+When revising from review findings, judge `correction_findings` as Factory Rules, Your item describes, within the UI outcome. Return the conflicting evidence before changing that outcome.
 
 ## Quality Checklist
 
@@ -118,6 +119,6 @@ When revising from review findings, resolve only the supplied defects within the
 
 1. **This document is canonical**: A prototype is an attachment, and a difference resolves in favor of this document. Its recorded reference strength decides only how far implementation follows it: under `binding` the prototype's rendering is implemented as is except where this document states otherwise, under `reference` only what this document records reaches implementation.
 2. **Requirement-driven design**: Every interaction and state must trace back to the requirement context, preserving AC IDs when present.
-3. **State completeness**: Define every state activated by requirements, approved UI direction, preserved behavior, or repository/design-system rules.
+3. **State completeness**: Define every state activated by requirements, the owner's UI direction, preserved behavior, or repository/design-system rules.
 4. **Reuse first**: Use supplied evidence to check same-responsibility components before proposing new ones. Document the decision.
 5. **Testable interactions**: Interaction definitions should be specific enough to derive test cases from (though test implementation is outside UI Spec scope).

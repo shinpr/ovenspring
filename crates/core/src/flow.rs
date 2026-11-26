@@ -13,8 +13,8 @@ use ts_rs::TS;
 
 use crate::config::Role;
 use crate::output::{
-    Approval, CheckResult, Decision, DocumentStatus, ExceptionAction, ExecutorStatus,
-    QualityStatus, ResolutionOutput, Review, Scale, StepOutput,
+    self, Approval, CheckResult, CorrectionOwner, Decision, Disposition, DocumentStatus,
+    ExceptionAction, ExecutorStatus, FindingDisposition, QualityStatus, Review, Scale, StepOutput,
 };
 pub use crate::step::Step;
 use crate::step::{Check, Document};
@@ -168,7 +168,6 @@ impl CommitPoint {
             | Step::CodeReview
             | Step::SecurityReview
             | Step::RerunCheck
-            | Step::Resolution
             | Step::ReviewResponse
             | Step::Exception
             | Step::SprintPlan
@@ -235,7 +234,7 @@ impl Stage {
     }
 }
 
-/// Whose findings a `resolution` judges, and so who corrects them and what rechecks.
+/// Whose findings are being corrected, and so who receives them and what rechecks.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum Origin {
@@ -281,8 +280,10 @@ pub struct Round {
     pub passed: BTreeSet<Review>,
     /// Reviews that own a finding under correction: they recheck after it.
     pub correcting: BTreeSet<Review>,
-    /// The executor corrects after the author (the resolution applied findings to both).
-    pub executor_follows: bool,
+    /// The Design Doc's author corrects after the executor's quality run: the executor found the
+    /// document, not the code, is what a finding shows wrong.
+    #[serde(default)]
+    pub author_follows: bool,
     /// A step of the round that could not finish: a review, or `rerun-check`.
     pub stuck: Option<Step>,
     /// Consecutive corrections whose applied finding a re-review maintained.
@@ -318,7 +319,7 @@ pub struct IssueState {
     pub redoing: bool,
     /// Number of post-implementation review units (1 unless a large change is split).
     pub units: usize,
-    /// Whose findings the current `resolution` and correction belong to.
+    /// Whose findings the current correction belongs to.
     pub origin: Option<Origin>,
     /// The check whose findings are being corrected (a document check or `test-review`).
     pub check: Option<Check>,
@@ -844,10 +845,12 @@ fn item_ended(s: &mut IssueState, fact: &Fact, limits: Limits) -> Vec<Action> {
         Fact::Stuck { step, unit } if reviewing => {
             if let Some(review) = Review::of(*step, *unit) {
                 s.round.pending.remove(&review);
+                s.round.correcting.insert(review);
             } else if *step == Step::RerunCheck {
                 s.round.rerun_check = false;
+                s.round.stuck = Some(*step);
             }
-            s.round.stuck = Some(*step);
+            s.round.stuck.get_or_insert(*step);
             round_progress(s)
         }
         // The lead could not find a way forward either: the way out is the owner's.
@@ -913,7 +916,6 @@ fn done(s: &mut IssueState, step: Step, output: &StepOutput, limits: Limits) -> 
                 }
             }
         },
-        StepOutput::Resolution(r) => resolved(s, r),
         StepOutput::Exception(e) => after_exception(s, e.action),
         StepOutput::DocumentReview(_)
         | StepOutput::Verifier(_)
@@ -984,7 +986,7 @@ fn document_done(
     }
     // An author run again for applied findings: the check that raised them rechecks.
     if s.correcting() {
-        return corrected_by_author(s, limits);
+        return corrected_by_author(s, &d.dispositions, limits);
     }
     // `decompose` writes no document: it ends through `Fact::Planned`, built from its task files.
     match step.document() {
@@ -1003,7 +1005,7 @@ fn executed(
         return step_failed(s, step);
     }
     if step == Step::ReviewResponse {
-        return corrected_by_executor(s, e.requires_test_review, limits);
+        return corrected_by_executor(s, e, limits);
     }
     if e.requires_test_review {
         s.after = Some(After::NextTask);
@@ -1085,6 +1087,10 @@ fn after_commit(s: &mut IssueState, after: CommitPoint, limits: Limits) -> Vec<A
         }
         CommitPoint::DesignSync => await_approval(s, Approve::Design),
         CommitPoint::Quality => match s.origin {
+            Some(Origin::Round) if s.round.author_follows => {
+                s.round.author_follows = false;
+                run(s, Step::Design)
+            }
             Some(Origin::Round) => recheck_round(s, limits),
             Some(Origin::PrComments) => {
                 s.origin = None;
@@ -1100,8 +1106,8 @@ fn after_commit(s: &mut IssueState, after: CommitPoint, limits: Limits) -> Vec<A
     }
 }
 
-/// A check's result. Findings go to `resolution`; a maintained applied finding returns to its
-/// corrector; a clear check moves on.
+/// A check's result. Findings, and a maintained applied finding, go to the step that wrote what
+/// the check reviewed; a clear check moves on.
 fn checked(s: &mut IssueState, step: Step, result: CheckResult) -> Vec<Action> {
     let Some(check) = step.check() else {
         return vec![];
@@ -1114,7 +1120,7 @@ fn checked(s: &mut IssueState, step: Step, result: CheckResult) -> Vec<Action> {
             } else {
                 Origin::Document
             });
-            run(s, Step::Resolution)
+            correct(s, check)
         }
         CheckResult::MaintainedApply => {
             s.attempts += 1;
@@ -1127,8 +1133,8 @@ fn checked(s: &mut IssueState, step: Step, result: CheckResult) -> Vec<Action> {
     }
 }
 
-/// The corrector for the current check's applied findings: the document's author, run again in
-/// update mode, or the executor.
+/// The receiver of the current check's findings, who judges and corrects them: the document's
+/// author, run again in update mode, or the executor.
 fn correct(s: &mut IssueState, check: Check) -> Vec<Action> {
     run(
         s,
@@ -1148,11 +1154,8 @@ fn check_cleared(s: &mut IssueState, cleared: Check) -> Vec<Action> {
         Check::UiSpecReview => commit_then(s, CommitPoint::UiSpecReview),
         Check::AdrReview => commit_then(s, CommitPoint::AdrReview),
         Check::DesignSync => commit_then(s, CommitPoint::DesignSync),
-        // Whether the design needs what it adds is judged before its claims are checked, while it is
-        // smallest; checking first would have a correction make sound what it should have removed.
-        Check::DesignReview => check(s, Check::DesignVerify),
-        // The Design Doc is compared with every other Design Doc, so none is left contradicting it.
-        Check::DesignVerify => check(s, Check::DesignSync),
+        // DesignVerify is retained for issues saved by earlier versions.
+        Check::DesignReview | Check::DesignVerify => check(s, Check::DesignSync),
         Check::PlanReview => run(s, Step::Decompose),
         Check::TestReview => match s.after.take() {
             Some(After::Correction(origin)) => {
@@ -1160,54 +1163,6 @@ fn check_cleared(s: &mut IssueState, cleared: Check) -> Vec<Action> {
                 run(s, Step::Quality)
             }
             Some(After::NextTask | After::ReturnToRound) | None => next_task_or_redo(s),
-        },
-    }
-}
-
-fn resolved(s: &mut IssueState, r: &ResolutionOutput) -> Vec<Action> {
-    if r.decision == Decision::Ask {
-        return ask(s, Step::Resolution);
-    }
-    match s.origin {
-        Some(Origin::Round) => {
-            s.round.correcting = r
-                .dispositions
-                .iter()
-                .filter(|d| d.disposition == crate::output::Disposition::Apply)
-                .filter_map(|d| d.review)
-                .collect();
-            if r.dispositions
-                .iter()
-                .any(|d| d.disposition == crate::output::Disposition::Apply && d.review.is_none())
-            {
-                s.round.correcting.extend(s.round.findings.iter().copied());
-            }
-            s.round
-                .correcting
-                .extend(s.round.maintained.iter().copied());
-            let maintained = !s.round.maintained.is_empty();
-            s.round.findings.clear();
-            s.round.maintained.clear();
-            s.round.executor_follows = r.executor_applies() || maintained;
-            if r.author_applies() {
-                run(s, Step::Design)
-            } else if s.round.executor_follows {
-                run(s, Step::ReviewResponse)
-            } else {
-                round_converged(s)
-            }
-        }
-        Some(Origin::PrComments) if r.applies() => run(s, Step::ReviewResponse),
-        Some(Origin::PrComments) => {
-            s.origin = None;
-            s.stage = Stage::Gate;
-            vec![Action::AnswerComments, Action::RunGate]
-        }
-        // A document check's or the test review's findings: `check` names it.
-        _ => match s.check {
-            Some(check) if r.applies() => correct(s, check),
-            Some(check) => check_cleared(s, check),
-            None => vec![],
         },
     }
 }
@@ -1224,41 +1179,96 @@ fn recheck(s: &mut IssueState, limits: Limits) -> Vec<Action> {
     run(s, check.step())
 }
 
-fn corrected_by_author(s: &mut IssueState, limits: Limits) -> Vec<Action> {
+/// Design sync ends with the author’s judgment. Other checks revisit applied findings.
+fn after_judgment(
+    s: &mut IssueState,
+    dispositions: &[FindingDisposition],
+    limits: Limits,
+) -> Vec<Action> {
+    match s.check {
+        Some(Check::DesignSync) => check_cleared(s, Check::DesignSync),
+        Some(check) if !output::applies(dispositions) => check_cleared(s, check),
+        _ => recheck(s, limits),
+    }
+}
+
+fn corrected_by_author(
+    s: &mut IssueState,
+    dispositions: &[FindingDisposition],
+    limits: Limits,
+) -> Vec<Action> {
     if s.origin != Some(Origin::Round) {
-        return recheck(s, limits);
+        return after_judgment(s, dispositions, limits);
+    }
+    if !output::applies(dispositions) {
+        return return_to_round(s, limits);
     }
     // The corrected Design Doc passes its own review and design sync before the round goes on.
     s.after = Some(After::ReturnToRound);
     check(s, Check::DesignReview)
 }
 
-/// The round after its author correction passed the Design Doc's checks: the executor's share of
-/// the applied findings, or the recheck.
+/// The round after its author correction passed the Design Doc's checks: the reviews recheck.
 fn return_to_round(s: &mut IssueState, limits: Limits) -> Vec<Action> {
     s.origin = Some(Origin::Round);
-    if s.round.executor_follows {
-        return run(s, Step::ReviewResponse);
-    }
     recheck_round(s, limits)
 }
 
 fn corrected_by_executor(
     s: &mut IssueState,
-    requires_test_review: bool,
+    e: &crate::output::ExecutorOutput,
     limits: Limits,
 ) -> Vec<Action> {
-    match s.origin {
-        Some(origin @ (Origin::Round | Origin::PrComments)) => {
-            if requires_test_review {
-                s.after = Some(After::Correction(origin));
-                check(s, Check::TestReview)
+    let Some(origin @ (Origin::Round | Origin::PrComments)) = s.origin else {
+        return after_judgment(s, &e.dispositions, limits);
+    };
+    let own = e
+        .dispositions
+        .iter()
+        .any(|d| d.disposition == Disposition::Apply && d.owner != Some(CorrectionOwner::Author));
+    if origin == Origin::Round {
+        s.round.correcting = owning_reviews(&s.round, &e.dispositions);
+        s.round.findings.clear();
+        s.round.maintained.clear();
+        s.round.author_follows = output::author_applies(&e.dispositions);
+        if !own {
+            return if s.round.author_follows {
+                s.round.author_follows = false;
+                run(s, Step::Design)
             } else {
-                run(s, Step::Quality)
-            }
+                round_converged(s)
+            };
         }
-        _ => recheck(s, limits),
+    } else if !own {
+        s.origin = None;
+        s.stage = Stage::Gate;
+        return vec![Action::AnswerComments, Action::RunGate];
     }
+    if e.requires_test_review {
+        s.after = Some(After::Correction(origin));
+        check(s, Check::TestReview)
+    } else {
+        run(s, Step::Quality)
+    }
+}
+
+/// The round's reviews that raised a finding the executor applied: they recheck after it. A
+/// disposition that names no review belongs to every review that raised a finding.
+fn owning_reviews(round: &Round, dispositions: &[FindingDisposition]) -> BTreeSet<Review> {
+    let raised: BTreeSet<Review> = round.findings.union(&round.maintained).copied().collect();
+    let mut owning = BTreeSet::new();
+    for d in dispositions
+        .iter()
+        .filter(|d| d.disposition == Disposition::Apply)
+    {
+        match d.review {
+            Some(review) => {
+                owning.insert(review);
+            }
+            None => owning.extend(raised.iter().copied()),
+        }
+    }
+    owning
 }
 
 /// Files every review of a fresh round: a code review per unit (three at once) and the security
@@ -1300,15 +1310,19 @@ fn file_reviews(s: &mut IssueState, reviews: Vec<Review>) -> Vec<Action> {
 /// and `rerun-check` runs when a passed review is retained.
 fn recheck_round(s: &mut IssueState, limits: Limits) -> Vec<Action> {
     s.round.number += 1;
+    s.round.rerun_check = !s.round.passed.is_empty();
     if limits.review_rounds.is_some_and(|l| s.round.number > l) {
         return step_failed(s, Step::CodeReview);
     }
-    let reviews: Vec<Review> = std::mem::take(&mut s.round.correcting)
+    file_rechecks(s)
+}
+
+fn file_rechecks(s: &mut IssueState) -> Vec<Action> {
+    let reviews = std::mem::take(&mut s.round.correcting)
         .into_iter()
         .collect();
     let mut actions = file_reviews(s, reviews);
-    if !s.round.passed.is_empty() {
-        s.round.rerun_check = true;
+    if s.round.rerun_check {
         actions.push(Action::File(filing(s, Step::RerunCheck, None)));
     }
     actions
@@ -1338,7 +1352,8 @@ fn reviewed(s: &mut IssueState, review: Review, output: &StepOutput) -> Vec<Acti
             s.round.maintained.insert(review);
         }
         Some(CheckResult::Blocked) | None => {
-            s.round.stuck = Some(review.step());
+            s.round.correcting.insert(review);
+            s.round.stuck.get_or_insert(review.step());
         }
     }
     let mut actions = Vec::new();
@@ -1369,8 +1384,8 @@ fn rerun_checked(s: &mut IssueState, output: &StepOutput) -> Vec<Action> {
     actions
 }
 
-/// When every review of the round has ended: findings to `resolution`, a maintained applied
-/// finding back to its corrector, or the round is complete.
+/// When every review of the round has ended: findings, and a maintained applied finding, to the
+/// executor, or the round is complete.
 fn round_progress(s: &mut IssueState) -> Vec<Action> {
     if !s.round.pending.is_empty() || !s.round.queued.is_empty() || s.round.rerun_check {
         return vec![];
@@ -1379,14 +1394,13 @@ fn round_progress(s: &mut IssueState) -> Vec<Action> {
         return step_failed(s, step);
     }
     if !s.round.findings.is_empty() {
-        return run(s, Step::Resolution);
+        return run(s, Step::ReviewResponse);
     }
     if !s.round.maintained.is_empty() {
         s.round.kept += 1;
         if s.round.kept >= 2 {
             return step_failed(s, Step::CodeReview);
         }
-        s.round.correcting = std::mem::take(&mut s.round.maintained);
         return run(s, Step::ReviewResponse);
     }
     round_converged(s)
@@ -1472,7 +1486,7 @@ fn after_exception(s: &mut IssueState, action: ExceptionAction) -> Vec<Action> {
     match action {
         ExceptionAction::Retry => retry(s, &failed),
         ExceptionAction::Replan => {
-            leave_corrections(s);
+            redirect_author(s, Document::WorkPlan);
             s.tasks.clear();
             s.redo.clear();
             s.redoing = false;
@@ -1480,7 +1494,7 @@ fn after_exception(s: &mut IssueState, action: ExceptionAction) -> Vec<Action> {
             run(s, Step::WorkPlan)
         }
         ExceptionAction::Redesign => {
-            leave_corrections(s);
+            redirect_author(s, Document::Design);
             run(s, Step::Design)
         }
         ExceptionAction::Drop => drop_issue(s),
@@ -1495,9 +1509,13 @@ fn after_exception(s: &mut IssueState, action: ExceptionAction) -> Vec<Action> {
     }
 }
 
-/// A new plan or design starts its documents' checks afresh: what was being corrected belonged to
-/// the plan or design it replaces.
-fn leave_corrections(s: &mut IssueState) {
+/// Returning to the author of the open check carries the correction and its continuation.
+fn redirect_author(s: &mut IssueState, target: Document) {
+    if s.origin == Some(Origin::Document) && s.check.and_then(Check::document) == Some(target) {
+        s.attempts = 0;
+        s.review_round = 0;
+        return;
+    }
     s.origin = None;
     s.check = None;
     s.after = None;
@@ -1515,26 +1533,42 @@ fn retry(s: &mut IssueState, failed: &Cause) -> Vec<Action> {
             vec![Action::Push]
         }
         Cause::Step {
-            step: Step::CodeReview | Step::SecurityReview | Step::RerunCheck,
-        } => start_round(s),
-        Cause::Step { step } => match step.check() {
-            Some(c) if c.document().is_some() => check(s, c),
-            Some(_) | None => {
-                if *step == Step::FixCi {
-                    s.fix_ci_round = 0;
+            step: step @ (Step::RerunCheck | Step::CodeReview | Step::SecurityReview),
+        } => {
+            s.round.rerun_check |= *step == Step::RerunCheck;
+            if s.round.correcting.is_empty() && *step != Step::RerunCheck {
+                s.round.correcting = std::mem::take(&mut s.round.maintained);
+                // Older snapshots recorded only the failed step; completed siblings keep their results.
+                if s.round.correcting.is_empty() {
+                    s.round.correcting = (1..=s.units.max(1))
+                        .map(|unit| Review::CodeReview { unit })
+                        .chain([Review::SecurityReview])
+                        .filter(|r| {
+                            r.step() == *step
+                                && !s.round.passed.contains(r)
+                                && !s.round.findings.contains(r)
+                        })
+                        .collect();
                 }
-                run(s, *step)
             }
-        },
+            s.round.kept = 0;
+            file_rechecks(s)
+        }
+        Cause::Step { step } => {
+            if *step == Step::FixCi {
+                s.fix_ci_round = 0;
+            }
+            run(s, *step)
+        }
         // An operation stops the issue with the state to return to, which `Retry` resumes.
         Cause::Operation { .. } => vec![],
     }
 }
 
-/// New pull request comments are the lead's to judge, each as a finding, like a review's.
+/// New pull request comments go to the executor to judge, each as a finding, like a review's.
 fn judge_comments(s: &mut IssueState) -> Vec<Action> {
     s.origin = Some(Origin::PrComments);
-    run(s, Step::Resolution)
+    run(s, Step::ReviewResponse)
 }
 
 /// Facts about the pushed branch and its pull request.
@@ -1815,19 +1849,6 @@ mod tests {
         )
     }
 
-    fn verified(discrepancies: bool) -> Fact {
-        let d = if discrepancies {
-            json!([{"id": "D001", "status": "drift", "claim": "c"}])
-        } else {
-            json!([])
-        };
-        done(
-            "design-verify",
-            json!({"summary": {"docType": "design-doc", "status": if discrepancies { "needs_review" } else { "consistent" }},
-                   "discrepancies": d, "limitations": []}),
-        )
-    }
-
     fn quality_of(step: &str) -> Fact {
         done(
             step,
@@ -1857,14 +1878,6 @@ mod tests {
         )
     }
 
-    fn responded() -> Fact {
-        done(
-            "review-response",
-            json!({"status": "completed", "taskName": "t", "changeSummary": "Escape commas",
-                   "requiresTestReview": false}),
-        )
-    }
-
     fn quality(status: &str) -> Fact {
         done(
             "quality",
@@ -1888,16 +1901,26 @@ mod tests {
         json!({"status": "needs_revision", "summary": "s", "findings": [{"id": "S001"}]})
     }
 
-    fn resolution(dispositions: &Value) -> Fact {
+    /// The document's author, in update mode, with its judgment of the findings it was handed.
+    fn revised(step: &str, dispositions: &Value) -> Fact {
         done(
-            "resolution",
-            json!({"decision": "proceed", "dispositions": dispositions}),
+            step,
+            json!({"status": "completed", "documentType": "DesignDoc", "path": "docs/design/x.md",
+                   "dispositions": dispositions}),
+        )
+    }
+
+    /// The executor's `review-response`, with its judgment of the findings it was handed.
+    fn answered(dispositions: &Value) -> Fact {
+        done(
+            "review-response",
+            json!({"status": "completed", "taskName": "t", "changeSummary": "Escape commas",
+                   "requiresTestReview": false, "dispositions": dispositions}),
         )
     }
 
     fn apply(id: &str, review: Option<&str>) -> Value {
-        let mut d =
-            json!({"id": id, "disposition": "apply", "basis": "AC-1", "evidence": "a.ts:1"});
+        let mut d = json!({"id": id, "disposition": "apply", "reason": "a.ts:1 breaks AC-1"});
         if let Some(r) = review {
             d["review"] = json!(r);
         }
@@ -1905,8 +1928,7 @@ mod tests {
     }
 
     fn decline(id: &str, review: &str) -> Value {
-        json!({"id": id, "disposition": "decline", "basis": "AC-1", "evidence": "a.ts:1",
-               "reason": "optional hardening", "review": review})
+        json!({"id": id, "disposition": "decline", "reason": "optional hardening", "review": review})
     }
 
     fn planned(tasks: usize, units: usize) -> Fact {
@@ -1974,8 +1996,7 @@ mod tests {
                 (done("codebase-analysis", json!({})), vec!["scope-check"]),
                 (scope_check("medium", false, false), vec!["design"]),
                 (document("design"), vec!["design-review"]),
-                (doc_pass("design-review"), vec!["design-verify"]),
-                (verified(false), vec!["design-sync"]),
+                (doc_pass("design-review"), vec!["design-sync"]),
                 (
                     synced("SKIPPED"),
                     vec!["commit after design-sync", "test-design"],
@@ -2145,8 +2166,7 @@ mod tests {
                     ),
                     vec!["design-review"],
                 ),
-                (doc_pass("design-review"), vec!["design-verify"]),
-                (verified(false), vec!["design-sync"]),
+                (doc_pass("design-review"), vec!["design-sync"]),
                 (
                     synced("NO_CONFLICTS"),
                     vec!["commit after design-sync", "RequestApproval"],
@@ -2195,8 +2215,7 @@ mod tests {
                     ),
                     vec!["design-review"],
                 ),
-                (doc_pass("design-review"), vec!["design-verify"]),
-                (verified(false), vec!["design-sync"]),
+                (doc_pass("design-review"), vec!["design-sync"]),
                 (
                     synced("NO_CONFLICTS"),
                     vec!["commit after design-sync", "test-design"],
@@ -2208,7 +2227,7 @@ mod tests {
     }
 
     #[test]
-    fn one_resolution_judges_the_whole_round_and_only_the_owner_of_an_applied_finding_rechecks() {
+    fn the_executor_judges_the_whole_round_and_only_the_owner_of_an_applied_finding_rechecks() {
         let s = drive(
             at(running("quality")),
             vec![
@@ -2216,13 +2235,12 @@ mod tests {
                 (reviewed("code-review/1", code_findings()), vec![]),
                 (
                     reviewed("security-review", security_pass()),
-                    vec!["resolution"],
-                ),
-                (
-                    resolution(&json!([apply("F001", Some("code-review/1"))])),
                     vec!["review-response"],
                 ),
-                (responded(), vec!["quality"]),
+                (
+                    answered(&json!([apply("F001", Some("code-review/1"))])),
+                    vec!["quality"],
+                ),
                 // The security review passed and is retained: rerun-check judges the diff.
                 (
                     quality("pass"),
@@ -2252,16 +2270,15 @@ mod tests {
                 (reviewed("security-review", security_findings()), vec![]),
                 (
                     reviewed("code-review/1", code_findings()),
-                    vec!["resolution"],
+                    vec!["review-response"],
                 ),
                 (
-                    resolution(&json!([
+                    answered(&json!([
                         apply("F001", Some("code-review/1")),
                         apply("S001", Some("security-review"))
                     ])),
-                    vec!["review-response"],
+                    vec!["quality"],
                 ),
-                (responded(), vec!["quality"]),
                 (
                     quality("pass"),
                     vec!["commit after quality", "code-review/1", "security-review"],
@@ -2280,16 +2297,15 @@ mod tests {
                 (reviewed("security-review", security_findings()), vec![]),
                 (
                     reviewed("code-review/1", code_findings()),
-                    vec!["resolution"],
+                    vec!["review-response"],
                 ),
                 (
-                    resolution(&json!([
+                    answered(&json!([
                         decline("F001", "code-review/1"),
                         apply("S001", Some("security-review"))
                     ])),
-                    vec!["review-response"],
+                    vec!["quality"],
                 ),
-                (responded(), vec!["quality"]),
                 (
                     quality("pass"),
                     vec!["commit after quality", "security-review"],
@@ -2300,9 +2316,9 @@ mod tests {
         let (s, actions) = next(
             &IssueState {
                 origin: Some(Origin::Round),
-                ..at(running("resolution"))
+                ..at(running("review-response"))
             },
-            &resolution(&json!([decline("F001", "code-review/1")])),
+            &answered(&json!([decline("F001", "code-review/1")])),
             Limits::default(),
         );
         assert_eq!(
@@ -2321,25 +2337,27 @@ mod tests {
                 (reviewed("security-review", security_pass()), vec![]),
                 (
                     reviewed("code-review/1", code_findings()),
-                    vec!["resolution"],
+                    vec!["review-response"],
                 ),
                 (
-                    resolution(
-                        &json!([{"id": "F001", "disposition": "apply", "basis": "AC-1",
-                        "evidence": "the Design Doc names five columns; the requirement has six",
-                        "owner": "author", "review": "code-review/1"}]),
-                    ),
+                    answered(&json!([{"id": "F001", "disposition": "apply",
+                        "reason": "the code has the six columns the requirement names; the Design Doc names five",
+                        "owner": "author", "review": "code-review/1"}])),
                     vec!["design"],
                 ),
-                (document("design"), vec!["design-review"]),
-                (doc_issues("design-review"), vec!["resolution"]),
-                (resolution(&json!([apply("I001", None)])), vec!["design"]),
-                (document("design"), vec!["design-review"]),
+                (
+                    revised("design", &json!([apply("F001", Some("code-review/1"))])),
+                    vec!["design-review"],
+                ),
+                (doc_issues("design-review"), vec!["design"]),
+                (
+                    revised("design", &json!([apply("I001", None)])),
+                    vec!["design-review"],
+                ),
                 (
                     doc_reconciled("design-review", "resolved"),
-                    vec!["design-verify"],
+                    vec!["design-sync"],
                 ),
-                (verified(false), vec!["design-sync"]),
                 (
                     synced("NO_CONFLICTS"),
                     vec!["commit after design-sync", "code-review/1", "rerun-check"],
@@ -2384,14 +2402,19 @@ mod tests {
             at(running("design")),
             vec![
                 (document("design"), vec!["design-review"]),
-                (doc_issues("design-review"), vec!["resolution"]),
-                (resolution(&json!([apply("I001", None)])), vec!["design"]),
-                (document("design"), vec!["design-review"]),
+                (doc_issues("design-review"), vec!["design"]),
+                (
+                    revised("design", &json!([apply("I001", None)])),
+                    vec!["design-review"],
+                ),
                 (
                     doc_reconciled("design-review", "maintained"),
                     vec!["design"],
                 ),
-                (document("design"), vec!["design-review"]),
+                (
+                    revised("design", &json!([apply("I001", None)])),
+                    vec!["design-review"],
+                ),
                 (
                     doc_reconciled("design-review", "maintained"),
                     vec!["exception"],
@@ -2403,32 +2426,32 @@ mod tests {
 
     #[test]
     fn a_document_check_is_complete_when_its_findings_are_resolved_or_declined() {
-        drive(
-            at(running("design")),
-            vec![
-                (document("design"), vec!["design-review"]),
-                (doc_issues("design-review"), vec!["resolution"]),
-                (resolution(&json!([apply("I001", None)])), vec!["design"]),
-                (document("design"), vec!["design-review"]),
-                (
-                    doc_reconciled("design-review", "resolved"),
-                    vec!["design-verify"],
-                ),
-                (verified(true), vec!["resolution"]),
-                (
-                    resolution(&json!([decline("D001", "code-review/1")])),
-                    vec!["design-sync"],
-                ),
-                (synced("CONFLICTS_FOUND"), vec!["resolution"]),
-                (resolution(&json!([apply("C001", None)])), vec!["design"]),
-                (document("design"), vec!["design-sync"]),
-                (
-                    synced("NO_CONFLICTS"),
-                    vec!["commit after design-sync", "test-design"],
-                ),
-            ],
-            Limits::default(),
-        );
+        for disposition in ["apply", "decline"] {
+            drive(
+                at(running("design")),
+                vec![
+                    (document("design"), vec!["design-review"]),
+                    (doc_issues("design-review"), vec!["design"]),
+                    (
+                        revised("design", &json!([apply("I001", None)])),
+                        vec!["design-review"],
+                    ),
+                    (
+                        doc_reconciled("design-review", "resolved"),
+                        vec!["design-sync"],
+                    ),
+                    (synced("CONFLICTS_FOUND"), vec!["design"]),
+                    (
+                        revised(
+                            "design",
+                            &json!([{"id": "C001", "disposition": disposition, "reason": "the documents now agree"}]),
+                        ),
+                        vec!["commit after design-sync", "test-design"],
+                    ),
+                ],
+                Limits::default(),
+            );
+        }
     }
 
     #[test]
@@ -2444,13 +2467,9 @@ mod tests {
                         json!({"status": "needs_revision", "testFiles": ["a.int.test.ts"],
                         "reviewBasis": "skeleton", "qualityIssues": [{"id": "T001"}]}),
                     ),
-                    vec!["resolution"],
-                ),
-                (
-                    resolution(&json!([apply("T001", None)])),
                     vec!["review-response"],
                 ),
-                (responded(), vec!["test-review"]),
+                (answered(&json!([apply("T001", None)])), vec!["test-review"]),
                 (
                     done(
                         "test-review",
@@ -2507,7 +2526,7 @@ mod tests {
                         "exception",
                         json!({"action": "retry", "note": "the reviewer's CLI was signed out"}),
                     ),
-                    vec!["code-review/1", "security-review"],
+                    vec!["security-review"],
                 ),
             ],
             Limits::default(),
@@ -2728,16 +2747,18 @@ mod tests {
     }
 
     #[test]
-    fn new_pull_request_comments_go_to_the_lead_and_applied_ones_are_corrected_and_pushed() {
+    fn new_pull_request_comments_go_to_the_executor_and_applied_ones_are_corrected_and_pushed() {
         drive(
             at(Stage::WaitingBots),
             vec![
-                (Fact::BotWaitEnded { comments: true }, vec!["resolution"]),
                 (
-                    resolution(&json!([apply("review-comment-1", None)])),
+                    Fact::BotWaitEnded { comments: true },
                     vec!["review-response"],
                 ),
-                (responded(), vec!["quality"]),
+                (
+                    answered(&json!([apply("review-comment-1", None)])),
+                    vec!["quality"],
+                ),
                 (
                     quality("pass"),
                     vec!["commit after quality", "AnswerComments", "Push"],
@@ -2752,9 +2773,9 @@ mod tests {
         drive(
             at(Stage::WaitingReview),
             vec![
-                (Fact::CommentsArrived, vec!["resolution"]),
+                (Fact::CommentsArrived, vec!["review-response"]),
                 (
-                    resolution(&json!([decline("review-comment-1", "code-review/1")])),
+                    answered(&json!([decline("review-comment-1", "code-review/1")])),
                     vec!["AnswerComments", "RunGate"],
                 ),
             ],
@@ -2901,7 +2922,8 @@ mod tests {
                 "review-response",
                 json!({"status": "completed", "taskName": "t", "changeSummary": "Escape commas",
                        "filesModified": ["a.ts"], "testsAdded": ["a.test.ts"],
-                       "requiresTestReview": true, "newTestsPassed": true}),
+                       "requiresTestReview": true, "newTestsPassed": true,
+                       "dispositions": [apply("F001", Some("code-review/1"))]}),
             )
         };
         let s = drive(
@@ -2933,7 +2955,7 @@ mod tests {
     }
 
     #[test]
-    fn a_rerun_check_that_could_not_run_goes_to_the_lead_who_may_start_the_round_again() {
+    fn a_rerun_check_that_could_not_run_goes_to_the_lead_who_may_retry_the_check() {
         let s = IssueState {
             origin: Some(Origin::Round),
             round: Round {
@@ -2956,7 +2978,7 @@ mod tests {
                 ),
                 (
                     done("exception", json!({"action": "retry", "note": "n"})),
-                    vec!["code-review/1", "security-review"],
+                    vec!["rerun-check"],
                 ),
             ],
             Limits::default(),

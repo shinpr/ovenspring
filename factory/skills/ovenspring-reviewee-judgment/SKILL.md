@@ -119,9 +119,9 @@ Assign one disposition to each problem group:
 - **apply**: the problem or improvement is confirmed and the selected response passed all gates. A required correction is apply when a sufficient, safe response passes the gates; lifecycle cost ranks the eligible responses. A discretionary improvement is apply when the material effect established at gate 2 exceeds its total lifecycle cost. The Authority gate separately determines whether to recommend or execute it;
 - **decline**: evidence establishes no material effect at gate 2, the finding is outside the outcome boundary or reverses an exclusion, or a discretionary improvement's total lifecycle cost equals or exceeds its material effect;
 - **evidence required**: a material unknown could change finding validity, ownership, response selection, or verification. Pause changes for that problem group, continue independent groups, and report the exact evidence needed, its source when known, the decision it controls, and the condition for resuming;
-- **user decision required**: evidence shows the required outcome cannot be achieved without changing a user requirement, explicit constraint, actual consumer obligation, or available authority. A technical reduction alone returns to the orchestrator for affected artifact updates, not renewed user approval. Optional expansion is declined.
+- **user decision required**: evidence shows the required outcome cannot be achieved without changing a user requirement, explicit constraint, actual consumer obligation, or available authority. A technical reduction alone is corrected in the affected artifacts by their owners and needs no user decision. Optional expansion is declined.
 
-Return `evidence required` and `user decision required` to the skill caller. The caller resolves them when it owns the required evidence or decision and otherwise routes them to the responsible authority.
+Resolve `evidence required` and `user decision required` when you own the required evidence or decision; otherwise route them to the responsible authority.
 
 An interim correction must also satisfy the agreed boundary. Report a required unresolved result and its evidence; optional structural improvements remain outside the correction.
 

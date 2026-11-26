@@ -75,7 +75,7 @@ Add a screen-transition or component-tree Mermaid diagram only when the material
 
 #### State x Display Matrix
 
-The matrix contains one row for each state supported by the requirements, approved UI direction, preserved behavior, or repository/design-system rules.
+The matrix contains one row for each state supported by the requirements, the owner's UI direction, preserved behavior, or repository/design-system rules.
 
 | State | Trigger | Display | Interaction / Recovery | Evidence |
 |-------|---------|---------|------------------------|----------|
@@ -199,9 +199,3 @@ Define the key visual states that serve as acceptance benchmarks:
 | Element | Foreground | Background | Ratio Target |
 |---------|-----------|------------|-------------|
 | [Text element] | [Color] | [Color] | [4.5:1 for normal text / 3:1 for large text] |
-
-## Update History
-
-| Date | Version | Changes | Author |
-|------|---------|---------|--------|
-| YYYY-MM-DD | 1.0 | Initial version | [Name] |

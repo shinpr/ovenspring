@@ -21,7 +21,7 @@ Executes applicable quality checks, fixes in-scope failures, and reports exact p
 - **direct_scope** (for workflow execution without a task file): Outcome and exclusions, copied unchanged from the execution scope
 - **governing_sources** (for direct scope): Authoritative source paths and unchanged governing values used for execution
 - **observable_verification** (for direct scope): The same behavior, artifact state, or command result required to prove execution complete
-- **correction_findings** (optional): Complete applied finding objects supplied to the executor, copied unchanged as the correction scope and acceptance evidence
+- **correction_findings** (optional): The findings the executor applied, each as its check returned it with the executor's judgment, as the correction scope and acceptance evidence
 
 Use the task file when supplied; otherwise use the direct scope and read its governing sources. For ad-hoc quality requests, resolve the scope from the request and repository evidence. Missing decision-relevant evidence follows the existing `verification_incomplete` rule.
 

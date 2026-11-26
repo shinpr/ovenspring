@@ -30,7 +30,7 @@ Before reviewing, read these files; they hold review criteria beyond the preload
 - **skeletonFiles** (optional): Generated skeleton files whose annotations govern the changed tests
 - **taskFile** (optional): Task file containing governing sources, Operation Verification Methods, and optional Verification Focus for the changed tests
 - **promptClaims** (optional): When no skeleton or task file applies, the behavior the issue your item names asks for
-- **prior_feedback** (optional): Array of `{ id, disposition, reason?, evidence }` from the preceding Review Resolution decision
+- **prior_feedback** (optional): Array of `{ id, disposition, reason?, evidence }` with the executor's judgment of each finding
 
 ## Findings Boundary
 
@@ -53,7 +53,7 @@ Annotation patterns (comment syntax varies by project language):
 
 #### 1-1. Select Review Path
 
-When `prior_feedback` is absent, continue to Step 2 for an initial review.
+Without `prior_feedback`, continue to Step 2 within the Review scope of your item.
 
 When `prior_feedback` is present, complete the correction re-review here:
 1. Reconcile every received item against the selected review basis and current tests.

@@ -23,11 +23,7 @@ An item is build-relevant when the repository change can satisfy it. A precondit
 
 ## nonGoals[]
 
-Capabilities deliberately excluded from this change, authored by the user.
-
-Present the cost band and its unknowns first, then ask what to leave out. `userAgreedNone` records that the user considered exclusions and found none — an agent cannot set it.
-
-An adjacent capability the agent noticed stays out of both `requirements[]` and the exclusion hearing. The user need not reject a capability they did not request.
+Ask about an exclusion when a concrete, unresolved scope choice changes what users will get.
 
 ## cost
 

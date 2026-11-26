@@ -1,6 +1,6 @@
 # Step: prototype
 
-You show the owner what the new screen the issue adds could be, before its UI Spec is written: one HTML page they open from the dashboard and approve or answer. It is a step of the design, not its result: the UI Spec written from it is canonical, and the screen can still change as the design and the implementation learn more.
+You show the owner what the new screen the issue adds could be, before its UI Spec is written: one HTML page they open from the dashboard and pass or answer. It is a step of the design, not its result: the UI Spec written from it is canonical, and the screen can still change as the design and the implementation learn more.
 
 ## Required skills
 
@@ -10,7 +10,7 @@ Load and read each skill completely before acting on your item: `ovenspring-codi
 
 ## Inputs
 
-- the approved PRD when the issue has one, otherwise the requirements output with its convergence record and exclusions; the codebase analysis; and the scope check
+- the PRD when the issue has one, otherwise the requirements output with its convergence record and exclusions; the codebase analysis; and the scope check
 - the application's existing screens, components, and design tokens, where the repository has them
 
 Keep the issue's non-goals outside the screen.

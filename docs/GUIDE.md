@@ -149,7 +149,7 @@ Each review keeps a note that the sprint's work read and found true, rewrites on
 | Paused | The factory paused itself | `!resume` |
 | Preparation | A design step found something you should know or prepare, and the work goes on | Nothing to answer |
 | Sprint review | Every issue of the sprint has ended | **Close sprint**, or reply |
-| Reminder | Once an hour while anything waits on you | Follow its links |
+| Reminder | Once an hour for items that have waited at least an hour | Follow its links |
 
 **Preview** starts the issue's copy of the product and replies with its local address, so you can check the behavior without reading the diff. **Approve merge** approves that exact commit; if the branch changes afterwards, the factory asks again. **Hold** keeps the pull request unmerged until the sprint review.
 
@@ -186,14 +186,14 @@ The lead first reads the issue as its requester wrote it and defines one observa
 | Scale | When | What runs |
 |---|---|---|
 | Small | The change and its reach are clear from the code | Implementation, then review |
-| Medium | The change needs a design | The lead writes a design, a reviewer verifies it against the code and reviews it, the lead plans tasks, and the executor implements them one at a time, each ending in a check that proves it |
+| Medium | The change needs a design | The lead writes a design, a reviewer checks it against the issue, the relevant code and existing designs, the lead plans tasks, and the executor implements them one at a time, each ending in a check that proves it |
 | Large | The issue contains several independently valuable outcomes | A PRD that you approve, then the same as Medium |
 
-Design documents are written in the issue's branch and merge with the code in one pull request. When the code shows part of a design wrong, both are corrected in that branch.
+Design documents are written in the issue's branch and merge with the code in one pull request. If the design conflicts with another design, the author fixes the conflict or records why the two agree. The factory commits the design and asks for approval if the change requires it. When implementation reveals a mistake in the design, both are corrected on the issue branch.
 
-Agents don't commit. The guard stops `git commit` and `git push`, and the factory commits at fixed points, each after a check passed: a document after its review, the implementation after the repository's quality checks.
+Agents don't commit. The guard stops `git commit` and `git push`, and the factory commits at fixed points, including when a document review ends and when the implementation passes the repository's quality checks.
 
-A code review and a security review run on every issue, as separate runs. The lead judges each finding before anything changes, by whether fixing it is worth the change, and passes only the findings it applies to the executor. Comments on the pull request get the same treatment when they come from an account with write access to the repository or from a review bot listed in Settings. Each gets a reply in its thread, with the commit that applied it or the reason it was declined. Comments from anyone else get no response and change nothing.
+A code review and a security review run on every issue, as separate runs. The executor judges each finding against the issue and records what it fixed or why it declined the change. A finding that calls for a design change goes back to the author. Comments on the pull request get the same treatment when they come from an account with write access to the repository or from a review bot listed in Settings. Each gets a reply in its thread, with the commit that applied it or the reason it was declined. Comments from anyone else get no response and change nothing.
 
 When you list any review bot in Settings, the factory waits after CI passes for the two bots it can track, Claude Code Review and Codex. It waits up to 30 minutes for one that is running. One that shows no sign of running within 3 minutes counts as not installed for that push. With no bot listed, there is no wait.
 
