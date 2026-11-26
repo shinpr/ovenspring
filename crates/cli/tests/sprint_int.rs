@@ -193,6 +193,7 @@ fn start(
             github: Some(gh.clone()),
             channel,
             tracker: Some(tracker.clone()),
+            secrets: Vec::new(),
         },
     );
     d.set_goal(GOAL).unwrap();
@@ -773,6 +774,7 @@ fn the_agreements_reply_asks_the_owner_to_approve_only_when_github_requires_it()
                 github: Some(gh.clone()),
                 channel: channel.clone(),
                 tracker: Some(tracker),
+                secrets: Vec::new(),
             },
         );
         d.set_goal(GOAL).unwrap();
@@ -934,6 +936,7 @@ fn no_sprint_is_proposed_while_no_tracker_is_connected() {
             github: Some(gh),
             channel: Arc::new(RecordingChannel::default()),
             tracker: None,
+            secrets: Vec::new(),
         },
     );
     d.set_goal(GOAL).unwrap();
@@ -964,6 +967,7 @@ fn no_sprint_is_proposed_while_github_is_not_connected() {
             github: None,
             channel: Arc::new(RecordingChannel::default()),
             tracker: Some(tracker),
+            secrets: Vec::new(),
         },
     );
     d.set_goal(GOAL).unwrap();
@@ -1282,6 +1286,7 @@ fn agreements_failing_their_check() -> (
             github: Some(gh.clone()),
             channel: channel.clone(),
             tracker: Some(tracker),
+            secrets: Vec::new(),
         },
     );
     d.set_goal(GOAL).unwrap();

@@ -69,6 +69,7 @@ So that I can analyze a sprint or account for it
 5. An agent CLI reaches its usage limit. The factory pauses, tells the owner why in Slack, and resumes when the owner mentions the bot with `!resume`. The owner can also pause it from Slack when the work is not going as intended.
 6. At the end of the sprint the owner receives the sprint review in Slack: key results judged and the retrospective's agreement changes. The owner replies with what they think of the result, or closes the sprint; closing lets the review's agreement and knowledge changes merge and approves nothing else, the next sprint least of all. The next sprint is proposed on its own, from what the sprint showed and what the owner said about it, and starts when the owner approves that proposal.
 7. The owner downloads the sprint's records and gives them to an agent to analyze where time went.
+8. The repository's tracker accepts issues from anyone. The owner sets a filter command that judges each incoming issue by the owner's own criteria; an issue it drops is removed from intake, so no agent or sprint proposal receives it from then on, and each drop is recorded with its reason.
 
 ### User Journey Diagram
 
@@ -138,11 +139,15 @@ All requirements below are `desired-future`.
   - AC-014: When a pull request changes the factory's configuration, working agreements, knowledge or the repository's agent instructions file, then the merge gate holds it for the owner in either merge setting.
 
 - [ ] **R4 Sprint planning** (source: the factory loop in the design article)
-  - AC-015: When no sprint is running and the product goal is set, then the lead proposes a sprint from the product goal and every open issue: one purpose, stated as the state of the product or its users it reaches, the issues it needs, their dependencies, and key results that judge that state, never the work; what each issue requires is settled in that issue's own steps. The proposal reaches the owner in Slack. A proposal with no issue starts no sprint; the owner is told what is missing, and the lead proposes again once an open issue appears.
+  - AC-015: When no sprint is running and the product goal is set, then the lead proposes a sprint from the product goal and every open issue intake admits (AC-072): one purpose, stated as the state of the product or its users it reaches, the issues it needs, their dependencies, and key results that judge that state, never the work; what each issue requires is settled in that issue's own steps. The proposal reaches the owner in Slack. A proposal with no issue starts no sprint; the owner is told what is missing, and the lead proposes again once intake admits an open issue.
   - AC-056: The product goal is shown in the same place on every dashboard screen after setup, whose last step sets it first, and the owner rewrites it there; the next sprint proposal uses the goal as it stands, and the running sprint continues.
   - AC-057: Every agent launch receives the product goal and the current sprint's purpose, and every message that proposes or reviews a sprint states the product goal it serves.
   - AC-016: When the owner approves a sprint proposal in Slack, then the sprint starts and its independent issues run in parallel, each on its own branch and worktree.
   - AC-017: When the owner answers a sprint proposal with anything other than approval, then the lead revises the proposal from that answer.
+  - AC-072: When the owner sets a filter command in the dashboard's Settings (stored as `[tracker] filter` in `.ovenspring/config.toml`), then intake publishes only the candidates it admits; without a filter, intake admits every candidate. The command runs through `sh -c` with the root of the owner's working tree (the repository checkout the owner works in) as its working directory, so a relative path is relative to the repository, and receives one issue on stdin as JSON: `key`, `title`, `body`, `url`, `labels`, `author`, and `comments`, each with `author` and `body`, from either tracker. Exit 0 admits the issue. Exit 2 drops it: its snapshot and its entry in the factory's open issues are removed, so no agent reads it from then on, it is not counted as open and it prompts no proposal, and an event records its key, URL and the first line of the command's stdout as the reason. Any other exit, a command that cannot start, or a run longer than 60 seconds (fixed, not configurable) is a failure: the issue goes on as without a filter, and an event records its key and what failed. Nothing about a drop or a failure is posted to Slack or the tracker.
+  - AC-073: The filter command runs on new or changed candidate content; an unchanged issue, admitted or dropped, does not run it again on the next poll. When the owner first sets the filter or changes the command, every open candidate is checked once, unchanged ones included; the factory keeps working meanwhile, and a candidate the command has not judged yet is handled as without a filter, so an agent can read it before a later drop removes it from intake. While it runs, the factory remembers each dropped issue's key and a hash of its text; it forgets a key the tracker no longer reports open, so an issue reported open again is checked again. After a restart, each dropped issue is checked once more.
+  - AC-074: An issue stops being a candidate when the lead includes it in a sprint proposal: from then on the work uses the content the lead selected, and later tracker edits neither change it nor run the filter command. An issue that a revised proposal leaves out is a candidate again.
+  - AC-075: The guide states the filter command's contract (AC-072) and gives a short example wrapper.
 
 - [ ] **R5 Issue pipeline** (source: the design article's loop)
   - AC-018: For each issue, the lead reads the issue as its requirement, settles one observable outcome, the non-goals, and each requirement with its source, and judges its scale from repository evidence before anything is designed; when the code already delivers the outcome, the lead closes the issue with the evidence. Each scale runs the implementation workflow the factory's sources define for it: a small change goes to implementation without design documents.
@@ -216,6 +221,10 @@ All requirements below are `desired-future`.
 | Making owner decisions in the dashboard | out-of-scope | Decisions are made in Slack; the dashboard shows state, settings and logs. |
 | Reaching a preview from another machine | out-of-scope | A preview's address is local to the factory's machine; remote access needs a tunnel the owner sets up outside the product. |
 | Windows as a host | out-of-scope | The guard hooks, worktree processes and agent CLIs are targeted at macOS and Linux first. |
+| Showing filter events in the dashboard and notifying the owner of filter failures | future | Covered by shinpr/ovenspring#9. |
+| Holding the filter's dropped issues across restarts, and coping with a very large number of open issues | future | The tracker poll, which reads every open issue each time, gives way first; both are considered together when it does. |
+| Stopping intake when the filter command fails | out-of-scope | A failure lets the issue go on as without a filter and records an event (AC-072). |
+| Filtering beyond intake: changing sprint planning or selection, handling work already in progress, or withdrawing material an agent already read | out-of-scope | The filter acts on intake only, which ends for an issue when the lead proposes it (AC-074). |
 | Repositories with rules on the text the factory writes (commit messages, pull request titles and bodies) | out-of-scope | The factory writes these itself in fixed forms; supporting such rules spreads the authorship over every committing step. A refused commit or a failed check stops the issue and reaches the owner with a recovery procedure (AC-062 to AC-064). |
 
 ## Non-Functional Requirements
@@ -235,7 +244,7 @@ All requirements below are `desired-future`.
 - Credentials never enter the repository, logs, downloads, or prompts (AC-013, AC-047).
 - Approvals carry the identity Slack asserts for the approver (AC-032).
 - What the factory trusts and runs (decisions, approvals, recovery procedures) is kept where agents' launches are not given access, and the launch hook denies any agent action that names it (AC-064).
-- External input that can steer an agent, such as issue text and review comments, is accepted only from the sources the factory trusts for it (AC-022, AC-023).
+- External input that can steer an agent is accepted only from the sources the factory trusts for it: issue text the owner's filter command drops is removed from intake, so no agent reads it from then on (AC-072, AC-073), and review comments are answered only from write-access accounts and configured bots (AC-022, AC-023).
 - The dashboard is local and answers only requests addressed to this machine (AC-055).
 - Production credentials are kept away from the factory's machine; hooks catch honest mistakes and are not the boundary against production (source: the design article).
 
@@ -263,6 +272,7 @@ None sourced for v0.1.0.
 
 1. The owner runs complete sprints on several repositories with real issues and judges the result fit to release as v0.1.0.
 2. During those sprints, decisions reach the owner only when they are the owner's to make, and the owner does not need to read code to approve merges.
+3. An owner whose tracker accepts text from anyone stops the issues their own filter command rejects before any agent reads them, apart from issues read while a newly set or changed command has yet to judge them (AC-073), while issues the command admits or cannot judge keep flowing as without a filter.
 
 ### UI Quality Metrics
 
@@ -293,7 +303,7 @@ None sourced for v0.1.0.
 | Risk | Impact | Probability | Mitigation |
 |------|--------|-------------|------------|
 | A wrong merge reaches the base branch | High | Low | Deterministic gate on the exact commit; held categories; owner merge setting |
-| Prompt injection through issues or review comments | High | Medium | Respond only to write-access accounts and configured bots (AC-023); guard hooks; no production credentials on the machine |
+| Prompt injection through issues or review comments | High | Medium | Respond only to write-access accounts and configured bots (AC-023); the owner's filter command removes the issues it drops from intake (AC-072, AC-073); guard hooks; no production credentials on the machine |
 | Agent CLI changes break launching or output parsing | Medium | Medium | One backend adapter per CLI; failure classification falls back to pausing with the log |
 
 ## Undetermined Items
@@ -315,6 +325,8 @@ None.
 - **Product goal**: where the product is heading, in a short text the owner rewrites as circumstances change; every sprint serves it.
 - **Sprint**: one purpose, the issues it needs, and the key results that show it reached; judged by the owner at its end.
 - **Lead / executor / reviewer / analyzer**: the four roles that do the factory's work.
+- **Intake**: how the factory takes in open tracker issues for agents to read; a **candidate** is an open issue that no sprint proposal includes yet (AC-074).
+- **Filter command**: the owner's own command that admits or drops each candidate; a dropped candidate is removed from intake (AC-072).
 - **Merge gate**: the deterministic check that merges a pull request or holds it.
 - **Held category**: a kind of change the owner must approve before the factory merges it.
 - **Working agreements**: what the team learned about its own work, reviewed at every retrospective.

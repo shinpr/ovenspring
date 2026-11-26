@@ -83,8 +83,8 @@ PRD R4 to R8, R10, R11, AC-002 (the factory's skills), AC-014 and AC-057.
 
 ### Sprint
 
-- [x] **When** no sprint is running, a product goal is set, `[app]` is settled, the factory is not paused, the tracker has been read and a GitHub connection is configured, the system shall file a `sprint-plan` item for the lead with the goal and a snapshot of every open issue (AC-015, AC-060)
-- [x] **When** a proposal holds no issue, the system shall start no sprint, post the lead's message to the owner as a notice with nothing to approve, and propose again once an open issue appears (AC-015)
+- [x] **When** no sprint is running, a product goal is set, `[app]` is settled, the factory is not paused, the tracker has been read and a GitHub connection is configured, the system shall file a `sprint-plan` item for the lead with the goal and a snapshot of every open issue intake admits (AC-015, AC-060)
+- [x] **When** a proposal holds no issue, the system shall start no sprint, post the lead's message to the owner as a notice with nothing to approve, and propose again once intake admits an open issue (AC-015)
 - [x] **When** a `sprint-plan` item is done with a valid proposal, the system shall post the proposal through the channel and wait for the owner (AC-015)
 - [x] **When** the owner approves a sprint proposal, the system shall start the sprint and file `requirements` for every proposed issue whose dependencies are met, up to the configured number of issues at once (AC-016)
 - [x] **If** the owner replies to a proposal without approving, **then** the system shall file a `sprint-plan` item that names the reply (AC-017)
@@ -224,13 +224,13 @@ One process per repository. The event loop runs every half second, well inside t
 ### Data Flow
 
 ```
-tracker poll ─▶ sources/issues/<key>.md ─┐
-goal.md, sprint.json ────────────────────┼─▶ item (board/active/*.md) ─▶ prompt ─▶ agent
-agreements (git show origin/<base>) ─────┘                                         │
-                                                                                     ▼
-            events.jsonl ◀─ flow ◀─ validated outputs/<item>.json ◀─ item set done ─┘
-                               │
-                               └─▶ outward actions (push, PR, comment, post, merge)
+tracker poll ─▶ intake ─▶ sources/issues/<key>.md ─┐
+goal.md, sprint.json ──────────────────────────────┼─▶ item (board/active/*.md) ─▶ prompt ─▶ agent
+agreements (git show origin/<base>) ───────────────┘                                         │
+                                                                                               ▼
+                      events.jsonl ◀─ flow ◀─ validated outputs/<item>.json ◀─ item set done ─┘
+                                         │
+                                         └─▶ outward actions (push, PR, comment, post, merge)
 ```
 
 ### Integration Points List
@@ -474,7 +474,7 @@ System Invariants:
   - A stopped issue is never retried silently: it has an `exception` open, or a pending M-02 or M-09.
 ```
 
-Sprint states: `proposing → awaiting-approval → running → collecting (facts) → reviewing ⇄ checking-agreements → awaiting-review-approval → applying-agreements (only when the review changes agreements or knowledge) → ended`; `proposing → waiting-for-issues` on an empty proposal; any stage → `exception` or `asking` (a question, a recovery or a stop) when it cannot go on. No sprint record means no sprint; the next one begins as `proposing`. A proposal with no issue starts no sprint: the factory posts the lead's message on what is missing as a notice, waits until an open issue appears and proposes again. `applying-agreements` ends when the agreements pull request is merged, by the factory or by the owner as the merge setting says; a review without agreement or knowledge changes skips it. The next sprint waits for it because its launches read the agreements from the base. The agreements commit takes the repository's git identity, as every commit the factory makes; the agreements pull request is observed as an issue's is (§ Observation), and what no agent can fix in an agreements file (a failing check, a close, a conflict with the base) files `exception` on the sprint. The sprint's `exception` keeps the stage it stopped in and offers `retry`, `recover` and `ask`; its stops, recovery and Resolved work as an issue's. Closing the sprint (M-07's Close sprint) lets the review's agreement and knowledge changes merge and approves nothing else: the sprint moves to `applying-agreements`, or ends when nothing changed; the next starts from `proposing` like any sprint, with `sprint-plan`, which reads the ended sprint's review and the owner's replies to it, and the owner's approval of its proposal (M-07, M-01).
+Sprint states: `proposing → awaiting-approval → running → collecting (facts) → reviewing ⇄ checking-agreements → awaiting-review-approval → applying-agreements (only when the review changes agreements or knowledge) → ended`; `proposing → waiting-for-issues` on an empty proposal; any stage → `exception` or `asking` (a question, a recovery or a stop) when it cannot go on. No sprint record means no sprint; the next one begins as `proposing`. A proposal with no issue starts no sprint: the factory posts the lead's message on what is missing as a notice, waits until intake admits an open issue and proposes again. `applying-agreements` ends when the agreements pull request is merged, by the factory or by the owner as the merge setting says; a review without agreement or knowledge changes skips it. The next sprint waits for it because its launches read the agreements from the base. The agreements commit takes the repository's git identity, as every commit the factory makes; the agreements pull request is observed as an issue's is (§ Observation), and what no agent can fix in an agreements file (a failing check, a close, a conflict with the base) files `exception` on the sprint. The sprint's `exception` keeps the stage it stopped in and offers `retry`, `recover` and `ask`; its stops, recovery and Resolved work as an issue's. Closing the sprint (M-07's Close sprint) lets the review's agreement and knowledge changes merge and approves nothing else: the sprint moves to `applying-agreements`, or ends when nothing changed; the next starts from `proposing` like any sprint, with `sprint-plan`, which reads the ended sprint's review and the owner's replies to it, and the owner's approval of its proposal (M-07, M-01).
 
 #### Prompt assembly
 
@@ -588,7 +588,7 @@ A person's commits on the branch need nothing of their own: the gate judges what
 
 #### Tracker
 
-Polled every minute. Each open issue is written to `sources/issues/<key>.md` with its body, comments, labels, relations and URL. Linear: issues of the configured team in unstarted states, and in started states only those the factory started (it holds their record), since an issue someone else started is theirs; relations of type `blocks`. GitHub Issues: open issues of the repository; `dependencies/blocked_by`. When an issue starts, the factory assigns it to the account it acts as and, on Linear, moves it to the team's first started state; when its pull request merges, it marks the issue done and deletes the merged branch (a branch the repository already deleted is left alone). The lead's outward tracker actions (close with evidence, comment) come from validated outputs.
+Polled every minute. Intake publishes each open issue to `sources/issues/<key>.md` with its body, comments, labels, relations and URL, under the rules of `docs/design/issue-filter-design.md` (Selected Design, Publication pass): a candidate the owner's filter command drops has no snapshot, an issue's snapshot is frozen once the lead includes it in a sprint proposal, and only issues with a published snapshot count as open. Linear: issues of the configured team in unstarted states, and in started states only those the factory started (it holds their record), since an issue someone else started is theirs; relations of type `blocks`. GitHub Issues: open issues of the repository; `dependencies/blocked_by`. When an issue starts, the factory assigns it to the account it acts as and, on Linear, moves it to the team's first started state; when its pull request merges, it marks the issue done and deletes the merged branch (a branch the repository already deleted is left alone). The lead's outward tracker actions (close with evidence, comment) come from validated outputs.
 
 ### Data Contracts
 

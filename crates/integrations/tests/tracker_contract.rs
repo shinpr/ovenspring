@@ -31,6 +31,7 @@ fn linear_issue(key: &str, blockers: &serde_json::Value) -> serde_json::Value {
     json!({
         "identifier": key, "title": format!("Title of {key}"), "description": "As written.",
         "url": format!("https://linear.app/acme/issue/{key}"), "priority": 2,
+        "creator": {"name": format!("Creator of {key}")},
         "state": {"name": "Todo", "type": "unstarted"},
         "labels": {"nodes": [{"name": "Feature"}]},
         "comments": {"nodes": [{"body": "Also on mobile.", "user": {"name": "Dana"}}]},
@@ -48,6 +49,7 @@ fn linear_reads_open_issues_across_pages_with_their_open_blockers() {
             {"type": "related", "issue": {"identifier": "ACME-9", "state": {"type": "started"}}}
         ]),
     );
+    second["creator"] = serde_json::Value::Null;
     second["state"] = json!({"name": "In Progress", "type": "started"});
     let t = Recorded::new()
         .on_body(
@@ -69,6 +71,8 @@ fn linear_reads_open_issues_across_pages_with_their_open_blockers() {
     let issues = linear(&t).open_issues().unwrap();
     assert_eq!(issues.len(), 2);
     assert_eq!(issues[0].key, "ACME-1");
+    assert_eq!(issues[0].author, "Creator of ACME-1");
+    assert_eq!(issues[1].author, "");
     assert_eq!(
         (
             issues[0].started,
@@ -103,6 +107,7 @@ fn linear_reads_open_issues_across_pages_with_their_open_blockers() {
         .unwrap()
         .to_owned();
     assert!(query.contains(r#"in: ["unstarted", "started"]"#));
+    assert!(query.contains("creator { name }"));
     assert_eq!(sent[0].body.as_ref().unwrap()["variables"]["team"], "ACME");
 
     let rendered = issues[1].render();
@@ -239,7 +244,7 @@ fn github_issues_reads_open_issues_without_pull_requests_and_with_open_blockers(
     let t = Recorded::new()
         .on((Method::Get, &format!("{REPO}/issues?state=open&per_page=100")), 200, &json!([
             {"number": 12, "title": "Export", "body": "CSV please", "html_url": "https://github.com/acme/storefront/issues/12",
-             "state": "open", "labels": [{"name": "feature"}], "comments": 1,
+             "user": {"login": "octocat"}, "state": "open", "labels": [{"name": "feature"}], "comments": 1,
              "issue_dependencies_summary": {"blocked_by": 1, "blocking": 0}},
             {"number": 13, "title": "Import", "body": null, "html_url": "https://github.com/acme/storefront/issues/13",
              "state": "open", "labels": [], "comments": 0, "issue_dependencies_summary": {"blocked_by": 0, "blocking": 1}},
@@ -256,6 +261,8 @@ fn github_issues_reads_open_issues_without_pull_requests_and_with_open_blockers(
     let keys: Vec<&str> = issues.iter().map(|i| i.key.as_str()).collect();
     assert_eq!(keys, ["GH-12", "GH-13"]);
     assert_eq!(issues[0].depends_on, ["GH-13"]);
+    assert_eq!(issues[0].author, "octocat");
+    assert_eq!(issues[1].author, "");
     assert_eq!(issues[0].comments[0].author, "dana");
     assert_eq!(issues[1].body, "");
     assert!(

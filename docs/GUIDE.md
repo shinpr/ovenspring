@@ -261,6 +261,49 @@ By default every run uses its CLI's auto mode, which checks risky actions. When 
 
 The dashboard listens on `127.0.0.1` only, and answers only requests addressed to `127.0.0.1` or `localhost`, so a page on another site can't reach it through your browser. An SSH port forward still works.
 
+### Tracker issue filter
+
+When anyone can open issues in your tracker, the filter keeps the issues your own command rejects away from every agent. The factory runs the command on each open issue the lead has not yet put in a sprint proposal, and only the issues it admits reach the agents.
+
+Set the command under Connections → Issue tracker in Settings, and leave the field empty for no filter. It is stored as `[tracker] filter` in `.ovenspring/config.toml`.
+
+This example uses `jq` and admits only issues with the `factory-ready` label. Save it as `.ovenspring/filter-issue.sh`, make it executable with `chmod +x .ovenspring/filter-issue.sh`, and enter `./.ovenspring/filter-issue.sh` as the command:
+
+```sh
+#!/bin/sh
+jq -e '(.labels | index("factory-ready")) != null' >/dev/null
+status=$?
+case "$status" in
+  0) exit 0 ;;
+  1) printf '%s\n' 'missing required label: factory-ready'; exit 2 ;;
+  *) exit 1 ;;
+esac
+```
+
+If `jq` is missing or the input cannot be read, the script exits 1 and the issue goes on as if no filter were set.
+
+The factory runs the command once for each new or changed issue; an unchanged issue is not checked again. It runs it through `sh -c` from the repository root, in the factory's environment, and sends one UTF-8 JSON object without a trailing newline on stdin:
+
+```json
+{"key":"...", "title":"...", "body":"...", "url":"...", "labels":["..."], "author":"...", "comments":[{"author":"...", "body":"..."}]}
+```
+
+`author` is the GitHub login or Linear full name; it is empty when the tracker provides none. Each comment has `author` and `body`.
+
+The exit code decides what happens to the issue:
+
+- Exit 0 admits it.
+- Exit 2 drops it. The first line of stdout is the reason.
+- Anything else is a failure: another exit code, a command that cannot start, or a run longer than 60 seconds.
+
+A failure means the issue goes on as if no filter were set, so a broken or missing command lets every issue through. A failure event records the issue key and what failed. The command's stderr is discarded. If the command is still running after 60 seconds or when the factory stops, the factory stops its whole process group.
+
+For a drop, the factory records the issue key, URL and reason in `events.jsonl`. It replaces its own tokens and keys, and anything in a common token format, with `[masked]`. Agents read this event log when they collect sprint facts, so write a reason that names the rule the issue failed without quoting the issue's text, as the example's reason does.
+
+After you set or change the command, issues it has not judged yet stay visible to agents until it does, and the factory checks every open issue once, even one that has not changed.
+
+Once the lead puts an issue in a sprint proposal, the factory keeps the version the lead read and stops checking it. If a revised proposal leaves the issue out, it is checked again.
+
 ## Configuration
 
 Setup writes `.ovenspring/config.toml`, and Settings edits it. The factory reads the file from your checkout, so you can also edit it directly, and a change applies from the next run. Committing it is optional; the factory works the same either way, and committing lets your team see the settings. Unknown keys are errors: the factory keeps running on the last valid file, and Settings shows what is wrong with the new one.
@@ -302,6 +345,7 @@ cli = "codex"
 [tracker]
 kind = "linear"                    # linear | github
 team = "ACME"
+filter = "./.ovenspring/filter-issue.sh"
 
 [slack]
 channel = "C0123456789"

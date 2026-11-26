@@ -1119,6 +1119,7 @@ fn an_issue_is_read_back_from_the_records_its_run_left() {
     *tracker.issues.lock().unwrap() = vec![ovenspring_integrations::tracker::TrackerIssue {
         key: "ACME-123".into(),
         title: "Export order history".into(),
+        author: String::new(),
         body: "As CSV.".into(),
         url: "https://linear.app/acme/issue/ACME-123".into(),
         state: "Todo".into(),
@@ -1142,6 +1143,12 @@ fn an_issue_is_read_back_from_the_records_its_run_left() {
     // The tracker is read before an issue begins, as it is before any sprint plans one.
     d.tick().unwrap();
     d.begin_issue("ACME-123", "Export order history", vec![])
+        .unwrap();
+    // This test begins the issue directly; sprint start copies this link from its selected snapshot.
+    let mut record = d.issue("ACME-123").unwrap().unwrap();
+    record.url = Some("https://linear.app/acme/issue/ACME-123".into());
+    d.store()
+        .write_record(&format!("issues/{}.json", record.key()), &record)
         .unwrap();
     support::run_until(
         &mut d,

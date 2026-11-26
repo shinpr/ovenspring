@@ -18,9 +18,6 @@ use ovenspring_store::{StoreError, item_name};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
-use ovenspring_integrations::http::HttpError;
-
-use crate::records::{self, Service};
 use crate::worktree::git;
 use crate::{Daemon, DaemonError};
 
@@ -242,14 +239,7 @@ impl Daemon {
         if self.issue(key)?.is_some() {
             return Ok(());
         }
-        let record = IssueRecord {
-            url: self
-                .open_issues
-                .iter()
-                .find(|i| i.key == key)
-                .map(|i| i.url.clone()),
-            ..IssueRecord::new(key, title, depends_on)
-        };
+        let record = IssueRecord::new(key, title, depends_on);
         self.save_issue(&record)?;
         self.event(&json!({"event": "issue-begun", "issue": key}))
     }
@@ -1205,74 +1195,6 @@ impl Daemon {
 
     pub(crate) fn worktree_of(&self, key: &str) -> PathBuf {
         self.store.worktree(key)
-    }
-
-    /// Snapshots every open tracker issue to `sources/issues/<key>.md`, for the lead's sprint plan
-    /// and each issue's steps. A tracker that cannot be reached is logged and asked again later.
-    pub(crate) fn poll_tracker(&mut self) -> Result<(), DaemonError> {
-        let Some(tracker) = self.services.tracker.clone() else {
-            return Ok(());
-        };
-        match tracker.open_issues() {
-            Ok(mut issues) => {
-                // An issue someone else already started is theirs; the factory's own stay.
-                issues.retain(|i| !i.started || self.issue(&i.key).is_ok_and(|r| r.is_some()));
-                for issue in &issues {
-                    self.write_source(&format!("issues/{}.md", issue.key), &issue.render())?;
-                }
-                let keys: Vec<&str> = issues.iter().map(|i| i.key.as_str()).collect();
-                self.forget_closed_sources(&keys)?;
-                let known: Vec<&str> = self.open_issues.iter().map(|i| i.key.as_str()).collect();
-                let opened = keys.iter().any(|k| !known.contains(k));
-                if keys != known {
-                    self.event(&json!({"event": "tracker-issues", "open": keys}))?;
-                }
-                self.open_issues = issues;
-                // A sprint that found no issue to propose proposes again once one opens.
-                if opened {
-                    self.sprint_fact(&ovenspring_core::sprint::SprintFact::IssueOpened)?;
-                }
-                self.tracker_read = true;
-                self.tracker_error = None;
-                records::reached(&self.store, Service::Tracker, Ok(()))
-            }
-            // Not answering is the service's or the network's: shown as out of reach, not as a
-            // connection to fix.
-            Err(e @ HttpError::Transient { why, .. }) => {
-                records::reached(&self.store, Service::Tracker, Err(why))?;
-                self.event(&json!({"event": "service-unreachable", "operation": "reading the tracker", "error": e.to_string()}))
-            }
-            Err(e) => {
-                self.tracker_error = Some(e.to_string());
-                records::reached(&self.store, Service::Tracker, Ok(()))?;
-                self.event(&json!({"event": "tracker-error", "error": e.to_string()}))
-            }
-        }
-    }
-
-    /// Removes the snapshot of each issue the tracker no longer reports open, so a reader never
-    /// takes an old state for the current one. An issue the factory is still working on keeps its
-    /// snapshot: its steps read the requester's words from it.
-    fn forget_closed_sources(&self, open: &[&str]) -> Result<(), DaemonError> {
-        let dir = self.store.source("issues");
-        let entries = fs::read_dir(&dir).map_err(StoreError::io(&dir))?;
-        for entry in entries {
-            let path = entry.map_err(StoreError::io(&dir))?.path();
-            let Some(key) = path
-                .file_name()
-                .and_then(|n| n.to_str())
-                .and_then(|n| n.strip_suffix(".md"))
-            else {
-                continue;
-            };
-            let in_hand = self
-                .issue(key)?
-                .is_some_and(|r| !r.flow.stage.is_finished());
-            if !open.contains(&key) && !in_hand {
-                fs::remove_file(&path).map_err(StoreError::io(&path))?;
-            }
-        }
-        Ok(())
     }
 
     /// The open issues as the tracker last reported them.

@@ -922,6 +922,7 @@ dependencies = [
  "ovenspring-store",
  "serde",
  "serde_json",
+ "sha2",
  "tempfile",
  "thiserror",
  "ts-rs",

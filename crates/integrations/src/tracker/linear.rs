@@ -14,6 +14,7 @@ const OPEN_ISSUES: &str = r#"query OpenIssues($team: String!, $after: String) {
   issues(first: 50, after: $after, filter: {team: {key: {eq: $team}}, state: {type: {in: ["unstarted", "started"]}}}) {
     nodes {
       identifier title description url
+      creator { name }
       state { name type }
       labels { nodes { name } }
       comments { nodes { body user { name } } }
@@ -102,6 +103,7 @@ struct RawComment {
 struct RawIssue {
     identifier: String,
     title: String,
+    creator: Option<Named>,
     #[serde(default)]
     description: Option<String>,
     url: String,
@@ -263,6 +265,7 @@ impl<T: Transport> Tracker for Linear<T> {
                 TrackerIssue {
                     key: i.identifier,
                     title: i.title,
+                    author: i.creator.map(|u| u.name).unwrap_or_default(),
                     body: i.description.unwrap_or_default(),
                     url: i.url,
                     started: i.state.kind == "started",

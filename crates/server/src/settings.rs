@@ -182,12 +182,14 @@ pub struct RoleSection {
     append: String,
 }
 
-/// `tracker`: where the issues are, and Linear's key.
+/// `tracker`: where the issues are, Linear's key, and the command that filters issues.
 #[derive(Deserialize, TS)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct TrackerSection {
     kind: TrackerKind,
     team: Option<String>,
+    /// The filter command; empty for no filter.
+    filter: Option<String>,
     /// Empty to keep the key already held.
     api_key: Option<String>,
 }
@@ -288,6 +290,7 @@ pub(crate) fn save(
             let t: TrackerSection = parse(body)?;
             config.tracker.kind = t.kind;
             config.tracker.team = entered(t.team).filter(|_| t.kind == TrackerKind::Linear);
+            config.tracker.filter = entered(t.filter);
             if let Some(key) = entered(t.api_key) {
                 held.linear.api_key = Some(key);
             }
@@ -422,5 +425,110 @@ impl SettingsSection {
             SettingsSection::Guard => "guard",
             SettingsSection::Review => "review",
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::Path;
+    use std::sync::Arc;
+
+    use super::*;
+    use crate::setup::{GitHubAccount, SetupChecks, SlackSetup, TrackerSetup};
+
+    struct ConnectedChecks;
+
+    impl SetupChecks for ConnectedChecks {
+        fn tracker(
+            &self,
+            _repo: &Path,
+            _tracker: &TrackerSetup,
+            _github: Option<&str>,
+        ) -> Result<String, String> {
+            Ok("connected".into())
+        }
+
+        fn slack(&self, _slack: &SlackSetup) -> Result<String, String> {
+            Ok("connected".into())
+        }
+
+        fn github(
+            &self,
+            _repo: &Path,
+            _token: Option<&str>,
+            _base_branch: &str,
+        ) -> Result<GitHubAccount, String> {
+            Ok(GitHubAccount {
+                login: "owner".into(),
+                from_gh: false,
+            })
+        }
+    }
+
+    #[test]
+    fn tracker_settings_save_sets_and_clears_the_filter() {
+        let temp = tempfile::tempdir().unwrap();
+        let repo = temp.path().join("repo");
+        let config_dir = repo.join(".ovenspring");
+        let home = temp.path().join("home");
+        let codex_home = home.join(".codex");
+        std::fs::create_dir_all(&config_dir).unwrap();
+        std::fs::create_dir_all(&codex_home).unwrap();
+        std::fs::write(
+            config_dir.join("config.toml"),
+            r#"
+[roles.lead]
+cli = "codex"
+[roles.executor]
+cli = "codex"
+[roles.reviewer]
+cli = "codex"
+[roles.analyzer]
+cli = "codex"
+[tracker]
+kind = "github"
+[slack]
+channel = "C0123456789"
+owners = ["U0123456789"]
+"#,
+        )
+        .unwrap();
+        let context = Context {
+            repo: repo.clone(),
+            store: ovenspring_store::Store::open(temp.path().join("state")).unwrap(),
+            credentials: temp.path().join("credentials.toml"),
+            checks: Arc::new(ConnectedChecks),
+            home,
+            codex_home,
+            version: crate::version::Sources {
+                executable: temp.path().join("ovenspring"),
+                latest_release: String::new(),
+                transport: Arc::new(ovenspring_integrations::http::Ureq::new()),
+            },
+        };
+        let save_filter = |filter: &str| {
+            save(
+                &context,
+                SettingsSection::Tracker,
+                serde_json::json!({"kind": "github", "team": null, "filter": filter, "apiKey": null}),
+            )
+            .unwrap_or_else(|_| panic!("the tracker settings save should succeed"))
+        };
+        let config_text = || std::fs::read_to_string(config_dir.join("config.toml")).unwrap();
+
+        let saved = save_filter(" scripts/issue-filter ");
+        assert_eq!(
+            saved.config.tracker.filter.as_deref(),
+            Some("scripts/issue-filter")
+        );
+        assert_eq!(
+            Config::read(&repo).unwrap().tracker.filter.as_deref(),
+            Some("scripts/issue-filter")
+        );
+
+        let cleared = save_filter("  ");
+        assert_eq!(cleared.config.tracker.filter, None);
+        assert_eq!(Config::read(&repo).unwrap().tracker.filter, None);
+        assert!(!config_text().contains("filter"), "{}", config_text());
     }
 }

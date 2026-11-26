@@ -656,14 +656,18 @@ export type TrackerConfig = { kind: TrackerKind,
 /**
  * Linear team key; unused for GitHub Issues, which reads the repository's own issues.
  */
-team?: string | null, };
+team?: string | null, filter?: string | null, };
 
 export type TrackerKind = "linear" | "github";
 
 /**
- * `tracker`: where the issues are, and Linear's key.
+ * `tracker`: where the issues are, Linear's key, and the command that filters issues.
  */
 export type TrackerSection = { kind: TrackerKind, team: string | null, 
+/**
+ * The filter command; empty for no filter.
+ */
+filter: string | null, 
 /**
  * Empty to keep the key already held.
  */
