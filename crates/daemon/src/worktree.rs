@@ -24,9 +24,17 @@ pub fn git(dir: &Path, args: &[&str]) -> Result<String, GitError> {
     if out.status.success() {
         Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
     } else {
+        // A hook's standard output reaches git's standard output, so what explains a refusal can
+        // be on either stream; git's own error closes standard error.
+        let message = [&out.stdout, &out.stderr]
+            .map(|stream| String::from_utf8_lossy(stream).trim().to_string())
+            .into_iter()
+            .filter(|text| !text.is_empty())
+            .collect::<Vec<_>>()
+            .join("\n");
         Err(GitError {
             args: args.join(" "),
-            message: String::from_utf8_lossy(&out.stderr).trim().to_string(),
+            message,
         })
     }
 }

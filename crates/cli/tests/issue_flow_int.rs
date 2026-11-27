@@ -1356,12 +1356,13 @@ fn a_large_issue_has_its_prd_approved_and_its_change_reviewed_by_unit() {
     );
 }
 
-/// Installs a repository hook that refuses until the worktree holds `lint-fixed`.
+/// Installs a repository hook that refuses until the worktree holds `lint-fixed`, printing its
+/// reason only on standard output, as lefthook does with everything its jobs print.
 fn refusing_hook(env: &Env, hook: &str) {
     let path = env.repo.join(".git/hooks").join(hook);
     std::fs::write(
         &path,
-        "#!/bin/sh\ntest -f lint-fixed || { echo 'knip: unused export ping' >&2; exit 1; }\n",
+        "#!/bin/sh\ntest -f lint-fixed || { echo 'knip: unused export ping'; exit 1; }\n",
     )
     .unwrap();
     std::process::Command::new("chmod")
@@ -1424,8 +1425,9 @@ fn a_commit_the_repository_refuses_is_corrected_by_quality_before_review() {
 
 // AC: docs/design/factory-core-design.md § Pull request: a push `origin` refuses goes back to
 //     `quality` with what it said; a push that cannot reach `origin` is tried again.
-// Behavior: the pre-push hook refuses -> `quality` runs again with the hook's output, its fix is
-//     committed and pushed, and the issue merges.
+// Behavior: the pre-push hook refuses, printing its reason on standard output -> `quality` runs
+//     again with the hook's reason and git's own error, its fix is committed and pushed, and the
+//     issue merges.
 // @lane: integration
 // @dependency: daemon, flow, fake agent, FakeGitHub
 #[test]
@@ -1450,6 +1452,14 @@ fn a_push_the_repository_refuses_is_corrected_by_quality_and_pushed_again() {
         60,
         |_| {},
         |d| stage(d, "ACME-142") == Stage::Merged,
+    );
+    let findings = handoffs(&env, "quality", None, "correction_findings");
+    assert!(
+        findings.iter().any(|c| {
+            let text = c.to_string();
+            text.contains("knip: unused export ping") && text.contains("failed to push some refs")
+        }),
+        "the second quality run receives the hook's reason with git's error: {findings:?}"
     );
     assert_eq!(git(&env.origin, &["show", "develop:lint-fixed"]), "x");
 }
