@@ -15,21 +15,22 @@ Five principles decide every dashboard screen below.
 ### Requirement Context
 
 - PRD path: `docs/prd/oven-spring-prd.md`
-- Feature scope: AC-029 to AC-035 (Slack), AC-002, AC-043 to AC-050, AC-053, AC-056, AC-057, AC-059 and AC-060 (dashboard, setup and goal), and the owner-facing parts of AC-007 to AC-012, AC-027, AC-031, AC-037, AC-052 and AC-058.
+- Feature scope: AC-029 to AC-035 (Slack), AC-002, AC-043 to AC-050, AC-053, AC-056, AC-057, AC-059 and AC-060 (dashboard, setup and goal), AC-076 to AC-078 (the Events page, error notices and their switch), and the owner-facing parts of AC-007 to AC-012, AC-027, AC-031, AC-037, AC-052, AC-058 and AC-072 (the issue filter's drops and failures).
 
 ### Design Source
 
 | Source | Path | Version |
 |--------|------|---------|
 | Prototype code | `docs/ui-spec/assets/dashboard/index.html` (one page) | The layout and wording reference; this document governs where they differ |
+| Prototype code | `docs/ui-spec/assets/events/prototype.html` (one page) | The Events page (S-08), the Error notices row in Settings, and the wording of the Slack error notices (M-13, M-14); approved by the owner (GH-9) |
 
 ## Prototype Management
 
-- **Attachment path**: `docs/ui-spec/assets/dashboard/`
+- **Attachment path**: `docs/ui-spec/assets/dashboard/`; and `docs/ui-spec/assets/events/prototype.html` for S-08, the Error notices row of S-05 Connections and the wording of M-13 and M-14. Where the two prototypes overlap (the header, the goal band, the Settings page around the new row), the events prototype decides only what it adds: the Events link in the navigation and the Error notices row.
 - **Version identification**: file date; later changes to the dashboard's look update the file first.
 - **Compliance premise**: the dashboard's tokens (`dashboard/tokens/tokens.json`); no external design system.
-- **Reference strength**: `binding` for structure, layout, spacing, vocabulary and copy tone; data, names and numbers are fictional.
-- **Not part of the product**: the prototype's top control bar (factory situation, Explain each element), its explanation notes and its "How this was designed" page.
+- **Reference strength**: `binding` for structure, layout, spacing, vocabulary and copy tone; data, names and numbers are fictional. The events prototype is `binding` the same way: the owner chose it for the Events page and the error-notices switch, "to match their approved prototype in layout, spacing and on-screen words" (GH-9, `sources/answers/GH-9-spec-13.md`).
+- **Not part of the product**: the prototype's top control bar (factory situation, Explain each element), its explanation notes and its "How this was designed" page. In the events prototype: its control bar, its "Why this is here" notes, the pages that read "Unchanged by this issue", and the chrome of its "The Slack notices" page (whose message texts are the wording of M-13 and M-14).
 - **Relationship to canonical spec**: the prototype decides structure, layout, spacing and the words on screen; where this document paraphrases on-screen copy, the prototype's wording applies. This document decides behavior, states, triggers and data, and wins where the two differ on those.
 
 The Slack surface has no prototype; its messages are specified in Slack Messages below.
@@ -39,8 +40,9 @@ The Slack surface has no prototype; its messages are specified in Slack Messages
 | Resource (project-tier label) | Feature-specific identifier | Notes |
 |-------------------------------|-----------------------------|-------|
 | Design Origin | `docs/ui-spec/assets/dashboard/index.html` | This specification's prototype |
+| Design Origin | `docs/ui-spec/assets/events/prototype.html` (`#/events`, `#/settings/connections` row `row-notices`, `#/slack`) | The Events page, the Error notices row, the Slack error notices (GH-9) |
 | Design System | None; tokens in `dashboard/tokens/tokens.json` | Fonts: Hanken Grotesk, IBM Plex Mono (SIL OFL), bundled in the binary |
-| Visual Verification Environment | Storybook: stories for the golden states and the main component states in this document | `dashboard/` |
+| Visual Verification Environment | Storybook: stories for the golden states and the main component states in this document; for GH-9, the Events golden states 9 to 15 below | `dashboard/` |
 
 ## AC Traceability (Prototype)
 
@@ -61,6 +63,11 @@ The Slack surface has no prototype; its messages are specified in Slack Messages
 | AC-007 to AC-012 | Role, connection and merge settings | S-05 | `#/settings/*` | Adopted |
 | AC-002, AC-060, AC-065, AC-066 | Setup: Connect, Run the product, Set the goal; missing prerequisites | S-00; S-01 status | situations "First start …", "Two prerequisites missing" | Adopted |
 | AC-031 | Prototype page with its reference strength | S-06 | `#/prototype/<key>` | Adopted |
+| AC-076 | A page of recorded events, newest first; each with when, what, and its issue or sprint | S-08, EventLine | events prototype `#/events`, `line()` | Adopted |
+| AC-072, AC-076 | The issue filter's drops (key, URL, reason) and failures (key, what failed) readable there | S-08, EventLine, EventFilters "The issue filter's drops and failures" | `#/events` lines ACME-150, ACME-151, ACME-153 | Adopted; the drop's link is named after the recorded URL's tracker; a key with no factory record is not linked to S-02; a filter failure on another issue gets its own line instead of folding into the first |
+| AC-077 | One notice when an error starts and one when it clears, however often it repeats | M-13, M-14; S-08 ErrorsNow and the folded start line | `#/slack`; `#/events` Errors now | Adopted; notices go to Slack only, a message Slack did not accept is posted once Slack accepts again (Slack Messages, Delivery), an error that pauses the factory is told by M-08 alone, M-14 drops the prototype's "judged now" sentence, and Errors now on S-08 shows what is going on |
+| AC-078 | Error notices on or off in Settings, on by default; off stops only the notices | S-05 Connections, ErrorNoticesRow; S-08 notices-off state | `#/settings/connections` `row-notices`; situation "Error notices turned off" | Adopted |
+| AC-076 | Settings changes shown as events | S-08, EventLine | `#/events` "Settings changed: …" | Adopted |
 
 ## Screen List and Transitions
 
@@ -78,6 +85,7 @@ The Slack surface has no prototype; its messages are specified in Slack Messages
 | S-05 | Settings | Read | Connections, Agents, Merging, Safety and limits, Running the product, Messages | Header "Settings"; a prerequisite's link |
 | S-06 | Prototype | Read | The issue's prototype, sandboxed, with its reference strength | M-04's link; "Prototype" on S-02 |
 | S-07 | Goal | Read | What changes when the goal is saved; the new goal | "Rewrite…" in G-01 |
+| S-08 | Events | Read | Errors now; What the factory did: every recorded event, newest first, under day headings, narrowed by Show and Issue | Header "Events"; "See it on Events" in M-13; "Events" in the Error notices row |
 
 ### Transition Conditions
 
@@ -85,7 +93,7 @@ The Slack surface has no prototype; its messages are specified in Slack Messages
 |--------|------------|---------|-----------------|
 | Start | S-00 | `ovenspring start` opens the dashboard | Setup is not finished; it opens on the first step not done |
 | S-00 | S-01 | "Start" on Set the goal | The goal is saved |
-| Any | S-01, S-04, S-03, S-05 | Header link | Set up |
+| Any | S-01, S-04, S-08, S-03, S-05 | Header link | Set up |
 | Any | S-07 | Goal band link | Set up |
 | S-01 | S-02 | Issue key or title | - |
 | S-01 | D-01 | The activity of an issue whose step has a run | A run is under way |
@@ -95,6 +103,12 @@ The Slack surface has no prototype; its messages are specified in Slack Messages
 | S-02 | S-04 filtered by the issue | "See them in Activity" | - |
 | S-02 | S-06 | "Prototype" | The issue has a prototype |
 | S-07 | S-01 | Save | The text changed and is not empty |
+| S-08 | S-02 | An issue key in an event line or in Errors now | The factory has a record of the issue (otherwise the key is not a link) |
+| S-08 | S-03 at the sprint | "Sprint" in an event line | The event concerns a sprint and no issue; S-03 scrolls to that sprint |
+| S-08 | S-05 Connections | "Turn them on in Settings" (Errors now), a link in an error's what-to-do line | Notices are off; the error's fix is a setting |
+| S-08 | Tracker | "Linear issue ↗" / "GitHub issue ↗" / "Tracker issue ↗" on a drop line | The drop recorded a URL |
+| S-05 Connections | S-08 | "Events" in the Error notices row's summary | Notices are off |
+| Slack M-13 | S-08 | "See it on Events" | - |
 
 ## Vocabulary (glance layer)
 
@@ -131,13 +145,32 @@ Merged · Closed: already done (the lead closed it with evidence) · Dropped (th
 
 A duration ("3 min", "2 h 5 min") is how long an issue has been in its current activity. A clock time ("12:48") is when it ended, with its date ("Nov 20, 21:00") when that was on an earlier day, since a sprint spans days. Waiting for you and Waiting to start show no time.
 
+On S-08, events are grouped under a day heading: "Today, Nov 27", "Yesterday, Nov 26", then "Nov 25" for earlier days of this year and "Dec 30, 2025" for an earlier year. A line shows only its clock time, since the heading gives the day. A time in a line's second line or in Errors now ("last at", "since") is a clock time when it falls on the same day as the line's heading (for Errors now: today), and the date and clock ("Nov 26, 23:58") otherwise. All times are the browser's local time.
+
+### Events (read layer)
+
+The server returns each event's kind and fields; the dashboard words them (`dashboard/src/lib/vocabulary.ts`), as it does for the glance layer. Each event is one sentence in the past tense or the present state it left, naming who acted when it was not the factory ("You approved …", "Linear refused …", "Claude Code could not …"). The events prototype's lines are the wording for their kinds: pushed, merged, closed on the tracker, asked in Slack, review round ended, filter dropped, sprint proposed and approved, started, paused and resumed, settings changed, and the error and clear lines below. Closed on the tracker says what the event records: "Marked done on <Tracker>." when it records that the issue was marked done and on which tracker, "Canceled on <Tracker>." when it records a cancellation, and "Closed on the tracker." when it records neither (the factory sets Done for a merged issue and Canceled for one it closes otherwise, under one event kind; `crates/daemon/src/issues.rs`, `notify_dependents` and the close-on-tracker path). Every other kind recorded in `events.jsonl` gets a sentence written the same way in the vocabulary. A kind with no sentence there shows its code with hyphens as spaces and its first letter capitalized ("Replay reset."), so no recorded line is dropped or blank. Quoted words (a reason, a sprint's purpose, the owner's words) are in curly quotes; commands, paths and the output they printed are in the mono face. Every text shown is masked as the download masks it (AC-047).
+
+**Errors.** An error is an operation that failed. It starts at its first failure and clears when the same operation next succeeds, or when the owner removes what was failing (removing the issue filter command clears the filter's error, since the factory no longer runs it); the failures between are its repeats. Each error has a name, its start sentence, its clear sentence, and one line of what to do while it lasts. The events prototype fixes four:
+
+| Error | Name (Errors now, M-13) | Start line | Clear line | What to do |
+|-------|-------------------------|-----------|------------|------------|
+| A service does not answer (GitHub, the tracker) | Can't reach <service> | "Could not reach <service> while <what it was doing>: <cause>. The factory tries again<interval>." | "<Service> answers again." | "Nothing to do unless it lasts. The factory tries again<interval>." |
+| The tracker refuses the connection | <Tracker> refuses the connection | "<Tracker> refused the connection (<cause>). No new issue or change is read from it until it is fixed." | "<Tracker> accepts the connection again." | "Check the tracker's key or token in Settings." with Settings linked to the Issue tracker row |
+| The agent CLI cannot start a run | <CLI> cannot start a run | "<CLI> could not start a run: <its error as it wrote it>." | "<CLI> starts again." | "Fix it in a terminal on this computer, as the error says." |
+| The issue filter fails | The issue filter fails | "The issue filter could not judge <KEY>: <command> <what failed> (<its output>). The issue goes on as without a filter." | "The issue filter works again."; when the owner removed the command, "The issue filter was removed." | "Issues go on as without a filter until it works. Fix <command> or change it in Settings." with Settings linked |
+
+<interval> is " every minute" for the tracker, whose reachability is recorded only by its read once a minute (`Timing.tracker_poll` in `crates/daemon/src/lib.rs`; `crates/daemon/src/intake.rs`), and empty for GitHub ("The factory tries again."), since a GitHub failure can come from the 30-second read of pull requests or from repairing the board on every daemon pass (`crates/daemon/src/lib.rs`, `tick`; `crates/daemon/src/stops.rs`, `settle_for`), which repeat at different intervals. This overrides the events prototype's "every 30 seconds". No start line promises an effect the factory does not hold to: a tracker that refuses new reads does not stop a sprint proposal built from issues read earlier, so its line says only that nothing new is read.
+
+The issue filter's failure is always an error (AC-072, AC-077); its drop never is. Which other failures are errors is settled by the Design Doc; each it adds gets the same four texts in the vocabulary. The name on S-01's "Can't reach <service>" title and the same error's name and "since" time on S-08 come from the same record, so the two pages never disagree.
+
 ## Component Decomposition
 
 ### Component Tree
 
 ```
 App
-  +-- AppHeader (wordmark, version and its update notice, repository, navigation Now · Activity · Sprints · Settings, theme)
+  +-- AppHeader (wordmark, version and its update notice, repository, navigation Now · Activity · Events · Sprints · Settings, theme)
   +-- GoalBand (G-01)
   +-- Page
       +-- Setup (S-00) > SetupSteps; Connect > ConnectionBlock x3 (ConnectionResult), AgentChoice; RunTheProduct; SetGoal
@@ -156,8 +189,9 @@ App
       |   +-- Group "Runs and cost" ("n runs, m running." with the cost by CLI and an Activity link; "No runs yet." alone when none; DownloadPanel)
       +-- Sprints (S-03): Group "This sprint" (SprintCost, DownloadPanel), Group "Ended sprints" > SprintRow
       +-- Activity (S-04): ActivityFilters, Group "Under way", Group "Earlier" > HourGroup > RunLine
+      +-- Events (S-08): Contact, page title and intro, ErrorsNow > ErrorItem, Group "What the factory did" > EventFilters, DayGroup > EventLine, "Show older events"
       +-- RunPanel (D-01)
-      +-- Settings (S-05): SettingsNav, Group per section > SettingRow / RoleBlock (RoleEditor)
+      +-- Settings (S-05): SettingsNav, Group per section > SettingRow / RoleBlock (RoleEditor); Connections > ErrorNoticesRow
       +-- Prototype (S-06), Goal (S-07)
 ```
 
@@ -280,6 +314,77 @@ Escape and the Close button close the panel; focus moves into the panel when it 
 
 Sprint: this sprint, each ended sprint, All sprints. Issue: All issues, then the sprint's issues when this sprint is selected. "Under way": runs not ended. "Earlier": ended runs, newest first, under an hour heading ("14:00"). Empty: "Nothing is running for this filter." / "Nothing has happened yet." Only agent runs are listed.
 
+### Component: Contact
+
+Shared by every page that polls (S-02, S-04, S-08 and the others that use it). Its lost-contact line is two sentences, as the events prototype words it and as Copy on Screen asks: "The dashboard lost contact with the factory. This page is as it was at <clock>." The not-yet-read line is unchanged. Now keeps its own FactoryStatus wording.
+
+### Component: EventsPage (S-08)
+
+Page title "Events", then the muted intro "Everything the factory recorded, newest first." Two groups follow: "Errors now" (ErrorsNow), then "What the factory did" (EventFilters and the list). The page lists every line of `events.jsonl` except an error's repeats, which are folded: a repeat that concerns the same issue (or no issue) and records the same cause as an earlier line of the same error raises that line's count and last time instead of adding a line. A repeat on another issue, or with another cause, gets its own line, so every failure's time, issue key and cause stays readable and the Issue filter finds it (AC-072, AC-076, AC-078). An error has one start line, its first failure; its other lines are Error repeat lines (EventLine). Agent runs stay on S-04 and are not listed here. The page polls like S-04 and keeps the last answer when the factory does not answer.
+
+| State | Trigger | Display | Interaction / Recovery | Evidence |
+|-------|---------|---------|------------------------|----------|
+| Listed | Events exist and some match the filters | Lines under day headings, newest first; the first 15 matching lines, then "Show older events" when more match | "Show older events" shows the next 50 older matching lines; a changed filter shows the first 15 again | AC-076; events prototype `viewEvents` |
+| All shown | Every matching line is shown and no filter narrows the list | "That is everything the factory has recorded." after the last line | - | events prototype |
+| Filtered to nothing | Events exist and none matches | "No event matches this filter." | Change a filter | events prototype |
+| Nothing recorded | `events.jsonl` is missing or empty | "Nothing has been recorded yet."; ErrorsNow "Nothing is wrong now." | - | events prototype situation "Nothing recorded yet" |
+| Unreadable | The server answered that it could not read the events | "The events could not be read. The dashboard tries again in a few seconds." in place of the list; ErrorsNow "Not known while the events cannot be read." | The next poll reads again | events prototype situation "The events could not be read" |
+| Lost contact | The poll fails after an earlier answer | Contact's lost-contact line above the title; the page as last read | The next poll that answers removes the line | events prototype situation "Dashboard lost contact"; Contact |
+| Not read yet | The poll fails before any answer | Contact's not-yet-read line ("These events could not be read: …"); nothing else under the title | The next poll that answers shows the page | Contact |
+
+New lines that arrive while the page is open appear at the top under their day; the lines already shown stay shown.
+
+### Component: ErrorsNow
+
+Group heading "Errors now". It lists every error that has started and not cleared, oldest start first, whatever the filters say.
+
+| State | Trigger | Display | Interaction / Recovery | Evidence |
+|-------|---------|---------|------------------------|----------|
+| Errors going on | One or more errors have not cleared | One item each: the error's name (`color-fail`, weight 600), then muted "since <time>, first on <KEY>. <n> times, last at <time>." ("first on <KEY>" only when the first failure concerned an issue; "<n> times, last at <time>." only when n > 1); under it, the error's what-to-do line (small) | The key → S-02 when the factory has a record of the issue (plain text otherwise, as in EventLine); a Settings link → S-05 Connections | AC-077; events prototype `OPEN` |
+| Nothing wrong | No error is open | "Nothing is wrong now." | - | events prototype |
+| Notices off | Error notices are off | Above the items or the empty line: "Error notices are off, so Slack tells you nothing about these." and "Turn them on in Settings" (→ S-05 Connections) | Link | AC-078; events prototype situation "Error notices turned off" |
+| Unknown | The events cannot be read | "Not known while the events cannot be read." | - | events prototype |
+
+### Component: EventFilters
+
+Two labelled selects kept in the URL's query, reusing how Activity (S-04) keeps and reads its filters. Their layout and spacing are the events prototype's `.filters`: the two controls side by side, each label beside its select, wrapping onto a second row when they do not fit (gaps 10px between rows and 16px between controls); not Activity's label-and-control grid. They narrow the list only; ErrorsNow is not narrowed.
+
+- **Show**: "Everything" (default); "Errors and when they cleared" (Error started, Error repeat and Error cleared lines); "The issue filter's drops and failures" (drop lines, and the issue filter's Error started, Error repeat and Error cleared lines), so every recorded filter failure stays listed with its key and cause (AC-072, AC-076).
+- **Issue**: "All issues" (default), then each issue key that appears in the events, sorted, with its title after it; the bare key when the title is not known. A line matches when it concerns that issue.
+
+### Component: EventLine
+
+One grid per line: clock (mono, muted) · subject · sentence. The subject is:
+
+- the issue key linking to S-02 when the factory has a record of that issue; the key as plain text (mono) when it has none, as for an issue the filter dropped before the factory ever took it in, since S-02 has nothing to show for it (`crates/server/src/api.rs`, `get_issue` answers 404);
+- "Sprint" when the event concerns a sprint and no issue. Its accessible name and tooltip are "Sprint: <the sprint's purpose>" when the sprint's record holds a purpose, and "Sprint begun <date, clock>" otherwise, the time read from the sprint's ID, which is when it was begun (`crates/daemon/src/sprint.rs`, `maybe_begin_sprint`), so a `sprint-begun` line recorded before any purpose exists still names its sprint and two sprint lines tell their sprints apart. When S-03 lists the sprint, the subject links to that sprint's own place there (`/sprints#sprint-<id>`: the "This sprint" group for the current sprint, the sprint's SprintRow for an ended one), scrolled into view; S-03 gives each sprint it lists that anchor. A sprint S-03 does not list (one not yet approved, `crates/daemon/src/overview.rs`) is plain text, not a link, as for an issue key with no factory record, since no page shows it; being plain text, it shows its name ("Sprint: <purpose>" or "Sprint begun <date, clock>") as its visible text, wrapping inside the subject column, rather than only in a tooltip, so every owner reads which sprint it is without hovering or focusing it (AC-048, AC-076);
+- blank when the event concerns the whole factory. An event concerns an issue or a sprint when it records one, directly or through the work item it names; the Design Doc settles how each kind is attributed.
+
+| State | Trigger | Display | Evidence |
+|-------|---------|---------|----------|
+| Plain | Any event that is not an error's start or clear | The event's sentence (Vocabulary, Events) | AC-076 |
+| Error started | The first failure of an error | "Error" (`color-fail`, weight 600), then the start sentence. Second line (muted): "Happened <n> times so far, last at <time>." while it is open, "Happened <n> times, last at <time>." once cleared, only when n > 1; then whether the owner was told | AC-077 |
+| Error repeat | A failure of an open error on another issue, or with another cause, than its earlier lines | "Error" as above, then the start sentence with this failure's issue key and cause. Second line: the count as above when n > 1, then "Same error as at <time of its start line>, so no new message." | AC-072, AC-077 |
+| Error cleared | The operation next succeeded | "Cleared" (`color-ok`, weight 600), then the clear sentence; second line: whether the owner was told | AC-077 |
+| Told | A start or clear line whose message Slack accepted (M-13, M-14, or M-08 for an error that paused the factory) | "You were told in Slack."; "You were told in Slack at <time>." when it was accepted later than the line | AC-077 |
+| Waiting for Slack | Notices are on and Slack has not accepted the message yet | "Not told yet: Slack did not accept the message. It is sent once Slack accepts messages again." | AC-077; Slack Messages, delivery |
+| Not told, notices off | A start or clear line while notices were off, or notices were turned off while its message waited | "Not told: error notices are off." | AC-078 |
+| Drop | The issue filter dropped an issue | "The issue filter dropped <KEY>: “<reason>”"; second line: a link that opens the recorded URL in a new tab, named after that URL's tracker ("Linear issue ↗" for a linear.app address, "GitHub issue ↗" for a github.com address, "Tracker issue ↗" otherwise), so a drop recorded before a tracker switch still names what it opens | AC-072 |
+
+The Error and Cleared words carry the meaning; colour only adds to them. Below 620px the grid is clock · one column, and the subject sits above the sentence.
+
+### Interaction Definition (S-08)
+
+| Criterion ID | EARS Condition | User Action | System Response | State Transition | Error Handling |
+|-------|---------------|-------------|-----------------|-----------------|----------------|
+| AC-076 | When the owner opens Events | Header "Events" | The newest 15 lines under day headings, ErrorsNow above | - → Listed / Nothing recorded | Unreadable or Lost contact as above |
+| AC-076 | When more lines match than are shown | "Show older events" | The next 50 older matching lines appear below | Listed → Listed / All shown | - |
+| AC-072, AC-076 | When the owner chooses "The issue filter's drops and failures" | Show select | Only drops, every filter failure line (start and repeat) and their clears are listed; the URL keeps the choice | Listed → Listed / Filtered to nothing | - |
+| AC-076 | When the owner chooses an issue | Issue select | Only lines concerning it are listed | Listed → Listed / Filtered to nothing | - |
+| AC-077 | While an error lasts | - | A repeat raises the count and last time on its line (same issue and cause) or adds an Error repeat line (another issue or cause); ErrorsNow's count and last time rise either way; no message is sent | - | - |
+| AC-077, AC-072 | When the owner removes the failing filter command | Settings | A Cleared line "The issue filter was removed." appears; the error leaves ErrorsNow; its earlier lines stay | Errors going on → Nothing wrong when it was the last | - |
+| AC-077 | When the error clears | - | A Cleared line appears at the top; the error leaves ErrorsNow | Errors going on → Nothing wrong when it was the last | - |
+
 ### Component: DownloadPanel
 
 | State | Trigger | Display | Evidence |
@@ -309,6 +414,24 @@ Label (bold) with one line of what it changes (muted) · the whole current value
 | Safety and limits | Denied commands (the always-denied list shown above the owner's); Issues at once; Round limits (review rounds, CI fixes; "no limit") |
 | Running the product | The row "Commands": "Prepare: / Start: / Ready when this answers:" or "Nothing to run." with the reason; Change offers the same choice as setup, and "Check and save" starts the product once before saving |
 | Messages | (Not built in this release: see Open Items) |
+
+### Component: ErrorNoticesRow
+
+A SettingRow in Connections, after Slack and before Who the factory answers. Label "Error notices", what-line "A message in Slack when an error starts and when it clears." Change opens a RadioGroup with its legend "Error notices" visible:
+
+- **On** (default): "One message when an error starts and one when it clears, however often it repeats in between."
+- **Off**: "No messages about errors. The Events page still shows every error."
+
+These two texts are the owner's own words (`sources/answers/GH-9-prototype-14.md`) and are used as written. The buttons are Save and Cancel, with "Applies at once." Saving checks no connection, so the owner can turn notices off while Slack itself fails.
+
+| State | Trigger | Display | Interaction / Recovery | Evidence |
+|-------|---------|---------|------------------------|----------|
+| On | The setting is on or was never set | "**On**" | Change | AC-078 |
+| Off | The setting is off | "**Off**. Errors still show on Events." with "Events" linking to S-08 | Change; the link | AC-078 |
+| Editing | Change | The RadioGroup with the current value checked; focus on the checked radio | Save stores it and closes the form; Cancel closes it unchanged | AC-078; SettingRow |
+| Save refused | The server refused | The reason under the radios; the choice kept | Save again | SettingRow |
+
+Turning notices off or on is recorded as an event: "Settings changed: Error notices are now off." / "… now on."
 
 ### Component: RoleBlock and RoleEditor
 
@@ -376,7 +499,13 @@ Slack is where the owner acts. Every message the factory posts follows the same 
 | M-08 | Paused | What stopped and its cause in plain words, and how to resume; posted when the factory pauses itself (an owner's `!pause` is answered in its own thread) | Mention the bot with `!resume` | Resumes |
 | - | Preparation | The issue; what the owner should know or prepare before a design-phase step; the step goes on without waiting | None | - |
 | M-10 | Conversation | Thread started by mentioning the bot with anything but a command; the lead answers in the thread | Reply | - |
+| M-13 | Error started | (Only while error notices are on.) "**Error: <name, lower-cased after the colon>.** <what failed, with the issue key and the cause>" / "<what the factory does meanwhile>. You will hear once more when it clears." / "See it on Events" (the dashboard's S-08 address). Wording: the events prototype's `#/slack` page | None | Sent once when the error starts; its repeats send nothing |
+| M-14 | Error cleared | (Only while error notices are on.) "**Cleared: <clear sentence, lower-cased after the colon>.** It failed <n> times from <time>." Nothing more: the events prototype's "Issues it could not judge meanwhile are judged now." is not used, since a judgment that failed is not run again until the issue changes (`crates/daemon/src/intake.rs`, `start_next_filter_run`) | None | Sent once when the error clears |
 | M-12 | Reminder | "Still waiting for you:" and one line per decision delivered and still open, and per issue's pull request ready for the owner to merge, each linking where to answer; sent once an hour while any waits (AC-068) | None | - |
+
+An error notice tells what failed; M-08 tells that the factory stopped and why. When an error's start pauses the factory, M-08 is its one message: it names the error as the cause and how to resume, and no M-13 is posted; the start line reads "You were told in Slack." once M-08 is accepted. Its clear is M-14 while notices are on. Turning error notices off leaves M-08 as it is.
+
+**Delivery.** When Slack does not accept M-13 or M-14, the factory keeps the message and posts it once Slack accepts messages again, once, in the order the errors started and cleared; later failures of the same error add nothing to it. An error that clears while its M-13 still waits keeps it: M-13 is posted first and its M-14 after it, so the owner hears once that it started and once that it cleared (AC-077). Turning notices off drops the waiting messages. The EventLine's told line says which of these happened.
 
 The factory responds only to the owners set in Settings. Approvals are buttons; only owners' presses count (AC-032), and a press by anyone else is answered privately with why it did not count. Commands reach the factory only by mentioning the bot with the command right after the mention, as in `@Oven Spring !pause <reason>`; a message that does not mention the bot is never a command. Commands: `!pause` (no new agent starts; agents already at work finish their step), `!resume`, and `!dashboard` (replies with the dashboard's address); the factory answers each in the command's thread. A command sent inside a thread is answered in that thread. A reply in a decision's thread answers the decision with or without a mention, unless it is a command.
 
@@ -392,6 +521,7 @@ The factory responds only to the owners set in Settings. Approvals are buttons; 
 | Breakpoint | Width | Key Changes |
 |-----------|-------|-------------|
 | Rows | < 960px | GlanceRow stacks phase · status · meta under the title |
+| Event lines | < 620px | EventLine stacks the subject above the sentence, beside the clock |
 | Narrow | < 760px | 16px side padding; settings navigation becomes a wrapped row; two-column definition lists become one column |
 | Default | ≥ 760px | Content column 1200px, centered; 40px page side padding |
 
@@ -399,7 +529,11 @@ The factory responds only to the owners set in Settings. Approvals are buttons; 
 
 | UI Element | Decision | Existing Component | Notes |
 |-----------|----------|-------------------|-------|
-| AppHeader, Wordmark | Reuse | `components/AppHeader`, `components/Wordmark` | Navigation Now, Activity, Sprints, Settings; the theme in the header |
+| AppHeader, Wordmark | Extend | `components/AppHeader`, `components/Wordmark` | Navigation Now, Activity, Events, Sprints, Settings (an `events` area, current on S-08); the theme in the header |
+| Contact | Extend | `components/Contact` | The lost-contact line becomes two sentences on every page |
+| EventsPage, ErrorsNow, EventFilters, EventLine | New | Page under `app/events/`, using `api/usePoll`, `components/Contact`, `components/ExternalLink`, and Activity's way of keeping filters in the URL query and its select styling | The filter row's layout and spacing and the event line grid are the page's own CSS from the events prototype, not Activity's `.filters` grid |
+| SprintRow, This sprint group | Extend | `app/sprints/SprintsView.tsx` | Each sprint carries the anchor `sprint-<id>` that S-08's "Sprint" link opens |
+| ErrorNoticesRow | Reuse | `components/SettingRow`, `components/Choices` (RadioGroup, legend visible) | Same form as Who merges |
 | GoalBand | Reuse | `components/GoalBand` | Links to S-07 to rewrite the goal |
 | Button, Field, Choices, Warning | Reuse | `components/*` | Selects, radios and checkboxes drawn from tokens (no operating-system defaults) |
 | SettingRow, RoleEditor, AgentsSettings | Reuse | `components/*` | Per-CLI model and effort |
@@ -469,6 +603,13 @@ The wordmark is the `Wordmark` component, drawn in `color-text`; the favicon is 
 6. **S-04** with the run panel open on a running run.
 7. **S-05 Agents** with a role's editor open on Codex.
 8. **S-00 Connect** after an empty Continue, and **S-00 Run the product** with the product started.
+9. **S-08 Two errors going on, light**: ErrorsNow with two errors; lines with a folded start, a clear, two drops and a filter failure.
+10. **S-08 Nothing wrong now**: both errors cleared.
+11. **S-08 Error notices off, dark**: the notice line in ErrorsNow; "Not told: error notices are off." on lines after the switch.
+12. **S-08 Nothing recorded yet**.
+13. **S-08 The events could not be read**.
+14. **S-08 Lost contact**.
+15. **S-05 Connections** with the Error notices row open.
 
 ### Layout Constraints
 
@@ -490,6 +631,10 @@ The wordmark is the `Wordmark` component, drawn in `color-text`; the favicon is 
 | PhaseItem, SprintRow, DownloadPanel, findings | in order | Enter / Space | Expands or collapses |
 | RunPanel | on open | Escape | Closes; focus returns to the page |
 | SettingRow | in order | Enter | Change opens the form and focuses its first field |
+| EventFilters | Show, then Issue | Arrow keys / Enter | Changes the filter; the list updates without moving focus |
+| EventLine, ErrorItem links | in order | Enter | Key → S-02 (only a key the factory has a record of is a link); Sprint → that sprint on S-03 when S-03 lists it, named as EventLine says ("Sprint: <purpose>" or "Sprint begun <date, clock>") to screen readers; a sprint S-03 does not list is not a link and needs no key, since its name is visible text; tracker link → new tab |
+| "Show older events" | after the last line | Enter / Space | Shows older lines; focus stays on the button, or moves to the first new line when the button goes away |
+| ErrorNoticesRow | in order | Arrow keys, Enter | Arrow keys move between On and Off; Save with Enter |
 
 ### Screen Reader
 
@@ -501,6 +646,11 @@ The wordmark is the `Wordmark` component, drawn in `color-text`; the favicon is 
 | ● / ▲ marks | hidden | (the word beside each carries the meaning) | none |
 | RunPanel | dialog (modal) | the run's sentence | none |
 | External links | link | its text and "(opens in a new tab)" | none |
+| ErrorsNow, What the factory did | section | its heading | none |
+| DayGroup | section | its day heading (h3) | none |
+| Event lists | list | - | none (new lines are not announced) |
+| Error / Cleared | text | the word itself | none |
+| Error notices radios | radiogroup in a fieldset | the visible legend "Error notices" | none |
 
 ### Contrast Requirements
 
@@ -541,3 +691,6 @@ These are explained in `docs/GUIDE.md`:
 | 2026-11-24 | 1.1 | Copy on Screen: copy cut to what changes the owner's action; moved explanations listed for the guide; typed commands set apart; the resume mention uses the bot's name from Slack | Oven Spring team |
 | 2026-11-25 | 1.2 | AppHeader: the version and its update notice (AC-071) | Oven Spring team |
 | 2026-11-25 | 1.3 | Reconciled with the implementation: Slack messages, Now and issue page states, RunLine, the row breakpoint, boxes and colours, the component map | Oven Spring team |
+| 2026-11-27 | 1.4 | GH-9: the Events page (S-08), error words, the Error notices row, M-13 and M-14, the two-sentence lost-contact line; the events prototype attached as binding | Oven Spring team |
+| 2026-11-27 | 1.5 | GH-9 review: repeats fold per issue and cause; keys without a factory record are not linked; Sprint links to its sprint; tracker wording from the record; removing the filter clears its error; retry intervals per service; one message when an error pauses; delivery of messages Slack refused; the filter row's prototype layout | Oven Spring team |
+| 2026-11-27 | 1.6 | GH-9 review: the error views of Show list Error repeat lines; a sprint without a purpose is named by when it was begun, and one S-03 does not list is not linked; GitHub's retry line promises no interval; a waiting M-13 is posted before its M-14, not dropped | Oven Spring team |

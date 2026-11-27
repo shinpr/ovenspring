@@ -1,0 +1,617 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Oven Spring: Events and error notices (GH-9 prototype)</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI1MTIiIGhlaWdodD0iNTEyIiB2aWV3Qm94PSIwIDAgMTI4IDEyOCIgcm9sZT0iaW1nIiBhcmlhLWxhYmVsPSJPdmVuIFNwcmluZyI+CjxyZWN0IHdpZHRoPSIxMjgiIGhlaWdodD0iMTI4IiByeD0iMjQiIGZpbGw9IiNmZmZkZjkiLz4KPHBhdGggZmlsbD0iIzk5NTMzNCIgZmlsbC1ydWxlPSJldmVub2RkIiBkPSJNMTggOTFWNjBjMC0yMyAxNC0zOSAzNC00NCAxNC00IDI1LTEgMzcgNmwxOCAxMWMtOS00LTE5LTUtMzAtMi0xOCA1LTMyIDIxLTMyIDQxdjM0Wm0xMC05IDggNVY2OWMwLTE0IDUtMjcgMTQtMzctMTQgNi0yMiAxOC0yMiAzMloiLz4KPHBhdGggZmlsbD0iIzU1MzYyOSIgZmlsbC1ydWxlPSJldmVub2RkIiBkPSJNNTAgMTA4VjczYzAtMTkgMTEtMzMgMjgtMzggMTktNSAzMiA1IDMyIDIzdjMxWm0xNC0yMiAzMi0xMFY2MWMwLTktNi0xNC0xNC0xMi0xMCAzLTE4IDEyLTE4IDIzWiIvPgo8L3N2Zz4K">
+<style>
+:root,
+:root[data-theme="light"] {
+  --color-bg: #f7f3ec;
+  --color-raised: #fffdf9;
+  --color-line: #e4dccf;
+  --color-field-border: #8a7c6b;
+  --color-text: #2a1f16;
+  --color-text-muted: #6e6152;
+  --color-accent: #9c4416;
+  --color-on-accent: #fffdf9;
+  --color-ok: #3f6b33;
+  --color-fail: #a3301c;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) {
+    --color-bg: #16110d;
+    --color-raised: #1f1813;
+    --color-line: #30271f;
+    --color-field-border: #7a6c5c;
+    --color-text: #f2e9dc;
+    --color-text-muted: #ab9d8b;
+    --color-accent: #f0a25a;
+    --color-on-accent: #16110d;
+    --color-ok: #a3c98f;
+    --color-fail: #f08a72;
+  }
+}
+
+:root[data-theme="dark"] {
+  --color-bg: #16110d;
+  --color-raised: #1f1813;
+  --color-line: #30271f;
+  --color-field-border: #7a6c5c;
+  --color-text: #f2e9dc;
+  --color-text-muted: #ab9d8b;
+  --color-accent: #f0a25a;
+  --color-on-accent: #16110d;
+  --color-ok: #a3c98f;
+  --color-fail: #f08a72;
+}
+
+:root {
+  --font-sans: "Hanken Grotesk Variable", "Hanken Grotesk", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", "Menlo", monospace;
+  --text-headline: 32px;
+  --text-page-title: 30px;
+  --text-section-title: 22px;
+  --text-wordmark: 18px;
+  --text-lead: 17px;
+  --text-body: 15px;
+  --text-small: 14px;
+  --text-mono: 13px;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 40px;
+  --space-7: 64px;
+  --radius-control: 4px;
+  --width-content: 1200px;
+}
+:root{color-scheme:light;--caret:url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A//www.w3.org/2000/svg%27%20width%3D%2710%27%20height%3D%276%27%20viewBox%3D%270%200%2010%206%27%3E%3Cpath%20d%3D%27M1%201l4%204%204-4%27%20fill%3D%27none%27%20stroke%3D%27%236e6152%27%20stroke-width%3D%271.5%27%20stroke-linecap%3D%27round%27%20stroke-linejoin%3D%27round%27/%3E%3C/svg%3E");--check:url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A//www.w3.org/2000/svg%27%20width%3D%2712%27%20height%3D%2712%27%20viewBox%3D%270%200%2012%2012%27%3E%3Cpath%20d%3D%27M2.5%206.2l2.3%202.3%204.7-5%27%20fill%3D%27none%27%20stroke%3D%27%23fffdf9%27%20stroke-width%3D%271.8%27%20stroke-linecap%3D%27round%27%20stroke-linejoin%3D%27round%27/%3E%3C/svg%3E");}
+:root[data-theme="dark"]{color-scheme:dark;--caret:url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A//www.w3.org/2000/svg%27%20width%3D%2710%27%20height%3D%276%27%20viewBox%3D%270%200%2010%206%27%3E%3Cpath%20d%3D%27M1%201l4%204%204-4%27%20fill%3D%27none%27%20stroke%3D%27%23ab9d8b%27%20stroke-width%3D%271.5%27%20stroke-linecap%3D%27round%27%20stroke-linejoin%3D%27round%27/%3E%3C/svg%3E");--check:url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A//www.w3.org/2000/svg%27%20width%3D%2712%27%20height%3D%2712%27%20viewBox%3D%270%200%2012%2012%27%3E%3Cpath%20d%3D%27M2.5%206.2l2.3%202.3%204.7-5%27%20fill%3D%27none%27%20stroke%3D%27%2316110d%27%20stroke-width%3D%271.8%27%20stroke-linecap%3D%27round%27%20stroke-linejoin%3D%27round%27/%3E%3C/svg%3E");}
+@media (prefers-color-scheme:dark){:root:not([data-theme]){color-scheme:dark;--caret:url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A//www.w3.org/2000/svg%27%20width%3D%2710%27%20height%3D%276%27%20viewBox%3D%270%200%2010%206%27%3E%3Cpath%20d%3D%27M1%201l4%204%204-4%27%20fill%3D%27none%27%20stroke%3D%27%23ab9d8b%27%20stroke-width%3D%271.5%27%20stroke-linecap%3D%27round%27%20stroke-linejoin%3D%27round%27/%3E%3C/svg%3E");--check:url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A//www.w3.org/2000/svg%27%20width%3D%2712%27%20height%3D%2712%27%20viewBox%3D%270%200%2012%2012%27%3E%3Cpath%20d%3D%27M2.5%206.2l2.3%202.3%204.7-5%27%20fill%3D%27none%27%20stroke%3D%27%2316110d%27%20stroke-width%3D%271.8%27%20stroke-linecap%3D%27round%27%20stroke-linejoin%3D%27round%27/%3E%3C/svg%3E");}}
+
+/* Form controls drawn from the tokens, not the operating system's defaults. */
+select{-webkit-appearance:none;appearance:none;background-image:var(--caret);background-repeat:no-repeat;background-position:right var(--space-3) center;background-size:10px 6px;padding-right:calc(var(--space-3) * 2 + 10px)!important}
+select:disabled{color:var(--color-text-muted);opacity:1}
+.proto select{--caret:url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A//www.w3.org/2000/svg%27%20width%3D%2710%27%20height%3D%276%27%20viewBox%3D%270%200%2010%206%27%3E%3Cpath%20d%3D%27M1%201l4%204%204-4%27%20fill%3D%27none%27%20stroke%3D%27%23ab9d8b%27%20stroke-width%3D%271.5%27%20stroke-linecap%3D%27round%27%20stroke-linejoin%3D%27round%27/%3E%3C/svg%3E")}
+input[type=checkbox],input[type=radio]{-webkit-appearance:none;appearance:none;flex:none;width:16px;height:16px;margin:3px 0 0;border:1px solid var(--color-field-border);background:var(--color-raised);border-radius:var(--radius-control);cursor:pointer;display:inline-grid;place-content:center}
+input[type=radio]{border-radius:50%}
+input[type=radio]:checked{border-color:var(--color-accent);box-shadow:inset 0 0 0 3px var(--color-raised);background:var(--color-accent)}
+input[type=checkbox]:checked{border-color:var(--color-accent);background:var(--color-accent) var(--check) center/12px 12px no-repeat}
+input[type=checkbox]:focus-visible,input[type=radio]:focus-visible{outline:2px solid var(--color-accent);outline-offset:3px}
+.proto input[type=checkbox]{background-color:#1f1813;border-color:#7a6c5c}
+fieldset{margin:0;padding:0;border:0;min-width:0}
+legend{padding:0}
+textarea{resize:vertical}
+::placeholder{color:var(--color-text-muted);opacity:1}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--color-bg);color:var(--color-text);font-family:var(--font-sans);font-size:var(--text-body);line-height:1.55;-webkit-font-smoothing:antialiased}
+a{color:var(--color-accent);text-underline-offset:3px}
+a:hover{color:var(--color-text)}
+a:focus-visible,button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible,summary:focus-visible{outline:2px solid var(--color-accent);outline-offset:3px}
+code,kbd,.mono{font-family:var(--font-mono);font-size:var(--text-mono)} code{overflow-wrap:anywhere} kbd{padding:0 5px;border:1px solid var(--color-line);border-radius:var(--radius-control);background:var(--color-raised)}
+h1,h2,h3{margin:0;font-weight:600;letter-spacing:-.01em}
+h1{font-size:var(--text-page-title);line-height:1.2}
+h2{font-size:var(--text-section-title);line-height:1.25}
+h3{font-size:var(--text-lead);line-height:1.3}
+p{margin:0}
+.muted{color:var(--color-text-muted)}
+.small{font-size:var(--text-small)}
+.ok{color:var(--color-ok)} .fail{color:var(--color-fail)} .accent{color:var(--color-accent)}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+
+/* prototype controls: not part of the product */
+.proto{background:#2a1f16;color:#f2e9dc;font:13px/1.4 var(--font-sans);padding:8px 16px;display:flex;flex-wrap:wrap;gap:8px 18px;align-items:center}
+.proto b{font-weight:600;letter-spacing:.02em}
+.proto label{display:flex;gap:6px;align-items:center}
+.proto select{font:inherit;background-color:#1f1813;color:#f2e9dc;border:1px solid #7a6c5c;border-radius:var(--radius-control);padding:2px 4px}
+.proto a{color:#f0a25a}
+.proto .sep{opacity:.5}
+.proto-btn{font:inherit;color:#f0a25a;background:none;border:1px solid #7a6c5c;border-radius:var(--radius-control);padding:2px 8px;cursor:pointer}
+
+/* product chrome */
+header.top{border-bottom:1px solid var(--color-line);background:var(--color-bg)}
+.top-in{max-width:calc(var(--width-content) + 2*var(--space-6));margin:0 auto;padding:var(--space-4) var(--space-6);display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:var(--space-3) var(--space-6)}
+.goalband{background:var(--color-raised);border-bottom:1px solid var(--color-line)}
+.gb-in{max-width:calc(var(--width-content) + 2*var(--space-6));margin:0 auto;padding:var(--space-3) var(--space-6);display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:var(--space-1) var(--space-4);align-items:baseline}
+.gb-l{color:var(--color-text-muted);font-size:var(--text-small)}
+.gb-t{font-size:var(--text-lead);max-width:72ch}
+.gb-t.none{color:var(--color-text-muted)}
+.gb-a{font-size:var(--text-small);white-space:nowrap}
+@media (max-width:760px){.gb-in{padding:var(--space-3) var(--space-4);grid-template-columns:1fr}}
+/* On a narrow screen the repository moves to a line of its own rather than shrinking out of sight. */
+.brand{display:flex;flex-wrap:wrap;align-items:baseline;gap:var(--space-1) var(--space-3);max-width:100%}
+.brand .word{display:inline-flex;color:var(--color-text);text-decoration:none}
+.brand .word svg{display:block;overflow:visible}
+/* The version follows the wordmark it belongs to; a rule sets the repository apart from it. */
+.brand .ver{color:var(--color-text-muted);font-size:var(--text-small);white-space:nowrap}
+.brand .repo{padding-left:var(--space-3);border-left:1px solid var(--color-line);flex-shrink:0;max-width:100%;color:var(--color-text-muted);font-size:var(--text-small);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.top-end{display:flex;flex-wrap:wrap;align-items:center;gap:var(--space-3) var(--space-6)}
+[data-nav-only][hidden]{display:none}
+nav.main{display:flex;gap:2px;flex-wrap:wrap}
+nav.main a{color:var(--color-text-muted);text-decoration:none;padding:6px 10px;font-weight:500}
+nav.main a:hover{color:var(--color-text)}
+nav.main a[aria-current="page"]{color:var(--color-text);font-weight:700}
+.theme{font-size:var(--text-small);color:var(--color-text-muted);display:flex;gap:6px;align-items:center}
+.theme select{font:inherit;color:var(--color-text);background-color:var(--color-raised);border:1px solid var(--color-field-border);border-radius:var(--radius-control);padding:2px 9px}
+
+main{max-width:calc(var(--width-content) + 2*var(--space-6));margin:0 auto;padding:var(--space-6) var(--space-6) var(--space-7)}
+@media (max-width:759px){.top-in,main{padding-left:var(--space-4);padding-right:var(--space-4)}}
+.stack>*+*{margin-top:var(--space-6)}
+
+/* status line */
+.status{padding:0}
+.status .what{font-weight:600;font-size:var(--text-page-title);line-height:1.2;letter-spacing:-.01em}
+.status .how{font-size:var(--text-lead)}
+.status+*{margin-top:var(--space-7)!important}
+.status.halt .what{color:var(--color-fail)}
+.status.yours .what{color:var(--color-accent)}
+.status .how{margin-top:var(--space-2);color:var(--color-text);max-width:72ch}
+.status .how+.how{margin-top:var(--space-1)}
+.need-list{margin-top:var(--space-4);max-width:72ch}
+/* grouping: regions, groups, items (see How this was designed, 6) */
+.region{margin-top:var(--space-7)}
+.grp{margin-top:var(--space-6)}
+.grp>h2{margin-bottom:var(--space-2)}
+.grp>.list,.grp>.path,.grp>.whatis{margin-top:var(--space-5)}
+.list>*+*{border-top:1px solid var(--color-line)}
+.ctx{font-size:var(--text-lead)}
+.subh{margin:var(--space-5) 0 var(--space-2)}
+.grp>p,.grp>.whatis,.grp>details,.grp>.links,.grp>.subh,.grp>.kv,.grp>.actions,.grp>.empty{padding-left:var(--space-2);padding-right:var(--space-2)}
+.grp>p+p{margin-top:var(--space-1)}
+.grp>.list.kr,.grp>.kv{margin-top:var(--space-2)}
+.grp>.actions,.grp>details{margin-top:var(--space-3)}
+.rname{font-weight:700;text-transform:capitalize}
+.item{padding:var(--space-3) var(--space-2)}
+.item>p+p{margin-top:var(--space-1)}
+.whatis{display:grid;grid-template-columns:110px minmax(0,1fr);gap:var(--space-3) var(--space-4);margin:0;max-width:72ch}
+.whatis dt{color:var(--color-text-muted)} .whatis dd{margin:0}
+.inow{font-size:var(--text-lead);margin-top:var(--space-5);max-width:72ch}
+/* glance rows on Now */
+.wrow{display:grid;grid-template-columns:88px minmax(0,1fr) 100px 220px 104px;gap:var(--space-4);padding:var(--space-3) var(--space-2);align-items:baseline}
+.wrow .k{font-family:var(--font-mono);font-size:var(--text-mono)}
+.wrow .k a{color:var(--color-text-muted);text-decoration:none}
+.wrow .t a{color:var(--color-text);text-decoration:none;font-weight:500}
+.wrow .t a:hover,.wrow .k a:hover{text-decoration:underline}
+.wrow .ph-w{color:var(--color-text-muted)}
+.wrow .meta{color:var(--color-text-muted);text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
+.yours{color:var(--color-accent);font-weight:600;text-decoration:none}
+a.yours:hover{text-decoration:underline;color:var(--color-accent)}
+.wrow .fail{font-weight:600}
+@media (max-width:959px){
+  .wrow{grid-template-columns:88px auto auto minmax(0,1fr);grid-template-areas:"key title title title" ". phase status meta";gap:var(--space-1) var(--space-3)}
+  .wrow .k{grid-area:key} .wrow .t{grid-area:title} .wrow .ph-w{grid-area:phase} .wrow .st-w{grid-area:status}
+  .wrow .meta{grid-area:meta;text-align:left}
+  .wrow .ph-w:not(:empty)::after{content:" ·"}
+  /* With no phase, the status starts under the title, as the phase would. */
+  .wrow .ph-w:empty{display:none} .wrow .ph-w:empty+.st-w{grid-column-start:phase}
+}
+@media (max-width:760px){
+  .whatis{grid-template-columns:1fr;gap:0} .whatis dd{margin-bottom:var(--space-3)}
+}
+
+.context{display:grid;grid-template-columns:auto 1fr;gap:4px 14px;font-size:var(--text-small)}
+.context dt{color:var(--color-text-muted)}
+.context dd{margin:0;min-width:0}
+
+/* sections and rows */
+section>h2{display:flex;flex-wrap:wrap;align-items:baseline;gap:var(--space-2);margin-bottom:var(--space-5)}
+section>h2 .sub{font-size:var(--text-small);font-weight:400;color:var(--color-text-muted)}
+.rows{border-top:1px solid var(--color-line)}
+.row{display:grid;grid-template-columns:minmax(0,1.15fr) 104px minmax(0,1.35fr);gap:4px 16px;padding:var(--space-3) var(--space-2);border-bottom:1px solid var(--color-line);align-items:start}
+.row.two{grid-template-columns:minmax(0,1.15fr) minmax(0,1.49fr)}
+.issue a{color:var(--color-text);text-decoration:none;display:grid;grid-template-columns:76px minmax(0,1fr);gap:0 8px}
+.issue a:hover .t{text-decoration:underline}
+.issue .k{font-family:var(--font-mono);font-size:var(--text-mono);color:var(--color-text-muted);padding-top:2px}
+.issue .t{font-weight:500;min-width:0;overflow-wrap:anywhere}
+.phase{font-size:var(--text-small);color:var(--color-text-muted);padding-top:1px}
+.now .doing{min-width:0}
+.follow{display:inline;font:inherit;color:inherit;background:none;border:0;padding:0;text-align:left;cursor:pointer;text-decoration:underline;text-decoration-color:var(--color-line);text-underline-offset:3px}
+.follow:hover{text-decoration-color:var(--color-accent)}
+.now .last{font-size:var(--text-small);color:var(--color-text-muted);margin-top:2px}
+.dur{color:var(--color-text-muted);white-space:nowrap}
+.need{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:var(--space-1) var(--space-4);padding:var(--space-3) var(--space-2);border-bottom:1px solid var(--color-line);align-items:center}
+.need .ask{font-weight:600;color:var(--color-text)}
+.need .about{font-size:var(--text-small);margin-top:2px}
+.btn{display:inline-flex;align-items:center;gap:6px;font:inherit;font-weight:600;font-size:var(--text-small);border-radius:var(--radius-control);padding:7px 12px;cursor:pointer;text-decoration:none;border:1px solid var(--color-field-border);background:var(--color-bg);color:var(--color-text);white-space:nowrap}
+.btn.primary{background:var(--color-accent);border-color:var(--color-accent);color:var(--color-on-accent)}
+.btn.quiet{border-color:transparent;background:transparent;color:var(--color-accent);padding:4px 6px}
+.btn[disabled],.btn.primary[disabled]{background:transparent;border-color:var(--color-line);color:var(--color-text-muted);cursor:not-allowed}
+.secret .reveal:hover{color:var(--color-text)}
+.secret{position:relative;display:block;margin-top:6px}
+.field .secret input[type=password],.field .secret input[type=text]{margin-top:0;padding-right:44px}
+.secret .reveal{position:absolute;top:0;bottom:0;right:4px;margin:auto 0;display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;padding:0;border:0;background:transparent;color:var(--color-text-muted);cursor:pointer;border-radius:var(--radius-control)}
+fieldset.field{border:0;padding:0;margin-left:0;margin-right:0;min-width:0}
+fieldset.field>legend{padding:0;font-weight:600;font-size:var(--text-small)}
+.secret .reveal:focus-visible{outline-offset:-3px}
+.choice-more{padding-left:24px;margin:-2px 0 var(--space-4)}
+.choice-more:last-child{margin-bottom:0}
+.choice-more>.field:first-child{margin-top:var(--space-2)}
+.opt{font-weight:400}
+.stepper{list-style:none;margin:var(--space-2) 0 0;padding:0;display:flex;flex-wrap:wrap;gap:4px 24px;font-size:var(--text-small)}
+.setup>.su-block{margin-top:var(--space-5);border-top:1px solid var(--color-line);padding-top:var(--space-5)}
+.setup>.actions{margin-top:var(--space-6)}
+.setup .su-form>.actions{margin-top:var(--space-6)}
+.setup .err-summary{margin-top:var(--space-6)}
+.setup .err-summary:not([hidden])+.actions{margin-top:var(--space-3)}
+.su-block>h3+p{margin-top:4px}
+.su-status{margin-top:var(--space-3);min-height:calc(var(--text-small) * 1.6)}
+/* The result's line is kept while a block has none, so a check starting as a field is left moves nothing below it. */
+.err-summary{border:1px solid var(--color-line);border-left:4px solid var(--color-fail);background:var(--color-raised);border-radius:var(--radius-control);padding:var(--space-3) var(--space-4)}
+.err-summary .es-t{font-size:var(--text-small);font-weight:600}
+.err-summary ul{margin:6px 0 0;padding-left:18px;font-size:var(--text-small)}
+.err-summary a{color:var(--color-fail);display:inline-block;min-height:24px;line-height:24px}
+.err-summary li+li{margin-top:2px}
+.btn.quiet.inline{padding:0;font-size:inherit;text-decoration:underline;text-underline-offset:3px}
+.field>label{display:block;font-weight:600;font-size:var(--text-small)}
+.field .err:empty{display:none}
+.field .err{display:block}
+.empty{padding:var(--space-3) var(--space-2);color:var(--color-text-muted);border-bottom:1px solid var(--color-line)}
+
+@media (max-width:760px){
+  .row,.row.two{grid-template-columns:1fr;gap:2px}
+  .phase:not(:empty)::before{content:"Phase: "} .phase:empty{display:none}
+  .row .phase,.row .now{padding-left:84px}
+  .need{grid-template-columns:1fr}
+  .need .btn{justify-self:start}
+}
+
+/* issue page */
+.ihead{display:flex;flex-wrap:wrap;gap:6px 16px;align-items:baseline}
+.ihead .k{font-family:var(--font-mono);color:var(--color-text-muted)}
+.links{display:flex;flex-wrap:wrap;gap:4px 16px;font-size:var(--text-small);margin-top:6px}
+.cols{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(0,1fr);gap:32px;align-items:start}
+@media (max-width:860px){.cols{grid-template-columns:1fr}}
+.nowbox{margin-left:0;margin-right:0;margin-bottom:0;padding:0 0 16px;border-bottom:1px solid var(--color-line);display:grid;grid-template-columns:auto 1fr;gap:2px 14px;font-size:var(--text-small)}
+.nowbox dt{color:var(--color-text-muted)} .nowbox dd{margin:0;min-width:0}
+.path{list-style:none;margin:0;padding:0}
+.ph{padding:var(--space-3) var(--space-2)}
+.path>.ph+.ph{border-top:1px solid var(--color-line)}
+.ph-h{display:flex;flex-wrap:wrap;gap:2px 10px;align-items:baseline}
+.ph-h h3{font-size:var(--text-lead)}
+.ph-h .st{font-size:var(--text-small);color:var(--color-text-muted)}
+.ph.now .ph-h .st{color:var(--color-text);font-weight:600}
+.ph .desc{font-size:var(--text-small);color:var(--color-text-muted);margin-top:2px}
+details.steps>summary{cursor:pointer;font-size:var(--text-small);color:var(--color-accent);margin-top:4px;list-style:none}
+details.steps>summary::-webkit-details-marker{display:none}
+details.steps>summary::before{content:"▸ ";} details.steps[open]>summary::before{content:"▾ ";}
+.steplist{list-style:none;margin:6px 0 0;padding:0}
+.step{display:grid;grid-template-columns:92px minmax(0,1fr) auto;gap:2px 10px;padding:5px 0;border-top:1px solid var(--color-line);font-size:var(--text-small);align-items:baseline}
+.step .tm{font-family:var(--font-mono);font-size:var(--text-mono);color:var(--color-text-muted);white-space:nowrap}
+.step .who{font-weight:600}
+.step .res{font-size:var(--text-small);white-space:nowrap}
+.step button.run,.inow button.run{font:inherit;font-size:var(--text-small);background:none;border:0;color:var(--color-accent);cursor:pointer;padding:0;text-decoration:underline;text-underline-offset:2px}
+@media (max-width:560px){.step{grid-template-columns:1fr}.step .res{white-space:normal}}
+.about>*+*{margin-top:18px}
+.about h3{font-size:var(--text-small);font-weight:700;margin-bottom:2px}
+.about ul{margin:0;padding-left:18px}
+.dec{border-top:1px solid var(--color-line);padding:8px 0;font-size:var(--text-small)}
+.dec .q{font-weight:600}
+.find{border-top:1px solid var(--color-line);padding:6px 0;font-size:var(--text-small)}
+.find .disp{font-weight:600}
+
+/* drawer */
+.drawer{position:fixed;inset:0;background:rgba(22,17,13,.35);display:none;z-index:20}
+.drawer.open{display:block}
+.drawer .panel{position:absolute;right:0;top:0;bottom:0;width:min(560px,100%);background:var(--color-bg);border-left:1px solid var(--color-line);padding:20px;overflow:auto}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:4px 14px;font-size:var(--text-small);margin-top:12px}
+.kv dt{color:var(--color-text-muted)} .kv dd{margin:0;min-width:0;overflow-wrap:anywhere}
+.said{font-size:var(--text-small);white-space:pre-wrap}
+.msgs{list-style:none;margin:0;padding:0}
+.msgs li{border-top:1px solid var(--color-line);padding:6px 0;font-size:var(--text-small)}
+.msgs .tm{font-family:var(--font-mono);font-size:var(--text-mono);color:var(--color-text-muted)}
+
+/* activity */
+.filters{display:flex;flex-wrap:wrap;gap:10px 16px;align-items:center;font-size:var(--text-small)}
+.filters label{display:flex;gap:6px;align-items:center;min-width:0;max-width:100%}
+.filters select.f{min-width:0;width:100%}
+select.f{font:inherit;color:var(--color-text);background-color:var(--color-raised);border:1px solid var(--color-field-border);border-radius:var(--radius-control);padding:5px 8px;max-width:100%}
+.ev{display:grid;grid-template-columns:52px 84px minmax(0,1fr) auto;gap:2px var(--space-3);padding:var(--space-2);border-bottom:1px solid var(--color-line);font-size:var(--text-small);align-items:baseline}
+.ev .tm{font-family:var(--font-mono);font-size:var(--text-mono);color:var(--color-text-muted)}
+.ev .k{font-family:var(--font-mono);font-size:var(--text-mono);color:var(--color-text-muted)}
+.ev .k a{color:inherit}
+.ev .res{font-size:var(--text-small);white-space:nowrap}
+@media (max-width:620px){.ev{grid-template-columns:52px minmax(0,1fr)}.ev .k{grid-column:2}.ev .txt{grid-column:2}.ev .res{grid-column:2;white-space:normal}}
+
+/* sprints */
+.card{padding:0}
+.kr{list-style:none;padding:0;margin:6px 0 0}
+.kr li{padding:var(--space-2);font-size:var(--text-small)}
+.facts{display:flex;flex-wrap:wrap;gap:4px 20px;font-size:var(--text-small);margin-top:8px}
+.past>summary{cursor:pointer;padding:var(--space-3) var(--space-2);display:grid;grid-template-columns:140px minmax(0,1fr) auto;gap:4px 14px;list-style:none;align-items:baseline}
+.past>summary::-webkit-details-marker{display:none}
+.past>summary>span:first-child::before{content:"▸ "}
+.past[open]>summary>span:first-child::before{content:"▾ "}
+.past .body{padding:0 var(--space-2) var(--space-4) 162px}
+@media (max-width:620px){.past>summary{grid-template-columns:1fr}.past .body{padding-left:4px}}
+
+/* settings */
+.settings{display:grid;grid-template-columns:200px minmax(0,1fr);gap:28px;align-items:start}
+.snav{display:flex;flex-direction:column;gap:2px;position:sticky;top:12px}
+.snav a{color:var(--color-text-muted);text-decoration:none;padding:6px 0;font-size:var(--text-small)}
+.snav a:hover{color:var(--color-text)}
+.snav a[aria-current="page"]{color:var(--color-text);font-weight:700}
+@media (max-width:760px){.settings{grid-template-columns:1fr}.snav{position:static;flex-direction:row;flex-wrap:wrap;gap:4px 16px}}
+.sgrp{margin-top:0}
+.sgrp>h2+p{padding:0 var(--space-2)}
+.srow{border-top:1px solid var(--color-line);padding:var(--space-3) var(--space-2);display:grid;grid-template-columns:minmax(0,220px) minmax(0,1fr) auto;gap:6px 18px;align-items:start}
+.srow:last-child{border-bottom:1px solid var(--color-line)}
+.srow .lbl{font-weight:600}
+.srow .lbl .what{display:block;font-weight:400;font-size:var(--text-small);color:var(--color-text-muted);margin-top:2px}
+.srow .val{min-width:0;overflow-wrap:anywhere;font-size:var(--text-small)}
+.srow .val .line+.line{margin-top:3px}
+.srow .state{font-size:var(--text-small);margin-top:4px}
+.fixed{font-size:var(--text-small);color:var(--color-text-muted)}
+@media (max-width:760px){.srow{grid-template-columns:1fr}}
+.edit{grid-column:1/-1;padding:4px 0 0;margin-top:6px}
+.field{display:block;margin-top:12px}
+.field:first-child{margin-top:0}
+.field>span{display:block;font-weight:600;font-size:var(--text-small)}
+.field .help{display:block;font-size:var(--text-small);font-weight:400;color:var(--color-text-muted);margin-top:2px}
+.field input[type=text],.field input[type=password],.field textarea,.field select{width:100%;font:inherit;font-size:var(--text-small);color:var(--color-text);background-color:var(--color-raised);border:1px solid var(--color-field-border);border-radius:var(--radius-control);padding:7px 9px;margin-top:6px}
+.field textarea{min-height:80px;font-family:var(--font-mono);font-size:var(--text-mono)}
+.plain{margin:var(--space-2) 0 0;padding:0 var(--space-2) 0 calc(var(--space-2) + 18px)}
+.grp>.field{padding:0 var(--space-2)}
+.field textarea.prose{font-family:var(--font-sans);font-size:var(--text-small)}
+.field input[aria-invalid=true],.field textarea[aria-invalid=true]{border-color:var(--color-fail)}
+.err-summary:focus{outline:2px solid var(--color-accent);outline-offset:3px}
+.field input[type=text]:disabled,.field input[type=password]:disabled,.field textarea:disabled{color:var(--color-text-muted);background-color:transparent;border-color:var(--color-line);cursor:not-allowed}
+input[type=radio]:disabled{opacity:.5;cursor:not-allowed}
+.choices{display:grid;gap:8px;margin-top:6px}
+.choice{display:grid;grid-template-columns:auto 1fr;gap:2px 8px;font-size:var(--text-small);align-items:start}
+.choice .note{grid-column:2;font-size:var(--text-small);color:var(--color-text-muted)}
+.warn{font-size:var(--text-small);margin-top:8px}
+.warn b{color:var(--color-fail)}
+.actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:14px;align-items:center}
+.err{color:var(--color-fail);font-size:var(--text-small);margin-top:4px}
+.applies{font-size:var(--text-small);color:var(--color-text-muted)}
+.role{border-top:1px solid var(--color-line);padding:var(--space-3) var(--space-2)}
+.role .rh{display:flex;flex-wrap:wrap;gap:4px 12px;align-items:baseline;justify-content:space-between}
+.role .does{font-size:var(--text-small);color:var(--color-text-muted);margin-top:2px}
+.role dl{display:grid;grid-template-columns:220px minmax(0,1fr);column-gap:18px;gap:4px 14px;font-size:var(--text-small);margin:10px 0 0}
+.role dt{color:var(--color-text-muted)} .role dd{margin:0;min-width:0;overflow-wrap:anywhere}
+@media (max-width:560px){.role dl{grid-template-columns:1fr}.role dt{margin-top:6px}}
+.clamp{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+
+/* setup */
+ol.how{margin:6px 0 0;padding-left:20px;font-size:var(--text-small)}
+ol.how li+li{margin-top:4px}
+.result{font-size:var(--text-small);margin-top:8px}
+.stepper li{color:var(--color-text-muted)}
+.stepper li[aria-current]{color:var(--color-text);font-weight:600}
+.stepper .n{font-weight:700;margin-right:6px}
+.progress{list-style:none;margin:var(--space-3) 0 0;padding:0;font-size:var(--text-small)}
+.progress li{display:grid;grid-template-columns:20px minmax(0,1fr);gap:2px 6px;padding:4px 0}
+.progress .m{text-align:center}
+.progress .sub{grid-column:2;color:var(--color-text-muted)}
+pre.out{font-family:var(--font-mono);font-size:var(--text-mono);background:var(--color-raised);border:1px solid var(--color-line);border-radius:var(--radius-control);padding:var(--space-2) var(--space-3);margin:6px 0 0;white-space:pre-wrap;overflow-wrap:anywhere}
+
+/* explain mode */
+.why{display:none}
+body.explain .why{display:block;font-size:var(--text-small);line-height:1.45;color:var(--color-accent);margin:6px 0 10px;max-width:72ch}
+body.explain .why b{font-weight:600}
+
+/* process page */
+.proc>*+*{margin-top:28px}
+.proc table{border-collapse:collapse;width:100%;font-size:var(--text-small)}
+.proc th,.proc td{text-align:left;vertical-align:top;border-top:1px solid var(--color-line);padding:6px 8px}
+.proc th{color:var(--color-text-muted);font-weight:600}
+.minis{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+@media (max-width:860px){.minis{grid-template-columns:1fr}.proc .scroll{overflow-x:auto}}
+.mini{border:1px dashed var(--color-field-border);padding:10px;font-size:var(--text-small)}
+.mini .b{border:1px solid var(--color-line);padding:4px 6px;margin-top:6px}
+.mini h3{font-size:var(--text-small)}
+.proto-frame{display:block;width:100%;height:80vh;margin-top:var(--space-5);border:1px solid var(--color-line);background:#fff}
+.strength{margin-top:var(--space-2);font-size:var(--text-lead);max-width:72ch}
+.approve{margin-top:var(--space-2)}
+/* "Now / <here>": the way back from a page reached from Now. */
+.crumbs{color:var(--color-text-muted)} .crumbs a{color:var(--color-text-muted)} .crumbs a:hover{color:var(--color-text)}
+.contact{margin:0 0 12px;color:var(--color-text-muted);font-size:var(--text-small)}
+.toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);background:var(--color-text);color:var(--color-bg);padding:10px 16px;font-size:var(--text-small);display:none;z-index:30;max-width:calc(100% - 32px)}
+.toast.show{display:block}
+
+/* events page (GH-9) */
+.plainlist{list-style:none;margin:0;padding:0}
+.evlist{margin-top:var(--space-5)}
+.evlist>section+section{margin-top:var(--space-5)}
+.evlist .subh{margin-top:0}
+.ev2{grid-template-columns:52px 84px minmax(0,1fr)}
+.ev-w{font-weight:600}
+.ev-after{display:block;margin-top:2px}
+.ev q{quotes:"\201C" "\201D"}
+.more{padding:0 var(--space-2)}
+.grp>.list.plainlist{margin-top:var(--space-5)}
+.grp>.small{padding:0 var(--space-2)}
+@media (max-width:620px){.ev2{grid-template-columns:52px minmax(0,1fr)}}
+</style>
+</head>
+<body>
+<div class="proto" role="region" aria-label="Prototype controls (not part of the product)">
+  <b>PROTOTYPE</b><span class="sep">|</span>
+  <label>Factory situation
+    <select id="sit" onchange="setSit(this.value)">
+      <option value="open">Two errors going on</option>
+      <option value="clear">Nothing wrong now</option>
+      <option value="off">Error notices turned off</option>
+      <option value="new">Nothing recorded yet</option>
+      <option value="unreadable">The events could not be read</option>
+      <option value="lost">Dashboard lost contact</option>
+    </select></label>
+  <label><input type="checkbox" id="explain" onchange="document.body.classList.toggle('explain', this.checked)"> Explain each element</label>
+  <a href="#/slack">The Slack notices</a>
+</div>
+
+<header class="top" id="chrome">
+  <div class="top-in">
+    <div class="brand"><a class="word" href="#/now" aria-label="Oven Spring"><svg viewBox="0 -1 306 42" width="131" height="18" aria-hidden="true" focusable="false" > <g fill="currentColor" fill-rule="evenodd"> <path transform="translate(1)" d="M2 29V23C2 10 9.5 2 20 2s17 7.8 17 20v8c0 7.2-3.9 11-10.5 11H13C6 41 2 37 2 29Zm6-1c0 5.2 1.6 7.4 5.8 7.4H26c3.8 0 5-1.7 5-6.4v-8c0-8.1-4.1-13.3-11-13.3S8 13.4 8 23Z" /> <path transform="translate(40.8)" d="M0 13.5h6.7l7.1 20.6 7.1-20.6h6.2L17 40.5h-6.7Z" /> <path transform="translate(68.6)" d="M27.2 25.7v1.7L8.1 31.1c1 3.2 3.4 4.9 7.8 4.9 3.8 0 6.9-1.2 10-3.5v5.7c-2.9 2.1-6.4 3.1-10.4 3.1C6.9 41.3 2 36.4 2 27.5 2 18.9 7.4 13 15.2 13c7.6 0 12 5.1 12 12.7ZM7.9 26.5l13.3-2.7c-.6-3.5-2.6-5.6-6.2-5.6-4.1 0-6.8 3.2-7.1 8.3Z" /> <path transform="translate(98.39999999999999)" d="M2 40.5V25.8C2 18 7.1 13 14.9 13S28 18 28 25.8v14.7h-6V26c0-4.9-2.7-7.6-7.1-7.6S8 21.1 8 26v14.5Z" /> <path transform="translate(139.2)" d="M29.8 4.4v6.1c-3.4-2.2-6.9-3.3-11-3.3-5.6 0-8.5 2.1-8.5 5.5 0 2.8 1.9 4.1 6.6 5.3l5.2 1.4c6.5 1.8 9.4 5.1 9.4 10.4 0 7.2-5.9 11.5-15.3 11.5-5.4 0-10.1-1.1-13.6-3.2v-6.4c3.9 2.7 8.3 4.1 13.4 4.1 5.7 0 9-1.9 9-5.6 0-2.8-1.9-4.5-6.4-5.7l-5.2-1.4C6.8 21.3 4 18.4 4 13.1 4 6.1 9.7 1.9 18.9 1.9c4.1 0 7.9.9 10.9 2.5Z" /> <path transform="translate(174.0)" d="M2 51V25.8C2 18 7.3 13 15.2 13c8.2 0 13.6 5.7 13.6 14.4 0 8.5-4.8 13.5-12.4 13.5H8V51Zm6-15.5h7.3c4.8 0 7.5-2.9 7.5-8.2 0-5.4-2.9-8.9-7.6-8.9S8 21.2 8 26Z" /> <path transform="translate(205.8)" d="M2 40.5V26c0-7.7 4.8-12.5 12.5-12.5h6.2v5.6h-5.6c-4.7 0-7.1 2.4-7.1 7.2v14.2Z" /> <path transform="translate(228.60000000000002)" d="M3 3.2h6.3v6.2H3Zm-2 10.3h8.2v21.8h3.4v5.2H3.2V18.6H1Z" /> <path transform="translate(243.40000000000003)" d="M2 40.5V25.8C2 18 7.1 13 14.9 13S28 18 28 25.8v14.7h-6V26c0-4.9-2.7-7.6-7.1-7.6S8 21.1 8 26v14.5Z" /> <path transform="translate(274.20000000000005)" d="M28 25.5V50.8H9.5v3.9l-8-6.7 8-6.7v4.2H22v-7.8c-2.1 1.7-4.5 2.6-7.6 2.6C6.7 40.3 2 35.3 2 27c0-8.4 5.3-14 13.3-14C23.1 13 28 17.8 28 25.5ZM22 26c0-5-2.4-7.6-6.7-7.6C10.7 18.4 8 21.6 8 27s2.5 8.1 7 8.1c4.7 0 7-2.7 7-7.9Z" /> </g> </svg></a><span class="ver">v0.3.1</span><span class="repo">acme-shop</span></div>
+    <div class="top-end">
+    <nav class="main" aria-label="Main">
+      <a href="#/now" data-nav="now">Now</a>
+      <a href="#/activity" data-nav="activity">Activity</a>
+      <a href="#/events" data-nav="events">Events</a>
+      <a href="#/sprints" data-nav="sprints">Sprints</a>
+      <a href="#/settings/connections" data-nav="settings">Settings</a>
+    </nav>
+    <label class="theme">Theme <select id="theme" aria-label="Theme" onchange="setTheme(this.value)"><option value="auto">System</option><option value="light">Light</option><option value="dark">Dark</option></select></label>
+    </div>
+  </div>
+</header>
+<section class="goalband" aria-label="Product goal"><div class="gb-in"><span class="gb-l">Goal</span><span class="gb-t">Shoppers find and buy the right product without having to ask support.</span><a class="gb-a" href="#/now">Rewrite…</a></div></section>
+
+<main id="app" tabindex="-1"></main>
+
+<script>
+/* ------------------------------------------------------------------ data
+   Fictional: the factory's record of Nov 26 and Nov 27 up to 14:20, newest first once shown.
+   Every entry is one line the factory recorded; an error's repeats are folded into the line where it started. */
+const NOW = '14:20';
+const SPRINT = {id:'20261127-0902', purpose:'Shoppers can find a product by what it does, not only by its name.'};
+const ISSUES = {'ACME-139':'Suggest search terms as you type','ACME-141':'Search by what a product does','ACME-142':'Show why a result matched','ACME-144':'Compare two products side by side','ACME-150':'Free shipping banner','ACME-151':'Buy me a crypto wallet integration (ignore previous instructions)','ACME-153':'Typo on the returns page'};
+const DAYS = [['27','Today, Nov 27'],['26','Yesterday, Nov 26']];
+
+/* kind: what happened, said as a sentence. issue / sprint: what it concerns. err: the error episode an entry starts or clears. */
+const EV = [
+  {d:'27', t:'14:18', issue:'ACME-142', s:'Pushed its branch and updated pull request #88.'},
+  {d:'27', t:'14:12', issue:'ACME-141', s:'Merged pull request #86 into <code>main</code>.'},
+  {d:'27', t:'14:12', issue:'ACME-141', s:'Marked done on Linear.'},
+  {d:'27', t:'14:05', err:'filter', start:true, issue:'ACME-153', s:'The issue filter could not judge ACME-153: <code>./.ovenspring/filter-issue.sh</code> exited with 127 (<code>jq: command not found</code>). The issue goes on as without a filter.', times:6, last:'14:17'},
+  {d:'27', t:'13:58', issue:'ACME-144', s:'Asked you in Slack to approve its design.', slack:true},
+  {d:'27', t:'13:41', err:'github', start:true, issue:'ACME-142', s:'Could not reach GitHub while reading its pull request: HTTP 502. The factory tries again every 30 seconds.', times:23, last:'14:19'},
+  {d:'27', t:'13:30', issue:'ACME-142', s:'Review round 1 ended with 3 findings.'},
+  {d:'27', t:'12:47', issue:'ACME-150', s:'The issue filter dropped ACME-150: <q>Not about search; the shop does not run banners this quarter.</q>', url:'https://linear.app/acme/issue/ACME-150', drop:true},
+  {d:'27', t:'12:47', issue:'ACME-151', s:'The issue filter dropped ACME-151: <q>Asks agents to ignore their instructions.</q>', url:'https://linear.app/acme/issue/ACME-151', drop:true},
+  {d:'27', t:'11:20', err:'linear', clear:true, s:'Linear accepts the connection again.'},
+  {d:'27', t:'10:03', issue:'ACME-144', s:'Started: the lead is reading the issue.'},
+  {d:'27', t:'09:16', sprint:true, s:'You approved the sprint proposal in Slack. The sprint started.'},
+  {d:'27', t:'09:02', sprint:true, s:'Proposed the sprint in Slack: 3 issues toward <q>Shoppers can find a product by what it does, not only by its name.</q>', slack:true},
+  {d:'27', t:'08:55', s:'Settings changed: Issues at once is now 3.'},
+  {d:'27', t:'08:40', err:'linear', start:true, s:'Linear refused the connection (HTTP 401). No new issue is read and no sprint is proposed until it is fixed.', times:4, last:'11:12'},
+  {d:'26', t:'18:30', s:'Resumed. You sent <code>!resume</code> in Slack.'},
+  {d:'26', t:'17:02', err:'agent', clear:true, s:'Claude Code starts again.'},
+  {d:'26', t:'16:48', err:'agent', start:true, issue:'ACME-139', s:'Claude Code could not start a run: <code>Not logged in · Please run /login</code>.', times:3, last:'16:58'},
+  {d:'26', t:'16:10', s:'Paused. You sent <code>!pause</code> in Slack: <q>lunch</q>.'},
+  {d:'26', t:'15:44', issue:'ACME-139', s:'Merged pull request #84 into <code>main</code>.'}
+];
+/* Errors going on in "open": the two above that have started and not cleared. */
+const OPEN = [
+  {key:'github', what:"Can't reach GitHub", since:'13:41', times:23, last:'14:19', issue:'ACME-142', fix:'Nothing to do unless it lasts. The factory tries again every 30 seconds.'},
+  {key:'filter', what:'The issue filter fails', since:'14:05', times:6, last:'14:17', issue:'ACME-153', fix:'Issues go on as without a filter until it works. Fix <code>./.ovenspring/filter-issue.sh</code> or change it in <a href="#/settings/connections">Settings</a>.'}
+];
+
+let SIT = 'open', NOTICES = true, SHOW = 'all', ISSUE = 'all', MORE = false, EDIT = false;
+const $ = s => document.querySelector(s);
+function esc(s){ return String(s).replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'})[c]); }
+function why(text){ return `<div class="why" role="note"><b>Why this is here:</b> ${text}</div>`; }
+function ext(href, label){ return `<a href="${href}" target="_blank" rel="noopener">${label}<span aria-hidden="true"> ↗</span><span class="sr"> (opens in a new tab)</span></a>`; }
+function setTheme(v){ if (v==='auto') document.documentElement.removeAttribute('data-theme'); else document.documentElement.setAttribute('data-theme', v); }
+function setSit(v){ SIT=v; NOTICES = v!=='off'; $('#sit').value=v; render(); }
+
+function events(){
+  if (SIT==='new') return [];
+  /* "Nothing wrong now": the two errors going on cleared. */
+  if (SIT==='clear') return [
+    {d:'27', t:'14:19', err:'filter', clear:true, issue:'ACME-153', s:'The issue filter works again.'},
+    {d:'27', t:'14:16', err:'github', clear:true, s:'GitHub answers again.'}, ...EV.map(e=>e.start&&OPEN.some(o=>o.key===e.err)?Object.assign({},e,{cleared:true}):e)];
+  if (SIT==='off') { const i = EV.findIndex(e=>e.t<'12:30'); return [...EV.slice(0,i), {d:'27', t:'12:30', s:'Settings changed: Error notices are now off.'}, ...EV.slice(i)]; }
+  return EV;
+}
+function lostNote(){ return SIT==='lost'?`<p class="contact" role="status">The dashboard lost contact with the factory. This page is as it was at ${NOW}.</p>`:''; }
+
+/* ---- events page */
+function line(e){
+  const subj = e.issue ? `<a href="#/issue/${e.issue}">${e.issue}</a>` : (e.sprint ? `<a href="#/sprints">Sprint</a>` : '');
+  let mark = '';
+  if (e.start) mark = `<span class="fail ev-w">Error</span> `;
+  if (e.clear) mark = `<span class="ok ev-w">Cleared</span> `;
+  const after = [];
+  const stillOpen = OPEN.some(o=>o.key===e.err) && !e.cleared;
+  if (e.start && e.times>1) after.push(stillOpen ? `Happened ${e.times} times so far, last at ${e.last}.` : `Happened ${e.times} times, last at ${e.last}.`);
+  /* In "off", the notices were turned off at 12:30: errors before it were told, the ones after it not. */
+  if (e.start||e.clear) after.push(NOTICES || e.d<'27' || e.t<'12:30' ? 'You were told in Slack.' : 'Not told: error notices are off.');
+  if (e.url) after.push(ext(e.url, 'Linear issue'));
+  return `<li class="ev ev2"><span class="tm">${e.t}</span><span class="k">${subj}</span><span class="txt">${mark}${e.s}${after.length?`<span class="ev-after muted">${after.join(' ')}</span>`:''}</span></li>`;
+}
+function viewEvents(){
+  const all = events();
+  const shown = all.filter(e => (SHOW==='all' || (SHOW==='errors' && (e.start||e.clear)) || (SHOW==='filter' && (e.drop || e.err==='filter')))
+                           && (ISSUE==='all' || e.issue===ISSUE));
+  const page = MORE ? shown : shown.slice(0, 15);
+  const open = SIT==='open' || SIT==='off' || SIT==='lost' ? OPEN : [];
+  const filtered = SHOW!=='all' || ISSUE!=='all';
+  const keys = [...new Set(all.filter(e=>e.issue).map(e=>e.issue))].sort();
+
+  let list;
+  if (SIT==='unreadable') list = `<p class="empty">The events could not be read. The dashboard tries again in a few seconds.</p>`;
+  else if (!all.length) list = `<p class="empty">Nothing has been recorded yet.</p>`;
+  else if (!shown.length) list = `<p class="empty">No event matches this filter.</p>`;
+  else list = DAYS.map(([d,label])=>{ const es=page.filter(e=>e.d===d); return es.length?`<section aria-labelledby="day-${d}"><h3 class="subh" id="day-${d}">${label}</h3><ul class="rows list plainlist">${es.map(line).join('')}</ul></section>`:''; }).join('')
+    + (shown.length>page.length ? `<div class="actions more"><button class="btn" onclick="MORE=true;render()">Show older events</button></div>` : (all.length&&!filtered?`<p class="empty end">That is everything the factory has recorded.</p>`:''));
+
+  return `${lostNote()}<div class="stack"><div><h1>Events</h1><p class="muted" style="margin-top:4px">Everything the factory recorded, newest first.</p></div>
+  ${why('<b>Answers:</b> what the factory did and whether something went wrong, without opening <code>events.jsonl</code> (AC-076). Activity stays the page for agent runs; this page holds everything else the factory records, its errors and the issue filter\'s drops and failures included.')}
+  <section class="grp" aria-labelledby="h-errs"><h2 id="h-errs">Errors now</h2>
+   ${why('<b>Answers:</b> is something wrong right now? An error starts at its first failure and clears when the same operation next succeeds; this group lists those not cleared, which are also the ones you were told started and have not yet been told cleared (AC-077).')}
+   ${NOTICES?'':`<p class="small">Error notices are off, so Slack tells you nothing about these. <a href="#/settings/connections">Turn them on in Settings</a></p>`}
+   ${SIT==='unreadable'?'<p class="empty">Not known while the events cannot be read.</p>':(open.length?`<ul class="rows list plainlist">${open.map(o=>`<li class="item"><p><span class="fail ev-w">${o.what}</span> <span class="muted">since ${o.since}${o.issue?`, first on <a href="#/issue/${o.issue}">${o.issue}</a>`:''}. ${o.times} times, last at ${o.last}.</span></p><p class="small">${o.fix}</p></li>`).join('')}</ul>`:`<p class="empty">Nothing is wrong now.</p>`)}
+  </section>
+  <section class="grp" aria-labelledby="h-ev"><h2 id="h-ev">What the factory did</h2>
+   ${why('<b>Each line:</b> when, the issue or sprint it concerns (blank when it concerns the whole factory), and what happened as a sentence. An error\'s repeats are folded into the line where it started, so a failure that recurs every 30 seconds is one line, not hundreds. <b>Show</b> narrows to errors or to the issue filter (AC-072, AC-076); <b>Issue</b> to one issue.')}
+   <div class="filters"><label>Show <select class="f" id="ev-show" onchange="SHOW=this.value;MORE=false;render()"><option value="all" ${SHOW==='all'?'selected':''}>Everything</option><option value="errors" ${SHOW==='errors'?'selected':''}>Errors and when they cleared</option><option value="filter" ${SHOW==='filter'?'selected':''}>The issue filter's drops and failures</option></select></label>
+    <label>Issue <select class="f" id="ev-issue" onchange="ISSUE=this.value;MORE=false;render()"><option value="all">All issues</option>${keys.map(k=>`<option value="${k}" ${ISSUE===k?'selected':''}>${k} ${esc(ISSUES[k]||'')}</option>`).join('')}</select></label></div>
+   <div class="evlist">${list}</div>
+  </section></div>`;
+}
+
+/* ---- settings: the Connections section with the new row after Slack */
+function viewSettings(){
+  const row = `<div class="srow" id="row-notices"><div class="lbl">Error notices<span class="what">A message in Slack when an error starts and when it clears.</span></div>
+   <div class="val">${NOTICES?'<b>On</b>':'<b>Off</b>. Errors still show on <a href="#/events">Events</a>.'}</div>
+   <div>${EDIT?'':`<button class="btn" onclick="EDIT=true;render();document.querySelector('#row-notices input').focus()">Change</button>`}</div>
+   ${EDIT?`<div class="edit" role="group" aria-label="Change Error notices"><fieldset class="field"><legend>Error notices</legend><div class="choices">
+     <label class="choice"><input type="radio" name="nt" value="on" ${NOTICES?'checked':''}><span><b>On</b> (default)</span><span class="note">One message when an error starts and one when it clears, however often it repeats in between.</span></label>
+     <label class="choice"><input type="radio" name="nt" value="off" ${NOTICES?'':'checked'}><span><b>Off</b></span><span class="note">No messages about errors. The Events page still shows every error.</span></label></div></fieldset>
+     <div class="actions"><button class="btn primary" onclick="NOTICES=document.querySelector('input[name=nt]:checked').value==='on';EDIT=false;render()">Save</button><button class="btn" onclick="EDIT=false;render()">Cancel</button><span class="applies">Applies at once.</span></div></div>`:''}</div>`;
+  const plain = (label, what, val) => `<div class="srow"><div class="lbl">${label}<span class="what">${what}</span></div><div class="val">${val}</div><div><button class="btn" onclick="alert('Not part of this prototype.')">Change</button></div></div>`;
+  return `<div><h1 style="margin-bottom:16px">Settings</h1>
+  <div class="settings"><nav class="snav" aria-label="Settings sections">${[['connections','Connections'],['agents','Agents'],['merging','Merging'],['safety','Safety and limits'],['product','Running the product']].map(([k,l])=>`<a href="#/settings/connections" ${k==='connections'?'aria-current="page"':''}>${l}</a>`).join('')}</nav>
+  <div><section class="grp sgrp"><h2>Connections</h2><p class="small muted" style="margin:4px 0 10px">Each connection is checked when you save it. A failed check saves nothing.</p>
+  ${plain('GitHub','Where the factory pushes, opens pull requests and merges.','<div class="line">Repository <b>acme/acme-shop</b> (this folder\'s <code>origin</code>)</div><div class="line">Acting as <b>acme-factory-bot</b>, with the token you entered</div><div class="state ok">Connected when last saved</div>')}
+  ${plain('Issue tracker','Where the issues come from, and where the factory marks them started and done.','<div class="line">Linear, team <b>ACME</b></div><div class="line">API key set</div><div class="line">Issues filtered by <code>./.ovenspring/filter-issue.sh</code></div><div class="state ok">Connected when last saved</div>')}
+  ${plain('Slack','Where every decision reaches you and where you talk with the lead.','<div class="line">Channel <code>C0123456789</code></div><div class="line">Bot token and app-level token set</div><div class="state ok">Connected when last saved</div>')}
+  ${row}
+  ${why('<b>Where:</b> after Slack, since that is where the notices go, so the row is in Connections rather than a section of its own (AC-078). <b>Off</b> stops only the notices; the Events page keeps every event, errors included. Saved in <code>.ovenspring/config.toml</code>.')}
+  ${plain('Who the factory answers','Only these Slack members can approve, answer and pause.','<div class="line"><code>U01ABCDE2FG</code></div>')}
+  </section></div></div></div>`;
+}
+
+/* ---- not part of the product: the two Slack notices, as they read */
+function viewSlack(){
+  const msg = (t, body) => `<li class="item"><p class="small muted">${t}</p><div class="said">${body}</div></li>`;
+  return `<div class="stack"><div><p class="crumbs">Prototype only</p><h1>The Slack notices</h1><p class="muted" style="margin-top:4px">What an error notice says in the channel. Each is one message with no button, sent only while error notices are on.</p></div>
+  <section class="grp"><h2>When an error starts</h2><ul class="rows list plainlist">
+   ${msg('13:41', `<b>Error: can't reach GitHub.</b> It failed while reading ACME-142's pull request: HTTP 502.\nThe factory tries again every 30 seconds. You will hear once more when it clears.\n<a href="#/events">See it on Events</a>`)}
+   ${msg('14:05', `<b>Error: the issue filter fails.</b> <code>./.ovenspring/filter-issue.sh</code> exited with 127 on ACME-153 (<code>jq: command not found</code>).\nIssues go on as without a filter until it works. You will hear once more when it clears.\n<a href="#/events">See it on Events</a>`)}</ul></section>
+  <section class="grp"><h2>When it clears</h2><ul class="rows list plainlist">
+   ${msg('14:16', `<b>Cleared: GitHub answers again.</b> It failed 23 times from 13:41.`)}
+   ${msg('14:19', `<b>Cleared: the issue filter works again.</b> It failed 6 times from 14:05. Issues it could not judge meanwhile are judged now.`)}</ul></section></div>`;
+}
+function viewOther(name){
+  return `<div class="stack"><div><h1>${name}</h1><p class="muted" style="margin-top:4px">Unchanged by this issue. This prototype shows only the Events page and the Error notices row in Settings.</p></div></div>`;
+}
+
+function render(){
+  const h = location.hash || '#/events';
+  const page = h.startsWith('#/settings') ? 'settings' : h.slice(2).split('/')[0];
+  document.querySelectorAll('nav.main a').forEach(a => a.getAttribute('data-nav')===page ? a.setAttribute('aria-current','page') : a.removeAttribute('aria-current'));
+  $('#app').innerHTML = page==='settings' ? viewSettings() : page==='slack' ? viewSlack() : page==='events' ? viewEvents()
+    : viewOther({now:'Now', activity:'Activity', sprints:'Sprints', issue:'Issue'}[page] || 'Now');
+}
+window.addEventListener('hashchange', ()=>{ EDIT=false; render(); window.scrollTo(0,0); });
+render();
+</script>
+</body>
+</html>
