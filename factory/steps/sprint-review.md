@@ -16,7 +16,7 @@ Load and read each skill completely before acting on your item: `ovenspring-writ
 
 ## 1. Judge the sprint
 
-Judge first whether the state the sprint's purpose states was reached, by its key results and by what they leave out: the purpose is met or missed. Then judge each key result met or not, with the observation behind it: a merged pull request, a test, a fact. A key result the records cannot show is not met, and its evidence names what is missing.
+Judge each key result against the approved plan and the relevant issue’s agreed criteria, using evidence about the product version being judged. Mark it met or not met and cite the observation behind the judgment. If the required evidence is missing, name it. Use those results to judge whether the sprint reached its purpose.
 
 ## 2. Review the working agreements and the knowledge
 
