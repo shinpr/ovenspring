@@ -229,6 +229,31 @@ test.describe('Show older events adds older lines below and keeps the shown ones
     await expect(button).toHaveCount(0)
     await expect(lines(page).nth(15)).toBeFocused()
   })
+
+  test('a filter changed while older lines load keeps focus on the filter', async ({ page }) => {
+    const older = eventsPage(EVENTS.open, new URLSearchParams()).older
+    await serve(page, {
+      events: EVENTS.open,
+      now: EVENTS_NOW,
+      delay: { [`/events?from=${older}`]: 1000 },
+    })
+    await page.goto('/events')
+    await expect(lines(page)).toHaveCount(15)
+
+    const button = page.getByRole('button', { name: 'Show older events' })
+    await button.focus()
+    await button.press('Enter')
+    const show = page.getByRole('combobox', { name: 'Show' })
+    await show.focus()
+    // Its answer holds lines older than the oldest shown and no older ones.
+    await show.selectOption({ label: 'Errors and when they cleared' })
+
+    await expect(page).toHaveURL('/events?show=errors')
+    await expect(lines(page)).toHaveCount(6)
+    // Past the held-back older answer, which the new filter forgets.
+    await page.waitForTimeout(1500)
+    await expect(show).toBeFocused()
+  })
 })
 
 // ---------------------------------------------------------------------------------------------

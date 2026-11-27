@@ -788,6 +788,44 @@ fn an_agent_cli_error_pauses_once_and_is_told_by_one_m08_across_a_refusal_and_a_
 }
 
 #[test]
+fn an_agent_cli_error_whose_text_holds_a_credential_pauses_once_with_the_masked_reason() {
+    let env = Env::new();
+    env.configure("");
+    env.script_agents(&json!({
+        "requirements@ACME-123": [{"fail": "fatal"}, ok_requirements()],
+        "codebase-analysis": [{"hang": true}],
+    }));
+    let gh = passing_github(&env);
+    let slack = SlackStub::default();
+    let mut services = on_slack(&gh, &slack, None);
+    // A held credential that the fake CLI's error text ("Claude AI usage limit reached") contains.
+    services.secrets = vec!["usage limit".to_owned()];
+    let mut d = started(&env, services);
+    d.begin_issue("ACME-123", "Export", vec![]).unwrap();
+    run_until(&mut d, 30, |_| {}, |d| d.halt_file().exists());
+    for _ in 0..2 {
+        d.tick().unwrap();
+    }
+
+    let starts: Vec<Value> = env
+        .events()
+        .into_iter()
+        .filter(|e| e["event"] == "launch-error" && e["failure"]["start"] == true)
+        .collect();
+    assert_eq!(starts.len(), 1);
+    let paused = paused_lines(&env);
+    assert_eq!(paused.len(), 1, "{paused:?}");
+    assert_eq!(paused[0]["reason"], starts[0]["failure"]["reason"]);
+    let halt = std::fs::read_to_string(d.halt_file()).unwrap();
+    assert!(!halt.contains("usage limit"), "{halt}");
+    assert!(
+        !paused[0].to_string().contains("usage limit"),
+        "{}",
+        paused[0]
+    );
+}
+
+#[test]
 fn an_agent_cli_error_pauses_once_and_is_told_by_one_m08_while_error_notices_are_off() {
     let env = Env::new();
     env.configure("[notices]\nerrors = false\n");

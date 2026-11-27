@@ -953,7 +953,11 @@ impl Daemon {
 
     /// Stops new launches until the owner resumes. `owner` is the Slack user who sent `!pause`,
     /// recorded so the line can say the owner paused it; `None` when the factory paused itself.
+    /// The reason is masked as error lines are, so the `paused` line of a CLI start carries the
+    /// reason exactly as that start recorded it.
     pub(crate) fn pause(&mut self, reason: &str, owner: Option<&str>) -> Result<(), DaemonError> {
+        let secrets: Vec<&str> = self.services.secrets.iter().map(String::as_str).collect();
+        let reason = &download::mask(reason, &secrets);
         let halt = self.halt_file();
         fs::write(&halt, format!("{reason}\n")).map_err(StoreError::io(&halt))?;
         let mut line = json!({"event": "paused", "reason": reason});

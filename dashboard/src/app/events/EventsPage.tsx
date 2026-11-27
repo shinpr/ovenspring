@@ -19,8 +19,9 @@ export function EventsPage() {
   // The oldest line the list keeps for this filter: once set, every poll returns the lines shown
   // and whatever arrived since, so nothing shown moves out. A new filter starts from the newest.
   const from = useRef<{ key: string; seq?: number }>({ key })
-  // While older lines load: the oldest line shown before them.
-  const loadingOlder = useRef<number | undefined>(undefined)
+  // While older lines load for this filter: the oldest line shown before them. A new filter
+  // forgets it, so its first answer moves no focus.
+  const loadingOlder = useRef<{ key: string; seq: number } | undefined>(undefined)
   const polled = usePoll(key, () => {
     const seq = from.current.key === key ? from.current.seq : undefined
     return api.events({
@@ -39,14 +40,19 @@ export function EventsPage() {
       const seq = oldest(page.lines)
       from.current = seq === undefined ? { key } : { key, seq }
     }
-    const before = loadingOlder.current
-    const added = page.lines.filter((l) => before !== undefined && l.seq < before)
-    if (added.length > 0) {
+    const pending = loadingOlder.current
+    if (pending?.key !== key) {
       loadingOlder.current = undefined
-      // The button is gone: focus moves to the first line it brought, as the owner reads on.
-      if (page.older === null) {
-        document.getElementById(`event-${Math.max(...added.map((l) => l.seq))}`)?.focus()
-      }
+      return
+    }
+    const added = page.lines.filter((l) => l.seq < pending.seq)
+    if (added.length === 0) {
+      return
+    }
+    loadingOlder.current = undefined
+    // The button is gone: focus moves to the first line it brought, as the owner reads on.
+    if (page.older === null) {
+      document.getElementById(`event-${Math.max(...added.map((l) => l.seq))}`)?.focus()
     }
   }, [page, key])
 
@@ -71,7 +77,8 @@ export function EventsPage() {
           if (page?.older == null) {
             return
           }
-          loadingOlder.current = oldest(page.lines)
+          const seq = oldest(page.lines)
+          loadingOlder.current = seq === undefined ? undefined : { key, seq }
           from.current = { key, seq: page.older }
           polled.refresh()
         }}
