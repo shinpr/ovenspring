@@ -1,5 +1,6 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { expect, fn, userEvent, within } from 'storybook/test'
+import type { LaunchRow } from '../../api/types.gen.ts'
 import { inReview, runs } from '../../fixtures/issue.ts'
 import { NOW } from '../../fixtures/overview.ts'
 import { IssueView } from './IssueView.tsx'
@@ -203,5 +204,75 @@ export const SmallChange: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
     await expect(canvas.getByText('A small change goes straight to building.')).toBeVisible()
+  },
+}
+
+const lead = (id: string, step: LaunchRow['step'], change: Partial<LaunchRow> = {}): LaunchRow => {
+  const [base] = runs
+  if (base === undefined) {
+    throw new Error('the fixture has no runs')
+  }
+  return {
+    ...base,
+    id,
+    endedAt: '2026-11-21T09:30:00Z',
+    role: 'lead',
+    step,
+    phase: 'design',
+    cli: 'claude',
+    result: 'done',
+    ...change,
+  }
+}
+
+/** Each design-phase step ran a preparation turn and its work; the path lists the step once. */
+export const PreparationTurns: Story = {
+  args: {
+    issue: {
+      ...inReview,
+      now: { ...inReview.now, phase: 'design', activity: 'writing-the-design' },
+      path: inReview.path.map((p) => {
+        switch (p.phase) {
+          case 'requirements':
+            return p
+          case 'design':
+            return { ...p, state: 'now', endedAt: null }
+          default:
+            return { ...p, state: 'ahead', startedAt: null, endedAt: null }
+        }
+      }),
+    },
+    runs: [
+      lead('design-2.1', 'design', {
+        endedAt: null,
+        result: 'running',
+        preparation: 'unsettled',
+      }),
+      lead('design-1.1', 'design', { result: 'failed', preparation: 'unsettled' }),
+      lead('scope-work.1', 'scope-check'),
+      lead('scope-prepare.1', 'scope-check', { preparation: 'told' }),
+      lead('analysis-work.1', 'codebase-analysis'),
+      lead('analysis-prepare.1', 'codebase-analysis', { preparation: 'asked' }),
+      lead('requirements-work.1', 'requirements', { phase: 'requirements' }),
+      lead('requirements-prepare.1', 'requirements', {
+        phase: 'requirements',
+        preparation: 'nothing-to-ask',
+      }),
+    ],
+  },
+  play: async ({ canvasElement }) => {
+    const path = within(within(canvasElement).getByRole('region', { name: 'Path' }))
+    await expect(path.getByText('1 run')).toBeInTheDocument()
+    await expect(path.getAllByText(/read the issue/)).toHaveLength(1)
+    await expect(path.getAllByText(/read the code/)).toHaveLength(1)
+    await expect(path.getAllByText(/decided which documents it needs/)).toHaveLength(1)
+    await expect(path.queryByText(/found nothing to ask you|asked you|told you/)).toBeNull()
+    await expect(
+      path.getByText(/checked whether to ask you anything before writing the design/)
+    ).toHaveTextContent('→ failed')
+    await expect(
+      path.getByText(/is checking whether to ask you anything before writing the design/)
+    ).toBeVisible()
+    await expect(path.getByRole('button', { name: 'follow' })).toBeVisible()
   },
 }
