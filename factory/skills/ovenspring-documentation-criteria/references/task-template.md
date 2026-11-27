@@ -1,8 +1,8 @@
 # Task: [Task Name]
 
 Metadata:
-- Source Work Plan Task: [P1-T1]
-- Dependencies: none | [Work Plan task IDs]
+- Source Work Plan Task: [one bare Work Plan task ID]
+- Dependencies: none | [bare Work Plan task IDs separated by commas]
 
 ## Implementation Outcome
 
