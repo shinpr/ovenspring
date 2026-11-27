@@ -991,13 +991,15 @@ fn address_of(url: &str) -> std::net::SocketAddr {
         .unwrap()
 }
 
-fn alive(pid: &str) -> bool {
-    std::process::Command::new("kill")
-        .args(["-0", pid])
-        .stderr(Stdio::null())
-        .status()
-        .unwrap()
-        .success()
+/// The pid of the daemon `start` started, once its output says it started one.
+fn started_daemon(start: &std::process::Output, pid_file: &Path) -> String {
+    assert!(start.status.success(), "{start:?}");
+    let pid = std::fs::read_to_string(pid_file).unwrap().trim().to_owned();
+    assert_eq!(
+        String::from_utf8_lossy(&start.stdout).trim(),
+        format!("Oven Spring started (pid {pid}). The dashboard is open in your browser.")
+    );
+    pid
 }
 
 // AC: docs/design/distribution-design.md § Acceptance Criteria: "When the owner runs `ovenspring
@@ -1007,8 +1009,8 @@ fn alive(pid: &str) -> bool {
 //     system shall stop its daemon after the daemon's current pass (AC-059)".
 // Behavior: `ovenspring start` -> the daemon runs detached and the browser is asked to open the
 //     dashboard's address -> `start` again -> the same daemon, the address opened again ->
-//     `ovenspring stop` -> the daemon has ended -> `start` once more -> a new daemon at the same
-//     address, so the owner's address keeps working.
+//     `ovenspring stop` -> `start` at once -> a new daemon at the same address, so the owner's
+//     address keeps working, and the stopped daemon's process ends.
 // @lane: integration
 // @dependency: the executable's start, stop and daemon commands, dashboard server
 // Substitutes: `open` and `xdg-open` on PATH record the address instead of opening a browser.
@@ -1030,16 +1032,7 @@ fn start_runs_one_daemon_and_opens_its_dashboard_and_stop_ends_it() {
         "Oven Spring is not running"
     );
 
-    let first = env.run(&["start"]);
-    assert!(first.status.success(), "{first:?}");
-    let pid = std::fs::read_to_string(&pid_file)
-        .unwrap()
-        .trim()
-        .to_owned();
-    assert_eq!(
-        String::from_utf8_lossy(&first.stdout).trim(),
-        format!("Oven Spring started (pid {pid}). The dashboard is open in your browser.")
-    );
+    let pid = started_daemon(&env.run(&["start"]), &pid_file);
     let url = opened_lines()[0].clone();
     assert_eq!(
         request(address_of(&url), "GET /api/v1/setup", None).status,
@@ -1063,14 +1056,19 @@ fn start_runs_one_daemon_and_opens_its_dashboard_and_stop_ends_it() {
         String::from_utf8_lossy(&stopped.stdout).trim(),
         format!("Oven Spring stopped (pid {pid})")
     );
-    assert!(!alive(&pid), "the daemon has ended");
 
-    let restarted = env.run(&["start"]);
-    assert!(restarted.status.success(), "{restarted:?}");
+    // Started at once: `stop` returned only after the daemon let the repository go.
+    started_daemon(&env.run(&["start"]), &pid_file);
     assert_eq!(
         opened_lines().last(),
         Some(&url),
         "a new daemon serves at the same address"
+    );
+    // Reaping the exited process is the operating system's, so its end is awaited.
+    let stopped_pid = pid.parse().unwrap();
+    assert!(
+        support::wait_until(15, || !ovenspring_daemon::app::alive(stopped_pid)),
+        "the stopped daemon's process has ended"
     );
     let stopped_again = env.run(&["stop"]);
     assert!(stopped_again.status.success(), "{stopped_again:?}");

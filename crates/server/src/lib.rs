@@ -24,9 +24,11 @@ pub mod version;
 use std::net::{Ipv4Addr, SocketAddr};
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::thread::JoinHandle;
 
 use axum::Router;
 use ovenspring_store::Store;
+use tokio::sync::oneshot;
 
 pub use setup::SetupChecks;
 
@@ -46,9 +48,23 @@ pub struct Context {
     pub version: version::Sources,
 }
 
-#[derive(Debug, Clone)]
+/// The dashboard while it serves: dropping it closes its port and its connections, and returns
+/// once they are closed.
+#[derive(Debug)]
 pub struct Server {
     pub addr: SocketAddr,
+    /// Dropped to end the serving thread; nothing is ever sent.
+    stop: Option<oneshot::Sender<()>>,
+    thread: Option<JoinHandle<()>>,
+}
+
+impl Drop for Server {
+    fn drop(&mut self) {
+        drop(self.stop.take());
+        if let Some(thread) = self.thread.take() {
+            let _ = thread.join();
+        }
+    }
 }
 
 impl Server {
@@ -65,7 +81,7 @@ pub(crate) struct Shared {
 
 /// Serves the dashboard on `127.0.0.1` from a thread of its own, on `port` while it is free, so
 /// the owner's address and bookmarks keep working across restarts; otherwise (or with 0) on any
-/// free port.
+/// free port. It serves until the returned [`Server`] is dropped.
 pub fn start(context: Context, port: u16) -> std::io::Result<Server> {
     let listener = std::net::TcpListener::bind((Ipv4Addr::LOCALHOST, port))
         .or_else(|_| std::net::TcpListener::bind((Ipv4Addr::LOCALHOST, 0)))?;
@@ -79,21 +95,31 @@ pub fn start(context: Context, port: u16) -> std::io::Result<Server> {
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_io()
         .build()?;
-    std::thread::Builder::new()
+    let (stop, stopped) = oneshot::channel();
+    let thread = std::thread::Builder::new()
         .name("dashboard".into())
         .spawn(move || {
             runtime.block_on(async move {
                 match tokio::net::TcpListener::from_std(listener) {
                     Ok(listener) => {
-                        if let Err(e) = axum::serve(listener, router(shared)).await {
-                            eprintln!("ovenspring: the dashboard stopped: {e}");
-                        }
+                        tokio::spawn(async move {
+                            if let Err(e) = axum::serve(listener, router(shared)).await {
+                                eprintln!("ovenspring: the dashboard stopped: {e}");
+                            }
+                        });
+                        // The runtime's end, once this returns, drops the listener and every
+                        // connection with it.
+                        let _ = stopped.await;
                     }
                     Err(e) => eprintln!("ovenspring: the dashboard could not listen: {e}"),
                 }
             });
         })?;
-    Ok(Server { addr })
+    Ok(Server {
+        addr,
+        stop: Some(stop),
+        thread: Some(thread),
+    })
 }
 
 fn router(shared: Arc<Shared>) -> Router {
