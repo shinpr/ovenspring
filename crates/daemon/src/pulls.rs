@@ -339,6 +339,7 @@ impl Daemon {
                                       "error": e.to_string(), "why": why}),
                         cause,
                         via: Some(Via::Api),
+                        reason: None,
                     },
                 )?;
                 // The reads below would fail the same way.
@@ -353,6 +354,7 @@ impl Daemon {
                                       "error": "origin does not answer", "why": why}),
                         cause: unanswered_cause(why, None),
                         via: Some(Via::Git),
+                        reason: None,
                     },
                 )?;
                 answered = false;
@@ -770,7 +772,8 @@ impl Daemon {
     fn merge(&mut self, subject: &Subject, sha: &str) -> Result<Option<Gated>, DaemonError> {
         let gh = self.github()?;
         let base_head = gh.branch_head(&self.config.repo.base_branch)?;
-        if gh.pull(subject.pr)?.head_sha != sha {
+        let pull = gh.pull(subject.pr)?;
+        if pull.head_sha != sha {
             return Ok(None);
         }
         // The worktree may not have the new base head yet; either way the branch is not on it.
@@ -784,9 +787,14 @@ impl Daemon {
         }
         match gh.merge(subject.pr, sha)? {
             MergeOutcome::Merged { sha: merged } => {
-                self.event(
-                    &subject.named(json!({"event": "merged", "sha": sha, "merge_commit": merged})),
-                )?;
+                // The base the last read named, masked as every recorded text is.
+                let secrets: Vec<&str> = self.services.secrets.iter().map(String::as_str).collect();
+                let base = pull.base.map(|b| crate::download::mask(&b, &secrets));
+                let mut line = json!({"event": "merged", "pr": subject.pr, "sha": sha, "merge_commit": merged});
+                if let (Some(base), Some(fields)) = (base, line.as_object_mut()) {
+                    fields.insert("base".into(), json!(base));
+                }
+                self.event(&subject.named(line))?;
                 Ok(Some(Gated::Merged))
             }
             MergeOutcome::Refused { reason } => {
@@ -938,6 +946,7 @@ mod tests {
             answer: None,
             procedure: None,
             asked_by,
+            proposal: None,
         }
     }
 

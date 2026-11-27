@@ -9,6 +9,7 @@
     )
 )]
 
+pub mod dashboard;
 pub mod fake_github;
 pub mod http;
 pub mod recording;

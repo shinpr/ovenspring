@@ -426,7 +426,25 @@ impl Daemon {
                 self.request_recovery_for(Some(key))?;
                 Ok(None)
             }
+            Action::RecordReviewRound { number } => {
+                self.record_review_round(key, *number)?;
+                Ok(None)
+            }
         }
+    }
+
+    /// The line that review round `number` ended, with the count of findings it hands to
+    /// correction: each entry `review-response` receives, none when the round converged.
+    fn record_review_round(&self, key: &str, number: u32) -> Result<(), DaemonError> {
+        let record = self.record_of(key)?;
+        let findings = if record.flow.origin == Some(ovenspring_core::flow::Origin::Round) {
+            crate::handoff::handed(&record).len()
+        } else {
+            0
+        };
+        self.event(&json!({
+            "event": "review-round-ended", "issue": key, "round": number, "findings": findings,
+        }))
     }
 
     pub(crate) fn update_issue(
@@ -460,7 +478,7 @@ impl Daemon {
                     )?,
                 }
             }
-            self.delete_branch(key, &me.branch())?;
+            self.delete_branch(("issue", key), &me.branch())?;
             self.stop_app(key);
             return Ok(());
         }
@@ -478,7 +496,12 @@ impl Daemon {
     }
 
     /// Deletes a merged branch from GitHub; one the repository already deleted is left as it is.
-    pub(crate) fn delete_branch(&self, name: &str, branch: &str) -> Result<(), DaemonError> {
+    /// A failure is logged under its owner: `("issue", key)` or `("sprint", id)`.
+    pub(crate) fn delete_branch(
+        &self,
+        (field, name): (&str, &str),
+        branch: &str,
+    ) -> Result<(), DaemonError> {
         let Some(gh) = &self.services.github else {
             return Ok(());
         };
@@ -486,7 +509,7 @@ impl Daemon {
             Ok(()) => self.event(&json!({"event": "branch-deleted", "branch": branch})),
             Err(e) if matches!(e.status(), Some(404 | 422)) => Ok(()),
             Err(e) => {
-                self.event(&json!({"event": "github-error", "issue": name, "error": e.to_string()}))
+                self.event(&json!({"event": "github-error", field: name, "error": e.to_string()}))
             }
         }
     }

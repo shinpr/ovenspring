@@ -91,6 +91,7 @@ fn finds_the_pull_request_of_a_branch_and_reads_its_state() {
     assert_eq!(pull.number, 7);
     assert_eq!(pull.state, PullState::Merged);
     assert_eq!(pull.head_sha, "1111111111111111111111111111111111111111");
+    assert_eq!(pull.base.as_deref(), Some("main"), "the merge line's base");
     assert_eq!(gh.pull_for_branch("ovenspring/ACME-2").unwrap(), None);
 }
 

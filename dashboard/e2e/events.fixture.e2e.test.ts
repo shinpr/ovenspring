@@ -312,41 +312,98 @@ test.describe('issue and sprint subjects lead to their pages, the sprint scrolle
 //     b. the save is refused (`refuse.notices`). Result: the reason is shown under the radios and
 //        the form stays open.
 // @dependency: dashboard app (Settings, SettingRow, Choices, lib/settings.ts PAGE_OF), fixture API
-// Name: 'error notices are turned off from Settings and a refused save keeps the reason in view'
+test.describe('error notices are turned off from Settings and a refused save keeps the reason in view', () => {
+  const row = (page: Page): Locator =>
+    page
+      .getByRole('listitem')
+      .filter({ has: page.getByRole('button', { name: 'Change Error notices' }) })
+
+  test('the owner turns them off with the keyboard and the row reads Off', async ({ page }) => {
+    const sent = await serve(page)
+    await page.goto('/settings/connections')
+    const changes = page.getByRole('button', { name: /^Change / })
+    await expect(changes).toHaveCount(5)
+    expect(
+      await changes.evaluateAll((buttons) => buttons.map((b) => b.getAttribute('aria-label')))
+    ).toEqual([
+      'Change GitHub',
+      'Change Issue tracker',
+      'Change Slack',
+      'Change Error notices',
+      'Change Who the factory answers',
+    ])
+    await expect(row(page).locator('b')).toHaveText('On')
+
+    await page.getByRole('button', { name: 'Change Error notices' }).focus()
+    await page.keyboard.press('Enter')
+    await expect(page.getByRole('radio', { name: 'On (default)' })).toBeFocused()
+    await page.keyboard.press('ArrowDown')
+    await expect(page.getByRole('radio', { name: 'Off' })).toBeChecked()
+    await expect(page.getByText('Applies at once.')).toBeVisible()
+    await page.keyboard.press('Enter')
+
+    await expect(page.getByRole('form', { name: 'Error notices' })).toBeHidden()
+    expect(sent.filter((r) => r.method === 'PUT')).toEqual([
+      { method: 'PUT', path: '/settings/notices', body: { errors: false } },
+    ])
+    await expect(row(page)).toContainText('Off. Errors still show on Events.')
+    await expect(row(page).getByRole('link', { name: 'Events' })).toHaveAttribute('href', '/events')
+  })
+
+  test('a refused save shows the reason and keeps the choice', async ({ page }) => {
+    await serve(page, {
+      refuse: { notices: { request: 'The settings file could not be written.' } },
+    })
+    await page.goto('/settings/connections')
+
+    await page.getByRole('button', { name: 'Change Error notices' }).click()
+    const form = page.getByRole('form', { name: 'Error notices' })
+    await form.getByRole('radio', { name: 'Off' }).check()
+    await form.getByRole('button', { name: 'Save' }).click()
+
+    await expect(form.getByRole('alert')).toHaveText('The settings file could not be written.')
+    await expect(form.getByRole('radio', { name: 'Off' })).toBeChecked()
+  })
+})
 
 // ---------------------------------------------------------------------------------------------
 // 7. Visual comparison with the binding prototype (Design § Verification Strategy > Visual
-//    comparison; UI Spec Visual Acceptance golden states 9-14).
+//    comparison; UI Spec Visual Acceptance golden states 9-15).
 // AC: "When the Events golden states 9-14 ... are rendered with the prototype's own data, their
 //     visible words, from the lost-contact line through the end of the list, and the positions of
-//     the compared boxes shall match the prototype's same situation at 1280px, with only the UI
-//     Spec's stated word overrides applied to the prototype's text. The Events list shall also
-//     match at 600px, where the subject sits above the sentence." (Design § Acceptance Criteria >
-//     Look)
+//     the compared boxes shall match the prototype's same situation at 1280px, with the UI Spec's
+//     stated wording overrides and the Issue options derived from available events. The Events
+//     list's words and layout shall also match at 600px, where the subject sits above the
+//     sentence." (Design § Acceptance Criteria > Look)
 // Behavior: per situation, the prototype is opened from its repository path in the same browser
 //     with its situation select set, and the production page is opened under the fixture answers
 //     transcribed once from the prototype's data (src/fixtures/events.ts), the clock at 14:20 on
 //     2026-11-27.
-// Compared here: the whole page's words in `new`; in every situation, Errors now's words with the
-//     UI Spec's override applied, the lost-contact line, the unreadable line, every EventLine's
-//     clock, subject and sentence boxes (left edge and width within 1px) and the gap between the
-//     filter controls; at 600px, the boxes again and each subject above its sentence.
-// Not compared yet: the words of the event list in `open`, `clear`, `off` and `lost`. Three of the
-//     prototype's lines name what no production record of their kind holds: "Merged pull request
-//     #86 into main." (`merged` records sha and merge_commit, no number or base), "Review round 1
-//     ended with 3 findings." (no line records a review round's end or its findings), and the
-//     Sprint subject and "3 issues toward “…”" of "Proposed the sprint in Slack" (`decision`
-//     records no sprint and no issue count). The fixture holds no field production never writes,
-//     so those lines read as the dashboard words their records; the list's words join this test
-//     once the records or the UI Spec's wording settle it. In `unreadable` the prototype still
-//     lists the issues of the events it could not read in the Issue select; the server reads no
-//     issue from a file it cannot read, so the page's words there are compared line by line
-//     above, not whole. The list's override, then needed, is
-//     Vocabulary > Errors, tracker refuses: "No new issue is read and no sprint is proposed until
-//     it is fixed." -> "No new issue or change is read from it until it is fixed."
+// Compared, per situation at 1280px and in `open` at 600px:
+//     a. the fixture's lines carry the fields the real writers emit (merged {pr, base}, review-round-
+//        ended {round, findings}, decision {posted, sprint, proposal}, paused {reason, user}), so
+//        the list's sentences come from writer-shaped records (crates/cli/tests/issue_flow_int.rs,
+//        owner_channel_int.rs and resilience_int.rs prove the writers);
+//     b. the page's words from the lost-contact line through the end of the list equal the
+//        prototype's after OVERRIDES, every EventLine's words named by its place;
+//     c. in `unreadable`, the reference's Issue select keeps only "All issues" (UI Spec
+//        EventFilters: the options come from events read), and the rest is compared whole;
+//     d. the labels, selected values and option texts of the Show and Issue selects;
+//     e. every EventLine's clock, subject and sentence boxes (left edge and width within 1px), the
+//        gap between the filter controls, and, with no EventLine, the filter row's and the empty
+//        text's boxes measured from the page title (the header above it is not the prototype's);
+//        at 600px each subject above its sentence;
+//     f. state 15, the open Error notices row in Settings > Connections: its label, what-line,
+//        legend, both option texts, buttons and "Applies at once.", each element's words and box
+//        measured from the row's top left (the rows above it carry other data).
+//     Pass: every observation equal; a difference names the element and both values.
 // @dependency: dashboard production bundle, fixture API, the prototype file, Playwright clock
 
 const PROTOTYPE = new URL('../../docs/ui-spec/assets/events/prototype.html', import.meta.url).href
+const HANKEN = new URL(
+  '../node_modules/@fontsource-variable/hanken-grotesk/files/hanken-grotesk-latin-wght-normal.woff2',
+  import.meta.url
+).href
 
 /** The UI Spec's stated changes to the prototype's words, each with the passage that states it. */
 const OVERRIDES: ReadonlyArray<{ passage: string; prototype: string; product: string }> = [
@@ -354,6 +411,11 @@ const OVERRIDES: ReadonlyArray<{ passage: string; prototype: string; product: st
     passage: 'Vocabulary > Errors, <interval>',
     prototype: 'The factory tries again every 30 seconds.',
     product: 'The factory tries again.',
+  },
+  {
+    passage: 'Vocabulary > Errors, tracker refuses',
+    prototype: 'No new issue is read and no sprint is proposed until it is fixed.',
+    product: 'No new issue or change is read from it until it is fixed.',
   },
 ]
 
@@ -364,6 +426,14 @@ const words = async (shown: Locator): Promise<string> =>
 async function prototype(page: Page, situation: Situation): Promise<void> {
   await page.goto(PROTOTYPE)
   await page.locator('#sit').selectOption(situation)
+  if (situation === 'unreadable') {
+    // The product's Issue options come from the events it read, and it read none.
+    await page.locator('#ev-issue option:not([value="all"])').evaluateAll((options) => {
+      for (const option of options) {
+        option.remove()
+      }
+    })
+  }
 }
 
 async function product(page: Page, situation: Situation): Promise<void> {
@@ -429,13 +499,71 @@ async function filterGap(page: Page): Promise<number> {
   return (issue?.x ?? 0) - ((show?.x ?? 0) + (show?.width ?? 0))
 }
 
+/** Each select's label, chosen option and option texts, in order. */
+async function controls(page: Page): Promise<string[]> {
+  const list = page.getByRole('region', { name: 'What the factory did' })
+  return list.locator('label:has(select)').evaluateAll((labels) =>
+    labels.map((label) => {
+      const select = label.querySelector('select')
+      const options = Array.from(select?.options ?? [], (o) => o.text.trim())
+      const name = label.firstChild?.textContent?.trim() ?? ''
+      return `${name} [${select?.selectedOptions[0]?.text.trim() ?? ''}]: ${options.join(' | ')}`
+    })
+  )
+}
+
+/** A box measured from the page title's top left, so the header above it does not count. */
+async function fromTitle(page: Page, shown: Locator): Promise<Box> {
+  const title = await page.getByRole('heading', { level: 1, name: 'Events' }).boundingBox()
+  const box = await shown.boundingBox()
+  expect(box, 'compared box shown').not.toBeNull()
+  return {
+    x: (box?.x ?? 0) - (title?.x ?? 0),
+    y: (box?.y ?? 0) - (title?.y ?? 0),
+    width: box?.width ?? 0,
+    height: box?.height ?? 0,
+  }
+}
+
+/** With no event line: the filter row and the empty text. */
+async function emptyLayout(page: Page): Promise<Record<'filters' | 'empty', Box>> {
+  const list = page.getByRole('region', { name: 'What the factory did' })
+  const filters = list.locator('div:has(> label > select)')
+  const empty = list.locator('p')
+  await expect(empty).toHaveCount(1)
+  return { filters: await fromTitle(page, filters), empty: await fromTitle(page, empty) }
+}
+
+function expectSameBox(ours: Box, theirs: Box, name: string): void {
+  for (const side of ['x', 'y', 'width', 'height'] as const) {
+    expect(
+      Math.abs(ours[side] - theirs[side]),
+      `${name} ${side}: ours ${ours[side]}, prototype ${theirs[side]}`
+    ).toBeLessThanOrEqual(1)
+  }
+}
+
+/** The page's words, then each event line's, compared with the prototype's after the overrides. */
+async function expectSameWords(page: Page, reference: Page, used: Set<string>, where: string) {
+  const ours = await page.locator('li[id^="event-"]').allInnerTexts()
+  const theirs = await reference.locator('li.ev').allInnerTexts()
+  const normal = (t: string): string => t.replace(/\s+/g, ' ').trim()
+  theirs.forEach((text, i) => {
+    expect(normal(ours[i] ?? ''), `${where}: line ${i + 1}`).toBe(overridden(normal(text), used))
+  })
+  expect(ours.length, `${where}: lines`).toBe(theirs.length)
+  expect(await words(page.locator('main')), `${where}: the page`).toBe(
+    overridden(await words(reference.locator('#app')), used)
+  )
+}
+
 test.describe('Events match the binding prototype in every golden state', () => {
   // One worker runs the group in order, so the check after it sees every override each test used.
   test.describe.configure({ mode: 'serial' })
   const used = new Set<string>()
 
   for (const situation of ['open', 'clear', 'off', 'new', 'unreadable', 'lost'] as const) {
-    test(`${situation}: the compared words, the line boxes and the filter gap`, async ({
+    test(`${situation}: the words, the controls, the line boxes and the filter layout`, async ({
       page,
       context,
     }) => {
@@ -443,23 +571,13 @@ test.describe('Events match the binding prototype in every golden state', () => 
       await prototype(reference, situation)
       await product(page, situation)
 
-      if (situation === 'new') {
-        expect(await words(page.locator('main'))).toBe(
-          overridden(await words(reference.locator('#app')), used)
-        )
-      }
-      const errorsNow = (p: Page): Promise<string> =>
-        words(p.getByRole('region', { name: 'Errors now' }))
-      expect(await errorsNow(page)).toBe(overridden(await errorsNow(reference), used))
-      if (situation === 'unreadable') {
-        const unread = 'The events could not be read. The dashboard tries again in a few seconds.'
-        await expect(reference.getByText(unread)).toBeVisible()
-        await expect(page.getByText(unread)).toBeVisible()
-      }
-      if (situation === 'lost') {
-        expect(await words(page.getByRole('status'))).toBe(
-          await words(reference.locator('.contact'))
-        )
+      await expectSameWords(page, reference, used, situation)
+      expect(await controls(page), `${situation}: controls`).toEqual(await controls(reference))
+      if (situation === 'new' || situation === 'unreadable') {
+        const ours = await emptyLayout(page)
+        const theirs = await emptyLayout(reference)
+        expectSameBox(ours.filters, theirs.filters, `${situation}: filter row`)
+        expectSameBox(ours.empty, theirs.empty, `${situation}: empty text`)
       }
       expectSameColumns(
         await lineBoxes(page.locator('li[id^="event-"]')),
@@ -472,7 +590,7 @@ test.describe('Events match the binding prototype in every golden state', () => 
     })
   }
 
-  test('open at 600px: the line boxes, each subject above its sentence', async ({
+  test('open at 600px: the words, the line boxes, each subject above its sentence', async ({
     page,
     context,
   }) => {
@@ -482,6 +600,7 @@ test.describe('Events match the binding prototype in every golden state', () => 
     await prototype(reference, 'open')
     await product(page, 'open')
 
+    await expectSameWords(page, reference, used, '600px')
     const ours = await lineBoxes(page.locator('li[id^="event-"]'))
     expectSameColumns(ours, await lineBoxes(reference.locator('li.ev')), '600px')
     ours.forEach(([, subject, sentence], i) => {
@@ -490,6 +609,63 @@ test.describe('Events match the binding prototype in every golden state', () => 
         `line ${i + 1}: subject above sentence`
       ).toBeLessThanOrEqual((sentence?.y ?? 0) + 0.5)
     })
+  })
+
+  test('15: the open Error notices row, its words and boxes', async ({ page, context }) => {
+    const WHAT = 'A message in Slack when an error starts and when it clears.'
+    const reference = await context.newPage()
+    await reference.goto(`${PROTOTYPE}#/settings/connections`)
+    // The prototype names the product's font without loading it; opened from its file, it would
+    // measure its words in a fallback font.
+    await reference.addStyleTag({
+      content: `@font-face { font-family: "Hanken Grotesk Variable"; font-weight: 100 900; src: url("${HANKEN}") format("woff2"); }`,
+    })
+    await reference.evaluate(() => document.fonts.ready)
+    const theirs = reference.locator('#row-notices')
+    await theirs.getByRole('button', { name: 'Change' }).click()
+    await serve(page)
+    await page.goto('/settings/connections')
+    await page.getByRole('button', { name: 'Change Error notices' }).click()
+    const ours = page
+      .getByRole('listitem')
+      .filter({ has: page.getByRole('form', { name: 'Error notices' }) })
+
+    const parts = (row: Locator): Record<string, Locator> => ({
+      // The name with its what-line beneath it: the what-line's parent.
+      label: row.getByText(WHAT).locator('..'),
+      what: row.getByText(WHAT),
+      legend: row.locator('legend'),
+      on: row.locator('label', { has: row.page().getByRole('radio', { name: 'On (default)' }) }),
+      off: row.locator('label', { has: row.page().getByRole('radio', { name: 'Off' }) }),
+      save: row.getByRole('button', { name: 'Save' }),
+      cancel: row.getByRole('button', { name: 'Cancel' }),
+      applies: row.getByText('Applies at once.'),
+    })
+    const measure = async (row: Locator): Promise<Record<string, { text: string; box: Box }>> => {
+      const origin = await row.boundingBox()
+      const result: Record<string, { text: string; box: Box }> = {}
+      for (const [name, shown] of Object.entries(parts(row))) {
+        const box = await shown.boundingBox()
+        expect(box, `15: ${name} shown`).not.toBeNull()
+        result[name] = {
+          text: await words(shown),
+          box: {
+            x: (box?.x ?? 0) - (origin?.x ?? 0),
+            y: (box?.y ?? 0) - (origin?.y ?? 0),
+            width: box?.width ?? 0,
+            height: box?.height ?? 0,
+          },
+        }
+      }
+      return result
+    }
+    const built = await measure(ours)
+    const approved = await measure(theirs)
+
+    for (const [name, { text, box }] of Object.entries(approved)) {
+      expect(built[name]?.text, `15: ${name} words`).toBe(text)
+      expectSameBox(built[name]?.box ?? box, box, `15: ${name}`)
+    }
   })
 
   test.afterAll(() => {

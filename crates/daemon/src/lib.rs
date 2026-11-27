@@ -55,6 +55,8 @@ use ovenspring_integrations::tracker::Tracker;
 use ovenspring_store::{Store, StoreError, item_name};
 use serde_json::json;
 
+use crate::errors::ErrorKey;
+
 #[derive(Debug, thiserror::Error)]
 pub enum DaemonError {
     #[error(transparent)]
@@ -194,6 +196,9 @@ pub struct Daemon {
     pub(crate) provisional: HashSet<String>,
     /// The one filter command currently running, if any.
     pub(crate) filter_run: Option<intake::FilterRun>,
+    /// The issue whose fresh judgment showed the filter works, until the filter's error is
+    /// recorded cleared by it.
+    pub(crate) filter_worked: Option<String>,
     pub(crate) pause_announced: bool,
     /// The gate's last decision on the agreements pull request, logged once per change.
     pub(crate) agreements_waiting: Option<String>,
@@ -284,6 +289,7 @@ impl Daemon {
             tracker_issues: Vec::new(),
             verdicts: HashMap::new(),
             provisional: HashSet::new(),
+            filter_worked: None,
             filter_run: None,
             pause_announced,
             agreements_waiting: None,
@@ -330,12 +336,13 @@ impl Daemon {
             Ok(config) if config == self.config => Ok(()),
             Ok(config) => {
                 let filter_changed = config.tracker.filter != self.config.tracker.filter;
+                let changes = config_changes(&self.config, &config)?;
                 self.config = config;
                 if filter_changed {
                     self.filter_changed();
                 }
                 self.last_prerequisites = None;
-                self.event(&json!({"event": "config-reloaded"}))
+                self.event(&json!({"event": "config-reloaded", "changes": changes}))
             }
             Err(e) => self.event(&json!({"event": "config-refused", "error": e.to_string()})),
         }
@@ -481,10 +488,14 @@ impl Daemon {
             let r = self.finished(&exit);
             self.settle_part("taking in a finished launch", r)?;
         }
+        let r = self.pause_for_cli_errors();
+        self.settle_part("pausing for an agent CLI error", r)?;
         let r = self.take_recoveries();
         self.settle_part("taking in finished recovery procedures", r)?;
         let r = self.reload_config();
         self.settle_part("reading the configuration", r)?;
+        let r = self.clear_filter();
+        self.settle_part("recording that the issue filter works", r)?;
         // Before the halt check, so notices still go out while the factory is paused.
         let r = self.deliver_error_notices();
         self.settle_part("telling the owner of errors", r)?;
@@ -827,6 +838,13 @@ impl Daemon {
                 cost_usd,
             }),
         )?;
+        // Its CLI runs again, so an error of that CLI going on clears.
+        if failure.is_none() {
+            self.succeeded(
+                ErrorKey::of_cli(run.launch.cli),
+                &json!({"cli": run.launch.cli}),
+            )?;
+        }
 
         let path = self.store.active_dir().join(format!("{}.md", exit.item));
         if !path.exists() {
@@ -873,16 +891,28 @@ impl Daemon {
                 self.transient_failures.remove(&exit.item);
                 self.store
                     .update_item(&path, |i| i.front.status = Status::Open)?;
-                self.event(&json!({"event": "launch-error", "item": exit.item, "error": message}))?;
                 let launch = match (&item.front.issue, &item.front.sprint) {
                     (Some(issue), _) => format!("the agent on {issue} ({})", item.front.step),
                     (None, Some(_)) => format!("the agent on the sprint ({})", item.front.step),
                     (None, None) => format!("the agent of {}", item.front.step),
                 };
-                self.pause(&format!(
+                let reason = format!(
                     "{launch} stopped with an error: {}",
                     message.trim().trim_end_matches('.')
-                ))
+                );
+                let cli = run.launch.cli;
+                // The start line commits the pause: a pause it records and does not complete here
+                // is completed before the next launch (`pause_for_cli_errors`).
+                self.failed(
+                    ErrorKey::of_cli(cli),
+                    errors::Failure {
+                        event: json!({"event": "launch-error", "item": exit.item, "error": message, "cli": cli}),
+                        cause: message.trim().to_owned(),
+                        via: None,
+                        reason: Some(reason.clone()),
+                    },
+                )?;
+                self.pause(&reason, None)
             }
             None => self.fail(&path, "the agent exited without finishing the item"),
         }
@@ -921,11 +951,18 @@ impl Daemon {
         }
     }
 
-    /// Stops new launches until the owner resumes.
-    pub(crate) fn pause(&self, reason: &str) -> Result<(), DaemonError> {
+    /// Stops new launches until the owner resumes. `owner` is the Slack user who sent `!pause`,
+    /// recorded so the line can say the owner paused it; `None` when the factory paused itself.
+    pub(crate) fn pause(&mut self, reason: &str, owner: Option<&str>) -> Result<(), DaemonError> {
         let halt = self.halt_file();
         fs::write(&halt, format!("{reason}\n")).map_err(StoreError::io(&halt))?;
-        self.event(&json!({"event": "paused", "reason": reason}))
+        let mut line = json!({"event": "paused", "reason": reason});
+        if let (Some(user), Some(fields)) = (owner, line.as_object_mut()) {
+            fields.insert("user".into(), json!(user));
+        }
+        let appended = records::append_event(&self.store, &line)?;
+        self.errors.state.apply(&appended);
+        Ok(())
     }
 
     pub(crate) fn event(&self, value: &serde_json::Value) -> Result<(), DaemonError> {
@@ -1024,6 +1061,53 @@ fn spent(outcome: &backend::Outcome) -> (records::Usage, Option<f64>) {
     (usage, cost)
 }
 
+/// The settings `after` changed from `before`, each as `{setting: "<table>.<key>", value?}` by its
+/// leaf path, an array being one leaf. Only a boolean or number value is recorded: any other leaf
+/// can hold the owner's free text, a credential included, which never enters the event log.
+fn config_changes(before: &Config, after: &Config) -> Result<Vec<serde_json::Value>, DaemonError> {
+    fn walk(
+        path: &str,
+        before: Option<&serde_json::Value>,
+        after: Option<&serde_json::Value>,
+        out: &mut Vec<serde_json::Value>,
+    ) {
+        use serde_json::Value;
+        if before == after {
+            return;
+        }
+        if let (Some(Value::Object(b)), Some(Value::Object(a))) = (before, after) {
+            let keys: std::collections::BTreeSet<&String> = b.keys().chain(a.keys()).collect();
+            for key in keys {
+                let leaf = if path.is_empty() {
+                    key.clone()
+                } else {
+                    format!("{path}.{key}")
+                };
+                walk(&leaf, b.get(key), a.get(key), out);
+            }
+            return;
+        }
+        match after {
+            Some(value @ (Value::Bool(_) | Value::Number(_))) => {
+                out.push(json!({"setting": path, "value": value}));
+            }
+            _ => out.push(json!({"setting": path})),
+        }
+    }
+    let as_json = |config: &Config| {
+        serde_json::to_value(config)
+            .map_err(|e| DaemonError::Launch(format!("the configuration does not serialize: {e}")))
+    };
+    let mut out = Vec::new();
+    walk(
+        "",
+        Some(&as_json(before)?),
+        Some(&as_json(after)?),
+        &mut out,
+    );
+    Ok(out)
+}
+
 fn last_lines(text: &str, n: usize) -> String {
     let lines: Vec<&str> = text.lines().collect();
     lines
@@ -1036,5 +1120,55 @@ fn failure_text(f: &Failure) -> String {
     match f {
         Failure::Transient(m) => format!("transient: {m}"),
         Failure::Fatal(m) => format!("fatal: {m}"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const CONFIG: &str = r#"
+[roles.lead]
+cli = "codex"
+[roles.executor]
+cli = "codex"
+[roles.reviewer]
+cli = "codex"
+[roles.analyzer]
+cli = "codex"
+[tracker]
+kind = "github"
+[slack]
+channel = "C0123456789"
+owners = ["U0123456789"]
+"#;
+
+    #[test]
+    fn config_changes_carry_boolean_and_number_values_and_only_the_path_of_a_string() {
+        let credential = "planted";
+        let before = Config::parse(CONFIG, "config.toml").unwrap();
+        let after = Config::parse(
+            &format!("{CONFIG}[notices]\nerrors = false\n[limits]\nissues_at_once = 5\n").replace(
+                "kind = \"github\"",
+                &format!("kind = \"github\"\nfilter = \"LINEAR_KEY={credential} ./filter\""),
+            ),
+            "config.toml",
+        )
+        .unwrap();
+
+        let changes = config_changes(&before, &after).unwrap();
+
+        assert_eq!(
+            changes,
+            vec![
+                json!({"setting": "limits.issues_at_once", "value": 5}),
+                json!({"setting": "notices.errors", "value": false}),
+                json!({"setting": "tracker.filter"}),
+            ]
+        );
+        assert!(
+            !serde_json::to_string(&changes).unwrap().contains("planted"),
+            "a string setting's value never enters the line"
+        );
     }
 }

@@ -612,7 +612,7 @@ githubAccount: GitHubAccount | null, };
 /**
  * The sections saved on their own.
  */
-export type SettingsSection = "general" | "agents" | "roles" | "tracker" | "slack" | "limits" | "app" | "guard" | "review";
+export type SettingsSection = "general" | "agents" | "roles" | "tracker" | "slack" | "limits" | "app" | "guard" | "review" | "notices";
 
 /**
  * One Connect block, checked on its own before anything is saved.

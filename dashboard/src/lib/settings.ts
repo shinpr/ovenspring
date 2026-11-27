@@ -16,6 +16,7 @@ const PAGE_OF: Record<string, SettingsPage> = {
   general: 'connections',
   tracker: 'connections',
   slack: 'connections',
+  notices: 'connections',
   agents: 'agents',
   roles: 'agents',
   review: 'merging',

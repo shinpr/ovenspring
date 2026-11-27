@@ -822,17 +822,14 @@ const SENTENCE: Record<string, Sentence> = {
         : `Pushed its branch and updated pull request #${pr}.`,
     ]
   },
-  merged: (_, line) => [
-    line.issue === null && line.sprint !== null
-      ? "Merged the working agreements' pull request."
-      : 'Merged its pull request.',
-  ],
+  merged: (f, line) => merged(f, line),
+  'review-round-ended': (f) => [reviewRoundEnded(f)],
   'merge-refused': (f) => [`GitHub refused the merge: ${field(f, 'reason') ?? ''}.`],
   'closed-on-tracker': (f) => [closedOnTracker(f)],
   'close-on-tracker': said('Not closed on the tracker: no tracker is set.'),
   'started-on-tracker': said('Marked started on the tracker.'),
   'issue-begun': said('Started: the lead is reading the issue.'),
-  decision: (f) => [DECISION[field(f, 'kind') ?? ''] ?? 'Asked you in Slack to decide.'],
+  decision: (f) => decision(f),
   'decision-answered': said('You answered in Slack.'),
   'decision-action': said('You answered in Slack.'),
   'decision-reply': said('You answered in Slack.'),
@@ -841,12 +838,7 @@ const SENTENCE: Record<string, Sentence> = {
   reminded: (f) => [
     `Reminded you in Slack of ${numberField(f, 'waiting') ?? 'the'} decisions still waiting.`,
   ],
-  paused: (f) => {
-    const reason = field(f, 'reason')
-    return reason === undefined || reason === 'paused by the owner'
-      ? ['Paused. You sent ', { code: '!pause' }, ' in Slack.']
-      : ['Paused: ', { quote: reason }, '.']
-  },
+  paused: (f) => paused(f),
   resumed: (_, line) =>
     line.issue === null && line.sprint === null
       ? ['Resumed. You sent ', { code: '!resume' }, ' in Slack.']
@@ -934,6 +926,78 @@ const SENTENCE: Record<string, Sentence> = {
     '. It is tried again.'
   ),
   'run-commands': said('The lead found how the product runs.'),
+}
+
+/** How many of a thing, in words: "1 finding", "3 findings", "0 findings". */
+function counted(n: number, one: string, many: string): string {
+  return `${n} ${n === 1 ? one : many}`
+}
+
+/** A merge, with the pull request's number and base when the line records them. */
+function merged(f: Fields, line: EventLine): Part[] {
+  const pr = numberField(f, 'pr')
+  const base = field(f, 'base')
+  if (pr === undefined) {
+    return [
+      line.issue === null && line.sprint !== null
+        ? "Merged the working agreements' pull request."
+        : 'Merged its pull request.',
+    ]
+  }
+  return base === undefined
+    ? [`Merged pull request #${pr}.`]
+    : [`Merged pull request #${pr} into `, { code: base }, '.']
+}
+
+function reviewRoundEnded(f: Fields): string {
+  const round = numberField(f, 'round')
+  const findings = counted(numberField(f, 'findings') ?? 0, 'finding', 'findings')
+  return round === undefined
+    ? `A review round ended with ${findings}.`
+    : `Review round ${round} ended with ${findings}.`
+}
+
+/** The proposal's summary a posted sprint decision records: `{issues, purpose}`. */
+function proposalOf(f: Fields): { issues: number; purpose: string } | undefined {
+  const p = f['proposal']
+  if (typeof p !== 'object' || p === null || Array.isArray(p)) {
+    return undefined
+  }
+  const { issues, purpose } = p
+  return typeof issues === 'number' && typeof purpose === 'string' ? { issues, purpose } : undefined
+}
+
+/**
+ * A decision Slack accepted (`posted`), with a sprint proposal's summary when it records one. A
+ * line without `posted` was written when the decision was made, before it was sent.
+ */
+function decision(f: Fields): Part[] {
+  const kind = field(f, 'kind') ?? ''
+  if (f['posted'] !== true) {
+    return [kind === 'sprint' ? 'Prepared a sprint proposal.' : 'Prepared a decision for you.']
+  }
+  const proposal = kind === 'sprint' ? proposalOf(f) : undefined
+  return proposal === undefined
+    ? [DECISION[kind] ?? 'Asked you in Slack to decide.']
+    : [
+        `Proposed the sprint in Slack: ${counted(proposal.issues, 'issue', 'issues')} toward `,
+        { quote: proposal.purpose },
+      ]
+}
+
+/** The reason an owner's `!pause` without words records. */
+const OWNER_PAUSE = 'paused by the owner'
+
+/** A pause: the owner's `!pause` (with their words) when it names who sent it, else its reason. */
+function paused(f: Fields): Part[] {
+  const reason = field(f, 'reason')
+  const sent: Part[] = ['Paused. You sent ', { code: '!pause' }, ' in Slack']
+  if (reason === undefined || reason === OWNER_PAUSE) {
+    return [...sent, '.']
+  }
+  return field(f, 'user') === undefined
+    ? ['Paused: ', { quote: reason }, '.']
+    : [...sent, ': ', { quote: reason }, '.']
 }
 
 function ignored(f: Fields): Part[] {

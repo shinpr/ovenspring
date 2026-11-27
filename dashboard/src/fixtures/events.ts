@@ -1,7 +1,6 @@
 // The events prototype's data (docs/ui-spec/assets/events/prototype.html, `EV`, `OPEN` and
 // `events()`), transcribed once into the lines the server serves, for its six situations. Each line
-// carries only the fields its kind is recorded with; where the prototype's sentence names more than
-// that record holds, the line is the record and its sentence is the dashboard's.
+// carries only the fields its kind's writer records.
 
 import type {
   ErrorNow,
@@ -149,6 +148,8 @@ function base(github: Recorded, filter: Recorded): Recorded[] {
     recorded(at('27', '14:18'), 'pushed', { issue: 'ACME-142', sha: 'a1b2c3d', pr: 88 }),
     recorded(at('27', '14:12'), 'merged', {
       issue: 'ACME-141',
+      pr: 86,
+      base: 'main',
       sha: 'e4f5a6b',
       merge_commit: 'c7d8e9f',
     }),
@@ -159,16 +160,16 @@ function base(github: Recorded, filter: Recorded): Recorded[] {
     }),
     filter,
     recorded(at('27', '13:58'), 'decision', {
-      id: 'ACME-144-design',
+      id: 'ACME-144-design-4',
       kind: 'design',
       issue: 'ACME-144',
+      posted: true,
     }),
     github,
-    recorded(at('27', '13:30'), 'fact', {
+    recorded(at('27', '13:30'), 'review-round-ended', {
       issue: 'ACME-142',
-      fact: 'Done',
-      from: { stage: 'running', step: 'code-review' },
-      to: { stage: 'reviewing' },
+      round: 1,
+      findings: 3,
     }),
     recorded(at('27', '12:47'), 'filter-dropped', {
       issue: 'ACME-150',
@@ -211,7 +212,19 @@ function base(github: Recorded, filter: Recorded): Recorded[] {
       },
       { sprint: SPRINT }
     ),
-    recorded(at('27', '09:02'), 'decision', { id: 'sprint-20261127-0902', kind: 'sprint' }),
+    recorded(
+      at('27', '09:02'),
+      'decision',
+      {
+        id: `sprint-${SPRINT.id}-sprint-1`,
+        kind: 'sprint',
+        issue: null,
+        sprint: SPRINT.id,
+        posted: true,
+        proposal: { issues: 3, purpose: SPRINT.purpose },
+      },
+      { sprint: SPRINT }
+    ),
     recorded(at('27', '08:55'), 'config-reloaded', {
       changes: [{ setting: 'limits.issues_at_once', value: 3 }],
     }),
@@ -289,9 +302,11 @@ function base(github: Recorded, filter: Recorded): Recorded[] {
         },
       }
     ),
-    recorded(at('26', '16:10'), 'paused', { reason: 'lunch' }),
+    recorded(at('26', '16:10'), 'paused', { reason: 'lunch', user: 'U0123456789' }),
     recorded(at('26', '15:44'), 'merged', {
       issue: 'ACME-139',
+      pr: 84,
+      base: 'main',
       sha: 'f0e1d2c',
       merge_commit: 'b3a4c5d',
     }),

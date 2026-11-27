@@ -125,6 +125,8 @@ pub struct RecordingTracker {
     pub issues: Mutex<Vec<TrackerIssue>>,
     /// While set, reading the open issues fails as if the tracker could not be reached.
     pub unreachable: std::sync::atomic::AtomicBool,
+    /// While set, reading the open issues is refused, as with a revoked key.
+    pub refused: std::sync::atomic::AtomicBool,
 }
 
 impl RecordingTracker {
@@ -146,6 +148,14 @@ impl Tracker for RecordingTracker {
                 Unanswered::NoConnection,
                 "connection timed out".into(),
             ));
+        }
+        if self.refused.load(std::sync::atomic::Ordering::SeqCst) {
+            return Err(HttpError::Status {
+                method: "POST",
+                url: "https://api.linear.app/graphql".into(),
+                status: 401,
+                message: "Authentication required".into(),
+            });
         }
         Ok(self.issues.lock().map(|i| i.clone()).unwrap_or_default())
     }

@@ -41,11 +41,13 @@ export const TwoErrorsGoingOn: Story = {
     await expect(
       canvas.getAllByRole('link', { name: 'Linear issue (opens in a new tab)' })
     ).toHaveLength(2)
-    await expect(
-      canvas.getByRole('link', {
-        name: `Sprint: ${'Shoppers can find a product by what it does, not only by its name.'}`,
-      })
-    ).toHaveAttribute('href', '/sprints#sprint-20261127-0902')
+    const sprintLinks = canvas.getAllByRole('link', {
+      name: `Sprint: ${'Shoppers can find a product by what it does, not only by its name.'}`,
+    })
+    await expect(sprintLinks).toHaveLength(2)
+    for (const link of sprintLinks) {
+      await expect(link).toHaveAttribute('href', '/sprints#sprint-20261127-0902')
+    }
     await expect(within(did).getAllByRole('listitem')).toHaveLength(15)
     await userEvent.click(canvas.getByRole('button', { name: 'Show older events' }))
     await expect(args.onOlder).toHaveBeenCalled()

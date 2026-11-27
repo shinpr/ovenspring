@@ -31,11 +31,12 @@ use ovenspring_daemon::issues::IssueRecord;
 use ovenspring_daemon::owner::{DecisionRecord, DecisionStatus};
 use ovenspring_daemon::records;
 use ovenspring_integrations::channel::{DecisionKind, MessageRef};
+use ovenspring_server::Context;
 use ovenspring_server::setup::{GitHubAccount, SetupChecks, SlackSetup, TrackerSetup};
-use ovenspring_server::{Context, Server};
 use ovenspring_store::Store;
 use serde_json::{Value, json};
-use support::http::{Response, request, request_to};
+use support::dashboard::Dashboard;
+use support::http::{request, request_to};
 use support::{Env, git, wait_until};
 
 /// Setup's connection checks, answering as the test sets: a section named in `refuse` fails.
@@ -69,51 +70,6 @@ impl SetupChecks for Checks {
     }
 }
 
-struct Dashboard {
-    server: Server,
-    store: Store,
-    credentials: PathBuf,
-}
-
-impl Dashboard {
-    fn start(env: &Env, checks: Checks) -> Dashboard {
-        let credentials = env
-            .dir
-            .path()
-            .join("config/ovenspring/credentials/storefront.toml");
-        let server = ovenspring_server::start(
-            Context {
-                repo: env.repo.clone(),
-                store: Store::open(env.state()).unwrap(),
-                credentials: credentials.clone(),
-                checks: Arc::new(checks),
-                home: env.dir.path().join("home"),
-                codex_home: env.dir.path().join("home/.codex"),
-                version: support::no_new_version(),
-            },
-            0,
-        )
-        .unwrap();
-        Dashboard {
-            server,
-            store: Store::open(env.state()).unwrap(),
-            credentials,
-        }
-    }
-
-    fn get(&self, path: &str) -> Response {
-        request(self.server.addr, &format!("GET {path}"), None)
-    }
-
-    fn put(&self, path: &str, body: &Value) -> Response {
-        request(self.server.addr, &format!("PUT {path}"), Some(body))
-    }
-
-    fn post(&self, path: &str, body: &Value) -> Response {
-        request(self.server.addr, &format!("POST {path}"), Some(body))
-    }
-}
-
 fn goal_events(store: &Store) -> usize {
     std::fs::read_to_string(store.root().join("events.jsonl"))
         .unwrap_or_default()
@@ -138,7 +94,7 @@ fn goal_events(store: &Store) -> usize {
 #[test]
 fn only_requests_addressed_to_the_dashboard_reach_it() {
     let env = Env::new();
-    let dash = Dashboard::start(&env, Checks { refuse: None });
+    let dash = Dashboard::with_checks(&env, Checks { refuse: None });
     records::set_goal(&dash.store, "Shop customers manage their own orders").unwrap();
     write_overview_records(&dash.store);
     let addr = dash.server.addr;
@@ -204,7 +160,7 @@ fn form_post(addr: std::net::SocketAddr, path: &str) -> u16 {
 #[test]
 fn goal_saved_through_the_api_is_stored_logged_and_served_back() {
     let env = Env::new();
-    let dash = Dashboard::start(&env, Checks { refuse: None });
+    let dash = Dashboard::with_checks(&env, Checks { refuse: None });
 
     let saved = dash.put(
         "/api/v1/goal",
@@ -251,6 +207,7 @@ fn decision(id: &str, issue: &str, title: &str, status: DecisionStatus) -> Decis
         answer: None,
         procedure: None,
         asked_by: None,
+        proposal: None,
     }
 }
 
@@ -357,7 +314,7 @@ fn write_overview_records(store: &Store) {
 #[test]
 fn overview_reports_pause_cause_pending_decisions_and_sprint_progress_from_the_store() {
     let env = Env::new();
-    let dash = Dashboard::start(&env, Checks { refuse: None });
+    let dash = Dashboard::with_checks(&env, Checks { refuse: None });
     write_overview_records(&dash.store);
 
     let o = dash.get("/api/v1/overview").json();
@@ -433,7 +390,7 @@ fn overview_reports_pause_cause_pending_decisions_and_sprint_progress_from_the_s
 #[test]
 fn overview_names_the_service_out_of_reach_from_the_errors_in_the_event_log() {
     let env = Env::new();
-    let dash = Dashboard::start(&env, Checks { refuse: None });
+    let dash = Dashboard::with_checks(&env, Checks { refuse: None });
     for line in [
         json!({"event": "service-unreachable", "operation": "reading the tracker", "why": "no-connection",
                "at": "2026-11-27T04:30:00Z",
@@ -470,7 +427,7 @@ fn overview_names_the_service_out_of_reach_from_the_errors_in_the_event_log() {
 #[test]
 fn activity_lists_runs_by_when_they_ended_with_a_running_one_first() {
     let env = Env::new();
-    let dash = Dashboard::start(&env, Checks { refuse: None });
+    let dash = Dashboard::with_checks(&env, Checks { refuse: None });
     let start = |at: &str, item: &str, step: &str| {
         json!({"at": at, "role": "reviewer", "item": item, "step": step, "issue": "ACME-1",
                "sprint": "S1", "cli": "claude", "model": null, "effort": null,
@@ -511,7 +468,7 @@ fn activity_lists_runs_by_when_they_ended_with_a_running_one_first() {
 #[test]
 fn a_sprint_decision_waiting_on_the_owner_is_titled_by_the_sprints_purpose() {
     let env = Env::new();
-    let dash = Dashboard::start(&env, Checks { refuse: None });
+    let dash = Dashboard::with_checks(&env, Checks { refuse: None });
     dash.store
         .write_record(
             "sprint.json",
@@ -590,7 +547,7 @@ fn applying_agreements(store: &Store, need_approval: bool) {
 fn agreements_the_factory_merges_are_linked_while_they_wait_to_merge() {
     let env = Env::new();
     env.configure("");
-    let dash = Dashboard::start(&env, Checks { refuse: None });
+    let dash = Dashboard::with_checks(&env, Checks { refuse: None });
     applying_agreements(&dash.store, false);
 
     let o = dash.get("/api/v1/overview").json();
@@ -614,7 +571,7 @@ fn agreements_the_factory_merges_are_linked_while_they_wait_to_merge() {
 fn agreements_waiting_for_an_approving_review_wait_for_the_owner() {
     let env = Env::new();
     env.configure("");
-    let dash = Dashboard::start(&env, Checks { refuse: None });
+    let dash = Dashboard::with_checks(&env, Checks { refuse: None });
     applying_agreements(&dash.store, true);
 
     let o = dash.get("/api/v1/overview").json();
@@ -640,7 +597,7 @@ fn agreements_waiting_for_an_approving_review_wait_for_the_owner() {
 fn agreements_the_owner_merges_wait_for_the_owner() {
     let env = Env::new();
     env.configure("[merge]\nby = \"owner\"\n");
-    let dash = Dashboard::start(&env, Checks { refuse: None });
+    let dash = Dashboard::with_checks(&env, Checks { refuse: None });
     applying_agreements(&dash.store, false);
 
     let o = dash.get("/api/v1/overview").json();
@@ -665,7 +622,7 @@ fn agreements_the_owner_merges_wait_for_the_owner() {
 #[test]
 fn a_cancel_is_left_for_the_daemon_only_for_an_issue_that_has_not_ended() {
     let env = Env::new();
-    let dash = Dashboard::start(&env, Checks { refuse: None });
+    let dash = Dashboard::with_checks(&env, Checks { refuse: None });
     write_overview_records(&dash.store);
 
     let accepted = dash.post(
@@ -696,7 +653,7 @@ fn a_cancel_is_left_for_the_daemon_only_for_an_issue_that_has_not_ended() {
 #[test]
 fn a_sprint_not_yet_running_has_no_sprint_line_whatever_its_proposal_says() {
     let env = Env::new();
-    let dash = Dashboard::start(&env, Checks { refuse: None });
+    let dash = Dashboard::with_checks(&env, Checks { refuse: None });
     for stage in [SprintStage::AwaitingApproval, SprintStage::WaitingForIssues] {
         dash.store
             .write_record(
@@ -819,7 +776,7 @@ fn assert_connected(env: &Env, dash: &Dashboard) {
 #[test]
 fn connect_checks_each_block_and_writes_the_connections_with_the_chosen_agent() {
     let env = Env::new();
-    let refused = Dashboard::start(
+    let refused = Dashboard::with_checks(
         &env,
         Checks {
             refuse: Some("slack"),
@@ -856,7 +813,7 @@ fn connect_checks_each_block_and_writes_the_connections_with_the_chosen_agent() 
     assert_eq!(changed(&env.repo), "");
     assert!(!refused.credentials.exists());
 
-    let dash = Dashboard::start(&env, Checks { refuse: None });
+    let dash = Dashboard::with_checks(&env, Checks { refuse: None });
     let saved = dash.put("/api/v1/setup", &setup_request());
     assert_eq!(saved.status, 200, "{}", saved.body);
     assert_eq!(saved.json()["step"], "run");
@@ -879,7 +836,7 @@ fn connect_checks_each_block_and_writes_the_connections_with_the_chosen_agent() 
 fn run_the_product_writes_commands_only_once_they_start_then_the_goal_finishes_setup() {
     let env = Env::new();
     env.configure("[app]\n");
-    let dash = Dashboard::start(&env, Checks { refuse: None });
+    let dash = Dashboard::with_checks(&env, Checks { refuse: None });
     assert_eq!(dash.get("/api/v1/setup").json()["step"], "run");
 
     let broken = dash.put(
@@ -930,7 +887,7 @@ fn keeping_the_leads_started_commands_or_nothing_to_run_settles_how_the_product_
             .to_string(),
     )
     .unwrap();
-    let dash = Dashboard::start(&env, Checks { refuse: None });
+    let dash = Dashboard::with_checks(&env, Checks { refuse: None });
     let kept = dash.put(
         "/api/v1/setup/run",
         &json!({"runs": "commands", "setup": null, "start": "exit 1", "ready": null}),
@@ -944,7 +901,7 @@ fn keeping_the_leads_started_commands_or_nothing_to_run_settles_how_the_product_
 
     let other = Env::new();
     other.configure("[app]\n");
-    let dash = Dashboard::start(&other, Checks { refuse: None });
+    let dash = Dashboard::with_checks(&other, Checks { refuse: None });
     let nothing = dash.put("/api/v1/setup/run", &json!({"runs": "nothing"}));
     assert_eq!(nothing.status, 200, "{}", nothing.body);
     assert_eq!(nothing.json()["step"], "goal");
@@ -1198,7 +1155,7 @@ fn an_issue_is_read_back_from_the_records_its_run_left() {
         |_| {},
         |d| d.issue("ACME-123").unwrap().unwrap().flow.stage == Stage::running(Step::WorkPlan),
     );
-    let dash = Dashboard::start(&env, Checks { refuse: None });
+    let dash = Dashboard::with_checks(&env, Checks { refuse: None });
     assert!(wait_until(10, || dash
         .get("/api/v1/issues/ACME-123")
         .json()["now"]["since"]
@@ -1264,7 +1221,7 @@ fn an_issue_is_read_back_from_the_records_its_run_left() {
 #[test]
 fn ended_sprints_come_back_newest_first_with_their_results() {
     let env = Env::new();
-    let dash = Dashboard::start(&env, Checks { refuse: None });
+    let dash = Dashboard::with_checks(&env, Checks { refuse: None });
     let review = |met: bool, agreements: Value| {
         serde_json::from_value::<ovenspring_core::output::SprintReviewOutput>(json!({
             "key_results": [{"text": "A delayed order shows its reason.", "met": met, "evidence": "ACME-120 merged"}],
@@ -1395,7 +1352,7 @@ fn launches_recorded_by_the_launcher_are_listed_and_detailed_by_the_api() {
             .write_record(&format!("issues/{key}.json"), &r)
             .unwrap();
     }
-    let dash = Dashboard::start(&env, Checks { refuse: None });
+    let dash = Dashboard::with_checks(&env, Checks { refuse: None });
 
     let rows = dash.get("/api/v1/launches?sprint=S1&issue=ACME-123").json();
 
@@ -1470,7 +1427,7 @@ fn launches_recorded_by_the_launcher_are_listed_and_detailed_by_the_api() {
 fn credentials_saved_through_settings_are_write_only_and_stay_out_of_config_toml() {
     let env = Env::new();
     env.configure("");
-    let dash = Dashboard::start(&env, Checks { refuse: None });
+    let dash = Dashboard::with_checks(&env, Checks { refuse: None });
 
     let saved = dash.put(
         "/api/v1/settings/slack",
@@ -1524,7 +1481,7 @@ fn credentials_saved_through_settings_are_write_only_and_stay_out_of_config_toml
 fn settings_the_factory_refuses_are_shown_and_corrected_in_settings() {
     let env = Env::new();
     env.configure("[roles.lead]\ncli = \"claude\"\nskills = [\"payments-domain\"]\n");
-    let dash = Dashboard::start(&env, Checks { refuse: None });
+    let dash = Dashboard::with_checks(&env, Checks { refuse: None });
     let read = dash.get("/api/v1/settings");
     assert_eq!(read.status, 200, "{}", read.body);
     let problem = read.json()["problem"].as_str().unwrap().to_owned();
@@ -1548,7 +1505,7 @@ fn settings_the_factory_refuses_are_shown_and_corrected_in_settings() {
 fn app_guard_and_review_settings_are_saved_to_the_configuration() {
     let env = Env::new();
     env.configure("");
-    let dash = Dashboard::start(&env, Checks { refuse: None });
+    let dash = Dashboard::with_checks(&env, Checks { refuse: None });
 
     let broken = dash.put(
         "/api/v1/settings/app",
@@ -1587,7 +1544,7 @@ fn app_guard_and_review_settings_are_saved_to_the_configuration() {
 fn what_a_person_reviews_and_the_agreements_and_knowledge_folders_are_saved_from_settings() {
     let env = Env::new();
     env.configure("");
-    let dash = Dashboard::start(&env, Checks { refuse: None });
+    let dash = Dashboard::with_checks(&env, Checks { refuse: None });
     let general = |reviews: Value, folder: &str| {
         json!({"baseBranch": "main", "mergeBy": "factory", "held": {}, "githubToken": null,
                "personReviews": reviews, "agreementsPath": "docs/factory/agreements/",
@@ -1640,7 +1597,7 @@ fn what_a_person_reviews_and_the_agreements_and_knowledge_folders_are_saved_from
 #[test]
 fn a_prototype_is_served_sandboxed_from_its_issue_worktree_only() {
     let env = Env::new();
-    let dash = Dashboard::start(&env, Checks { refuse: None });
+    let dash = Dashboard::with_checks(&env, Checks { refuse: None });
     let page = "<!doctype html><title>Orders</title><p>Every order, newest first.</p>";
     let assets = dash
         .store
@@ -1768,7 +1725,7 @@ const YEAR_OF_LINES: usize = 130_000;
 #[test]
 fn the_events_page_answers_within_a_poll_over_a_year_of_lines() {
     let env = Env::new();
-    let dash = Dashboard::start(&env, Checks { refuse: None });
+    let dash = Dashboard::with_checks(&env, Checks { refuse: None });
     let mut lines = Vec::with_capacity(YEAR_OF_LINES);
     for i in 0..YEAR_OF_LINES {
         let line = if i % 100 == 0 {

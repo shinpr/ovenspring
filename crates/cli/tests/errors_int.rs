@@ -60,11 +60,17 @@ use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
 use ovenspring_core::flow::Stage;
+use ovenspring_core::item::Status;
+use ovenspring_core::output::SprintPlanOutput;
+use ovenspring_core::sprint::SprintStage;
+use ovenspring_core::step::Step;
 use ovenspring_daemon::Daemon;
 use ovenspring_integrations::github::{CheckState, GitHub as _};
+use ovenspring_integrations::tracker::TrackerIssue;
 use serde_json::{Value, json};
+use support::dashboard::Dashboard;
 use support::fake_github::FakeGitHub;
-use support::recording::RecordingTracker;
+use support::recording::{RecordingChannel, RecordingTracker};
 use support::scripts::requiring_test;
 use support::slack_stub::SlackStub;
 use support::{Env, daemon, git, run_until};
@@ -357,7 +363,76 @@ fn notices_slack_refused_go_out_in_order_once_slack_accepts() {
 // @lane: integration
 // @dependency: daemon (`reload_config`), store, `config.toml`, real `Slack` over `SlackStub`,
 //     RecordingTracker
-// Name: with_error_notices_turned_off_the_waiting_notice_is_dropped_and_nothing_is_posted
+#[test]
+fn with_error_notices_turned_off_the_waiting_notice_is_dropped_and_nothing_is_posted() {
+    let env = Env::new();
+    env.configure("");
+    let gh = passing_github(&env);
+    let tracker = Arc::new(RecordingTracker::default());
+    tracker.unreachable.store(true, Ordering::SeqCst);
+    let slack = SlackStub::default();
+    slack.fail("chat.postMessage", true);
+    let mut d = started(&env, on_slack(&gh, &slack, Some(tracker.clone())));
+    run_until(
+        &mut d,
+        60,
+        |_| {},
+        |_| failures(&env, "tracker-unreachable") >= 1,
+    );
+
+    env.configure("[notices]\nerrors = false\n");
+    d.tick().unwrap();
+    slack.fail("chat.postMessage", false);
+    let failed_before = failures(&env, "tracker-unreachable");
+    run_until(
+        &mut d,
+        60,
+        |_| {},
+        |_| failures(&env, "tracker-unreachable") > failed_before,
+    );
+    tracker.unreachable.store(false, Ordering::SeqCst);
+    run_until(
+        &mut d,
+        60,
+        |_| {},
+        |_| cleared(&env, "tracker-unreachable") == 1,
+    );
+    for _ in 0..3 {
+        d.tick().unwrap();
+    }
+
+    assert_eq!(notices(&slack, "tracker-unreachable"), Vec::<String>::new());
+    assert_eq!(starts(&env, "tracker-unreachable").len(), 1);
+    assert!(
+        failures(&env, "tracker-unreachable") >= 2,
+        "the repeat stays listed"
+    );
+    let lines: Vec<Value> = env
+        .events()
+        .into_iter()
+        .filter(|e| e["event"] == "config-reloaded" || of_key("tracker-unreachable")(e))
+        .collect();
+    let dropped: Vec<&Value> = lines
+        .iter()
+        .filter(|e| e["event"] == "error-notice" && e["outcome"] == "dropped")
+        .collect();
+    assert_eq!(dropped.len(), 1, "{dropped:?}");
+    assert_eq!(dropped[0]["phase"], "started");
+    let clear = lines
+        .iter()
+        .find(|e| e["event"] == "error-cleared")
+        .unwrap();
+    assert_eq!(clear["failure"]["notice"], "off");
+    let reloads: Vec<&Value> = lines
+        .iter()
+        .filter(|e| e["event"] == "config-reloaded")
+        .collect();
+    assert_eq!(reloads.len(), 1, "{reloads:?}");
+    assert_eq!(
+        reloads[0]["changes"],
+        json!([{"setting": "notices.errors", "value": false}])
+    );
+}
 
 // ---------------------------------------------------------------------------------------------
 // 4.
@@ -578,11 +653,328 @@ fn an_outage_recorded_by_the_previous_version_keeps_its_since_and_clears_once() 
 //     d. Two launches of one CLI end in the same drain, the first with a `launch-error` and the
 //        second without failure; once with the `paused` append succeeding, once with it failing.
 //        Result (each): exactly one M-08; the halt file present before the next launch; exactly
-//        one `error-cleared` for that CLI.
+//        one `error-cleared` for that CLI. No store hook fails one append and not the one before
+//        it, so the failing case starts from what that failure leaves: the start and the clear
+//        recorded, the pause not.
+// Block 7 makes the spawn fail on its log, a directory, rather than on a program missing from
+//     `PATH`: an agent CLI installed on the machine would otherwise run.
 // @lane: integration
 // @dependency: daemon (`finished`, `pause`, restart), store, halt file, scripted agent CLIs, real
 //     `Slack` over `SlackStub`
 // Name: an_agent_cli_error_pauses_once_and_is_told_by_one_m08
+fn ok_requirements() -> Value {
+    json!({"output": {"convergence": {"outcome": "o"}, "structuralScale": "medium", "decision": "proceed"}})
+}
+
+/// The M-08 messages in the channel, marked or not.
+fn m08s(slack: &SlackStub) -> Vec<Value> {
+    slack
+        .posted()
+        .into_iter()
+        .filter(|m| m.to_string().contains("Oven Spring paused because"))
+        .collect()
+}
+
+/// Start lines in `launches.jsonl` for items whose name contains `part`.
+fn launches_of(env: &Env, part: &str) -> Vec<Value> {
+    std::fs::read_to_string(env.state().join("launches.jsonl"))
+        .unwrap_or_default()
+        .lines()
+        .map(|l| serde_json::from_str::<Value>(l).unwrap())
+        .filter(|l| l.get("pid").is_some() && l["item"].as_str().unwrap().contains(part))
+        .collect()
+}
+
+fn paused_lines(env: &Env) -> Vec<Value> {
+    env.events()
+        .into_iter()
+        .filter(|e| e["event"] == "paused")
+        .collect()
+}
+
+/// The error key and `since` of the one agent CLI error started so far.
+fn cli_start(env: &Env) -> (String, String) {
+    let starts: Vec<Value> = env
+        .events()
+        .into_iter()
+        .filter(|e| e["event"] == "launch-error" && e["failure"]["start"] == true)
+        .collect();
+    assert_eq!(starts.len(), 1, "one agent CLI error started");
+    let failure = &starts[0]["failure"];
+    (
+        failure["key"].as_str().unwrap().to_owned(),
+        failure["since"].as_str().unwrap().to_owned(),
+    )
+}
+
+const REASON: &str =
+    "the agent on ACME-123 (requirements) stopped with an error: Claude AI usage limit reached";
+
+/// `events.jsonl` as an earlier run left it: ACME-123 begun, then a `cli-claude` start line
+/// recorded and the daemon stopped before the factory was paused; `cleared` adds the clear a
+/// second launch of the same CLI recorded in the same drain.
+fn seed_unpaused_cli_start(env: &Env, slack: &SlackStub, cleared: bool) -> String {
+    let gh = passing_github(env);
+    started(env, on_slack(&gh, slack, None))
+        .begin_issue("ACME-123", "Export", vec![])
+        .unwrap();
+    let since = jiff::Timestamp::now().to_string();
+    let store = ovenspring_store::Store::open(env.state()).unwrap();
+    store
+        .append_event(&json!({
+            "event": "launch-error", "item": "requirements-ACME-123", "cli": "claude",
+            "error": "Claude AI usage limit reached", "at": since,
+            "failure": {"key": "cli-claude", "since": since, "cause": "Claude AI usage limit reached",
+                        "start": true, "notice": "pause", "reason": REASON},
+        }))
+        .unwrap();
+    if cleared {
+        store
+            .append_event(&json!({
+                "event": "error-cleared", "cli": "claude", "count": 1, "at": since,
+                "failure": {"key": "cli-claude", "since": since, "notice": "waiting"},
+            }))
+            .unwrap();
+    }
+    since
+}
+
+#[test]
+fn an_agent_cli_error_pauses_once_and_is_told_by_one_m08_across_a_refusal_and_a_restart() {
+    let env = Env::new();
+    env.configure("");
+    env.script_agents(&json!({
+        "requirements@ACME-123": [{"fail": "fatal"}, ok_requirements()],
+        "codebase-analysis": [{"hang": true}],
+    }));
+    let gh = passing_github(&env);
+    let slack = SlackStub::default();
+    slack.fail("chat.postMessage", true);
+    let mut d = started(&env, on_slack(&gh, &slack, None));
+    d.begin_issue("ACME-123", "Export", vec![]).unwrap();
+    run_until(&mut d, 30, |_| {}, |d| d.halt_file().exists());
+    for _ in 0..3 {
+        d.tick().unwrap();
+    }
+    let (key, since) = cli_start(&env);
+    assert!(m08s(&slack).is_empty(), "Slack refuses every post");
+    assert_eq!(told(&env, &key, "started"), 0);
+    drop(d);
+
+    slack.fail("chat.postMessage", false);
+    let mut d = started(&env, on_slack(&gh, &slack, None));
+    run_until(&mut d, 30, |_| {}, |_| told(&env, &key, "started") == 1);
+    let m08 = m08s(&slack);
+    assert_eq!(m08.len(), 1, "{m08:?}");
+    assert_eq!(
+        m08[0]["metadata"]["event_payload"]["id"],
+        format!("{key}@{since}/started")
+    );
+    assert!(m08[0].to_string().contains(REASON), "{}", m08[0]);
+
+    d.resume().unwrap();
+    run_until(&mut d, 30, |_| {}, |_| told(&env, &key, "cleared") == 1);
+    assert_eq!(
+        notices(&slack, &key),
+        vec![
+            format!("{key}@{since}/started"),
+            format!("{key}@{since}/cleared")
+        ]
+    );
+    assert_eq!(m08s(&slack).len(), 1);
+    assert_eq!(told(&env, &key, "started"), 1);
+    assert_eq!(cleared(&env, &key), 1);
+    assert_eq!(paused_lines(&env).len(), 1);
+}
+
+#[test]
+fn an_agent_cli_error_pauses_once_and_is_told_by_one_m08_while_error_notices_are_off() {
+    let env = Env::new();
+    env.configure("[notices]\nerrors = false\n");
+    env.script_agents(&json!({
+        "requirements@ACME-123": [{"fail": "fatal"}, ok_requirements()],
+        "codebase-analysis": [{"hang": true}],
+    }));
+    let gh = passing_github(&env);
+    let slack = SlackStub::default();
+    let mut d = started(&env, on_slack(&gh, &slack, None));
+    d.begin_issue("ACME-123", "Export", vec![]).unwrap();
+    run_until(&mut d, 30, |_| {}, |d| d.halt_file().exists());
+    let (key, since) = cli_start(&env);
+    run_until(&mut d, 30, |_| {}, |_| told(&env, &key, "started") == 1);
+
+    d.resume().unwrap();
+    run_until(&mut d, 30, |_| {}, |_| cleared(&env, &key) == 1);
+    for _ in 0..3 {
+        d.tick().unwrap();
+    }
+    assert_eq!(
+        notices(&slack, &key),
+        vec![format!("{key}@{since}/started")]
+    );
+    assert_eq!(m08s(&slack).len(), 1);
+    let dropped = env
+        .events()
+        .into_iter()
+        .filter(|e| e["event"] == "error-notice" && e["outcome"] == "dropped")
+        .count();
+    assert_eq!(
+        dropped, 0,
+        "an M-08 is never dropped, and the clear waits for no notice"
+    );
+}
+
+#[test]
+fn an_agent_cli_error_pauses_once_and_is_told_by_one_m08_when_the_daemon_stopped_before_pausing() {
+    let env = Env::new();
+    env.configure("");
+    env.script_agents(
+        &json!({"requirements": [ok_requirements()], "codebase-analysis": [{"hang": true}]}),
+    );
+    let slack = SlackStub::default();
+    let since = seed_unpaused_cli_start(&env, &slack, false);
+    let gh = passing_github(&env);
+    let mut d = started(&env, on_slack(&gh, &slack, None));
+
+    d.tick().unwrap();
+    assert!(d.halt_file().exists());
+    assert!(
+        launches_of(&env, "ACME-123").is_empty(),
+        "nothing launches under the pause"
+    );
+    run_until(
+        &mut d,
+        30,
+        |_| {},
+        |_| told(&env, "cli-claude", "started") == 1,
+    );
+    let m08 = m08s(&slack);
+    assert_eq!(m08.len(), 1, "{m08:?}");
+    assert_eq!(
+        m08[0]["metadata"]["event_payload"]["id"],
+        format!("cli-claude@{since}/started")
+    );
+    assert!(m08[0].to_string().contains(REASON), "{}", m08[0]);
+    let paused = paused_lines(&env);
+    assert_eq!(paused.len(), 1);
+    assert_eq!(paused[0]["reason"], REASON);
+
+    // What the pause held back launches once the owner resumes.
+    d.resume().unwrap();
+    run_until(
+        &mut d,
+        30,
+        |_| {},
+        |_| !launches_of(&env, "ACME-123").is_empty(),
+    );
+}
+
+#[test]
+fn an_agent_cli_error_pauses_once_and_is_told_by_one_m08_when_another_launch_of_its_cli_clears_it_in_the_same_drain()
+ {
+    let env = Env::new();
+    env.configure("");
+    env.script_agents(&json!({
+        "prepare:requirements@ACME-123": [{"fail": "fatal"}],
+        "prepare:requirements@ACME-124": [{"wait": true, "output": {"message": null, "question": false}}],
+        "codebase-analysis": [{"hang": true}],
+    }));
+    let gh = passing_github(&env);
+    let slack = SlackStub::default();
+    let mut d = started(&env, on_slack(&gh, &slack, None));
+    d.begin_issue("ACME-123", "Export", vec![]).unwrap();
+    d.begin_issue("ACME-124", "Import", vec![]).unwrap();
+    d.tick().unwrap();
+    let failing = launches_of(&env, "ACME-123");
+    assert_eq!(failing.len(), 1, "both issues' steps launch in one pass");
+    assert_eq!(launches_of(&env, "ACME-124").len(), 1);
+
+    // ACME-123's launch fails, then ACME-124's ends well; no pass runs in between.
+    let fake = env.fake_bin.parent().unwrap().to_path_buf();
+    let pid = |v: &Value| u32::try_from(v.as_u64().unwrap()).unwrap();
+    assert!(support::wait_until(20, || !ovenspring_daemon::app::alive(
+        pid(&failing[0]["pid"])
+    )));
+    let waiting = fake.join("pids-ACME-124-requirements.json");
+    assert!(support::wait_until(20, || waiting.exists()));
+    let agent: Value = serde_json::from_str(&std::fs::read_to_string(&waiting).unwrap()).unwrap();
+    std::fs::write(fake.join("release-ACME-124-requirements"), "").unwrap();
+    assert!(support::wait_until(20, || !ovenspring_daemon::app::alive(
+        pid(&agent["agent"])
+    )));
+    std::thread::sleep(std::time::Duration::from_millis(300));
+
+    d.tick().unwrap();
+    let (key, since) = cli_start(&env);
+    assert_eq!(cleared(&env, &key), 1, "the later good launch clears it");
+    assert!(d.halt_file().exists());
+    assert_eq!(
+        launches_of(&env, "ACME-").len(),
+        2,
+        "nothing launches under the pause"
+    );
+    run_until(
+        &mut d,
+        30,
+        |_| {},
+        |_| told(&env, &key, "started") == 1 && told(&env, &key, "cleared") == 1,
+    );
+    for _ in 0..3 {
+        d.tick().unwrap();
+    }
+    assert_eq!(m08s(&slack).len(), 1);
+    assert_eq!(
+        notices(&slack, &key),
+        vec![
+            format!("{key}@{since}/started"),
+            format!("{key}@{since}/cleared")
+        ]
+    );
+    assert_eq!(cleared(&env, &key), 1);
+    assert!(d.halt_file().exists());
+}
+
+/// The `paused` append that failed after the start line leaves what a stop before it leaves: the
+/// start recorded, its pause not, and here the clear the same drain's good launch recorded.
+#[test]
+fn an_agent_cli_error_pauses_once_and_is_told_by_one_m08_when_its_pause_was_not_recorded_and_it_cleared()
+ {
+    let env = Env::new();
+    env.configure("");
+    env.script_agents(
+        &json!({"requirements": [ok_requirements()], "codebase-analysis": [{"hang": true}]}),
+    );
+    let slack = SlackStub::default();
+    let since = seed_unpaused_cli_start(&env, &slack, true);
+    let gh = passing_github(&env);
+    let mut d = started(&env, on_slack(&gh, &slack, None));
+
+    d.tick().unwrap();
+    assert!(d.halt_file().exists());
+    assert!(
+        launches_of(&env, "ACME-123").is_empty(),
+        "nothing launches under the pause"
+    );
+    run_until(
+        &mut d,
+        30,
+        |_| {},
+        |_| told(&env, "cli-claude", "started") == 1 && told(&env, "cli-claude", "cleared") == 1,
+    );
+    for _ in 0..3 {
+        d.tick().unwrap();
+    }
+    assert_eq!(m08s(&slack).len(), 1);
+    assert_eq!(
+        notices(&slack, "cli-claude"),
+        vec![
+            format!("cli-claude@{since}/started"),
+            format!("cli-claude@{since}/cleared")
+        ]
+    );
+    assert_eq!(cleared(&env, "cli-claude"), 1);
+    assert_eq!(paused_lines(&env).len(), 1);
+}
 
 // ---------------------------------------------------------------------------------------------
 // 7. A CLI that cannot be spawned is not an error (Design § Selected Design > Errors, CLI spawn).
@@ -601,6 +993,106 @@ fn an_outage_recorded_by_the_previous_version_keeps_its_since_and_clears_once() 
 // @dependency: daemon (`start_process`, `settle`, `settle_part`), store, real process spawn,
 //     real `Slack` over `SlackStub`
 // Name: a_cli_that_cannot_be_spawned_is_retried_and_records_no_error
+/// An open `requirements` item for ACME-123 (`issue`) or for nothing, whose launches cannot be
+/// spawned: the log each of its first attempts writes to is a directory. A program missing from
+/// `PATH` fails the same spawn, but an agent CLI installed on the machine would then run.
+fn unspawnable_item(env: &Env, issue: Option<&str>) {
+    let store = ovenspring_store::Store::open(env.state()).unwrap();
+    let name = "requirements-unspawnable";
+    if let Some(key) = issue {
+        let mut r = ovenspring_daemon::issues::IssueRecord::new(key, "Export", vec![]);
+        r.flow.stage = Stage::running(ovenspring_core::step::Step::Requirements);
+        store
+            .write_record(&format!("issues/{key}.json"), &r)
+            .unwrap();
+    }
+    let item = support::item(
+        &store,
+        name,
+        ovenspring_core::step::Step::Requirements,
+        issue,
+    );
+    store.file_item(name, &item).unwrap();
+    for attempt in 1..=3 {
+        std::fs::create_dir_all(env.state().join(format!("launches/{name}.{attempt}.log")))
+            .unwrap();
+    }
+}
+
+fn launch_failures(env: &Env) -> Vec<Value> {
+    env.events()
+        .into_iter()
+        .filter(|e| e["event"] == "operation-failed")
+        .filter(|e| {
+            e["error"]
+                .as_str()
+                .unwrap_or_default()
+                .starts_with("starting ")
+        })
+        .collect()
+}
+
+fn failure_lines(env: &Env) -> usize {
+    env.events()
+        .into_iter()
+        .filter(|e| e.get("failure").is_some())
+        .count()
+}
+
+#[test]
+fn a_cli_that_cannot_be_spawned_is_retried_and_records_no_error_for_an_issues_item() {
+    let env = Env::new();
+    env.configure("");
+    let gh = passing_github(&env);
+    let slack = SlackStub::default();
+    let mut d = started(&env, on_slack(&gh, &slack, None));
+    unspawnable_item(&env, Some("ACME-123"));
+
+    d.tick().unwrap();
+    assert_eq!(launch_failures(&env).len(), 1);
+    assert!(d.issue("ACME-123").unwrap().unwrap().stopped.is_none());
+
+    d.tick().unwrap();
+    let failed = launch_failures(&env);
+    assert_eq!(failed.len(), 2, "the next pass launches the step again");
+    assert_eq!(failed[1]["issue"], "ACME-123");
+    assert!(d.issue("ACME-123").unwrap().unwrap().stopped.is_some());
+    let exception = env
+        .events()
+        .into_iter()
+        .filter(|e| e["event"] == "filed" && e["issue"] == "ACME-123" && e["step"] == "exception")
+        .count();
+    assert_eq!(exception, 1);
+    assert!(!d.halt_file().exists());
+    assert_eq!(failure_lines(&env), 0);
+}
+
+#[test]
+fn a_cli_that_cannot_be_spawned_is_retried_and_records_no_error_for_an_item_nothing_owns() {
+    let env = Env::new();
+    env.configure("");
+    let gh = passing_github(&env);
+    let slack = SlackStub::default();
+    let mut d = started(&env, on_slack(&gh, &slack, None));
+    unspawnable_item(&env, None);
+
+    d.tick().unwrap();
+    assert_eq!(launch_failures(&env).len(), 1);
+    assert!(!d.halt_file().exists());
+    for _ in 0..3 {
+        d.tick().unwrap();
+    }
+    assert_eq!(launch_failures(&env).len(), 2);
+    assert!(d.halt_file().exists());
+    let m08 = m08s(&slack);
+    assert_eq!(m08.len(), 1, "{m08:?}");
+    assert!(
+        m08[0]["metadata"].is_null(),
+        "announced as any pause: {}",
+        m08[0]
+    );
+    assert_eq!(failure_lines(&env), 0);
+}
 
 // ---------------------------------------------------------------------------------------------
 // 8. Filter error lifecycle (Design § Selected Design > Errors, `filter`; PRD AC-072, AC-077).
@@ -621,6 +1113,195 @@ fn an_outage_recorded_by_the_previous_version_keeps_its_since_and_clears_once() 
 // @dependency: daemon intake (`judge`, `take_filter_run`, `intake_pass`), real `sh -c` filter,
 //     RecordingTracker, store, real `Slack` over `SlackStub`
 // Name: a_failing_filter_is_one_error_until_an_issue_is_judged_freshly
+// The clear that follows the fresh judgment is proved twice: appended at once, and appended by a
+//     later pass after its first append failed (`events.jsonl` read-only for that pass), when the
+//     fresh verdict is cached and the command never runs again.
+#[test]
+fn a_failing_filter_is_one_error_until_an_issue_is_judged_freshly() {
+    a_failing_filter_is_one_error_until(false);
+}
+
+#[test]
+fn a_failing_filter_is_one_error_until_an_issue_is_judged_freshly_even_when_the_clear_append_fails()
+{
+    a_failing_filter_is_one_error_until(true);
+}
+
+const ADMIT: &str = "cat >/dev/null\nexit 0\n";
+const FAIL: &str = "cat >/dev/null\necho 'token expired' >&2\nexit 1\n";
+/// Admits once the test creates `.ovenspring/gate`, after telling it has started.
+const GATED_ADMIT: &str = "cat >/dev/null\ntouch .ovenspring/running\nwaited=0; while [ ! -f .ovenspring/gate ]; do waited=$((waited + 1)); [ \"$waited\" -le 3000 ] || exit 1; sleep 0.01; done\nexit 0\n";
+const FILTER_COMMAND: &str = "exec sh .ovenspring/filter.sh";
+
+fn tracker_issue(key: &str) -> TrackerIssue {
+    TrackerIssue {
+        key: key.into(),
+        title: format!("Title of {key}"),
+        body: format!("Body of {key}"),
+        url: format!("https://linear.app/acme/issue/{key}"),
+        state: "Todo".into(),
+        ..TrackerIssue::default()
+    }
+}
+
+fn reports(tracker: &RecordingTracker, keys: &[&str]) {
+    *tracker.issues.lock().unwrap() = keys.iter().map(|k| tracker_issue(k)).collect();
+}
+
+/// The filter's start and repeat lines.
+fn filter_lines(env: &Env) -> Vec<Value> {
+    env.events()
+        .into_iter()
+        .filter(|e| e["event"] == "filter-failed")
+        .collect()
+}
+
+fn cleared_lines(env: &Env, key: &str) -> Vec<Value> {
+    env.events()
+        .into_iter()
+        .filter(of_key(key))
+        .filter(|e| e["event"] == "error-cleared")
+        .collect()
+}
+
+/// A daemon over Slack whose filter command fails on ACME-1, with that error's M-13 told.
+fn failing_filter(env: &Env, slack: &SlackStub) -> Daemon {
+    let command = env.write_filter_script(FAIL);
+    env.configure_filter(&command);
+    let tracker = Arc::new(RecordingTracker::default());
+    reports(&tracker, &["ACME-1"]);
+    let gh = passing_github(env);
+    let mut d = started(env, on_slack(&gh, slack, Some(tracker)));
+    run_until(&mut d, 10, |_| {}, |_| told(env, "filter", "started") == 1);
+    d
+}
+
+fn a_failing_filter_is_one_error_until(clear_append_fails: bool) {
+    let env = Env::new();
+    let command = env.write_filter_script(ADMIT);
+    env.configure_filter(&command);
+    let tracker = Arc::new(RecordingTracker::default());
+    reports(&tracker, &["ACME-1"]);
+    let gh = passing_github(&env);
+    let slack = SlackStub::default();
+    let mut d = started(&env, on_slack(&gh, &slack, Some(tracker.clone())));
+    run_until(
+        &mut d,
+        10,
+        |_| {},
+        |d| d.open_issues().iter().any(|i| i.key == "ACME-1"),
+    );
+
+    // ACME-2 and ACME-3 fail.
+    env.write_filter_script(FAIL);
+    reports(&tracker, &["ACME-1", "ACME-2"]);
+    run_until(&mut d, 10, |_| {}, |_| failures(&env, "filter") == 1);
+    reports(&tracker, &["ACME-1", "ACME-2", "ACME-3"]);
+    run_until(&mut d, 10, |_| {}, |_| failures(&env, "filter") == 2);
+    run_until(&mut d, 10, |_| {}, |_| told(&env, "filter", "started") == 1);
+    let since = one_start_and_one_repeat(&env);
+    assert_eq!(
+        notices(&slack, "filter"),
+        [format!("filter@{since}/started")]
+    );
+
+    // ACME-1's admission is reapplied from the cache on every pass.
+    for _ in 0..5 {
+        d.tick().unwrap();
+    }
+    assert_eq!(cleared(&env, "filter"), 0);
+    assert_eq!(failures(&env, "filter"), 2);
+
+    // ACME-4 is judged freshly.
+    env.write_filter_script(GATED_ADMIT);
+    reports(&tracker, &["ACME-1", "ACME-2", "ACME-3", "ACME-4"]);
+    run_until(&mut d, 10, |_| {}, |_| env.filter_file("running").exists());
+    let events = env.state().join("events.jsonl");
+    if clear_append_fails {
+        set_read_only(&events, true);
+        std::fs::write(env.filter_file("gate"), "go").unwrap();
+        assert!(
+            support::wait_until(10, || d.tick().is_err()),
+            "the pass taking the fresh judgment fails on its append"
+        );
+        set_read_only(&events, false);
+        assert_eq!(cleared(&env, "filter"), 0);
+    } else {
+        std::fs::write(env.filter_file("gate"), "go").unwrap();
+    }
+    run_until(&mut d, 10, |_| {}, |_| told(&env, "filter", "cleared") == 1);
+    for _ in 0..3 {
+        d.tick().unwrap();
+    }
+
+    let clears = cleared_lines(&env, "filter");
+    assert_eq!(clears.len(), 1, "{clears:?}");
+    assert_eq!(
+        (
+            &clears[0]["issue"],
+            &clears[0]["count"],
+            &clears[0]["removed"]
+        ),
+        (&json!("ACME-4"), &json!(2), &Value::Null)
+    );
+    assert_eq!(
+        notices(&slack, "filter"),
+        [
+            format!("filter@{since}/started"),
+            format!("filter@{since}/cleared")
+        ]
+    );
+}
+
+/// The filter's lines after ACME-2 and ACME-3 failed: ACME-2's start and ACME-3's repeat, with
+/// the command, stderr's line and the cause. Returns the error's `since`.
+fn one_start_and_one_repeat(env: &Env) -> String {
+    let lines = filter_lines(env);
+    let since = lines[0]["failure"]["since"].as_str().unwrap().to_owned();
+    let shape = |line: &Value| {
+        json!([
+            line["event"],
+            line["issue"],
+            line["error"],
+            line["command"],
+            line["output"],
+            line["failure"]["cause"],
+            line["failure"]["start"]
+        ])
+    };
+    assert_eq!(
+        shape(&lines[0]),
+        json!([
+            "filter-failed",
+            "ACME-2",
+            "exited with status 1",
+            FILTER_COMMAND,
+            "token expired",
+            "exited with status 1 (token expired)",
+            true
+        ])
+    );
+    assert_eq!(
+        shape(&lines[1]),
+        json!([
+            "filter-failed",
+            "ACME-3",
+            "exited with status 1",
+            FILTER_COMMAND,
+            "token expired",
+            "exited with status 1 (token expired)",
+            null
+        ])
+    );
+    assert_eq!(lines[1]["failure"]["since"], since.as_str());
+    since
+}
+
+fn set_read_only(path: &std::path::Path, read_only: bool) {
+    let mut permissions = std::fs::metadata(path).unwrap().permissions();
+    permissions.set_readonly(read_only);
+    std::fs::set_permissions(path, permissions).unwrap();
+}
 
 // ---------------------------------------------------------------------------------------------
 // 9.
@@ -637,6 +1318,47 @@ fn an_outage_recorded_by_the_previous_version_keeps_its_since_and_clears_once() 
 // @dependency: daemon (`reload_config`, `clear_removed_filter`, `recover`), real `sh -c` filter,
 //     store
 // Name: removing_the_filter_clears_its_error_once
+#[test]
+fn removing_the_filter_clears_its_error_once_on_reload() {
+    let env = Env::new();
+    let slack = SlackStub::default();
+    let mut d = failing_filter(&env, &slack);
+
+    env.set_tracker_filter(None);
+    for _ in 0..5 {
+        d.tick().unwrap();
+    }
+
+    assert_removed_once(&env);
+}
+
+#[test]
+fn removing_the_filter_clears_its_error_once_at_start() {
+    let env = Env::new();
+    let slack = SlackStub::default();
+    let d = failing_filter(&env, &slack);
+    drop(d);
+
+    env.set_tracker_filter(None);
+    let gh = passing_github(&env);
+    let tracker = Arc::new(RecordingTracker::default());
+    reports(&tracker, &["ACME-1"]);
+    let mut d = started(&env, on_slack(&gh, &slack, Some(tracker)));
+    for _ in 0..5 {
+        d.tick().unwrap();
+    }
+
+    assert_removed_once(&env);
+}
+
+fn assert_removed_once(env: &Env) {
+    let clears = cleared_lines(env, "filter");
+    assert_eq!(clears.len(), 1, "{clears:?}");
+    assert_eq!(
+        (&clears[0]["removed"], &clears[0]["issue"]),
+        (&json!(true), &Value::Null)
+    );
+}
 
 // ---------------------------------------------------------------------------------------------
 // 10. Masking (Design § Security Considerations; § Selected Design > Filter output).
@@ -658,6 +1380,129 @@ fn an_outage_recorded_by_the_previous_version_keeps_its_since_and_clears_once() 
 // @dependency: daemon intake, real `sh -c` filter, credentials file, store, dashboard server
 //     (`GET /events`), real `Slack` over `SlackStub`
 // Name: a_credential_in_the_filters_output_never_reaches_events_the_page_or_slack
+#[test]
+fn a_credential_in_the_filters_output_never_reaches_events_the_page_or_slack_across_the_cut() {
+    let env = Env::new();
+    let dash = Dashboard::start(&env);
+    dash.hold(CREDENTIAL);
+    // The 300-byte cut falls 10 bytes into the credential.
+    let pad = "x".repeat(290);
+    let command = env.write_filter_script(&format!(
+        "cat >/dev/null\necho '{pad}{CREDENTIAL} tail' >&2\nexit 1\n"
+    ));
+    env.configure_filter(&command);
+    let tracker = Arc::new(RecordingTracker::default());
+    reports(&tracker, &["ACME-1"]);
+    let gh = passing_github(&env);
+    let slack = SlackStub::default();
+    let mut services = on_slack(&gh, &slack, Some(tracker));
+    services.secrets = vec![CREDENTIAL.to_owned()];
+    let mut d = started(&env, services);
+
+    run_until(&mut d, 10, |_| {}, |_| told(&env, "filter", "started") == 1);
+
+    let start = &filter_lines(&env)[0];
+    assert_eq!(start["output"], format!("{pad}[masked] t"));
+    let raw = std::fs::read_to_string(env.state().join("events.jsonl")).unwrap();
+    let page = dash.get("/api/v1/events?show=filter");
+    assert_eq!(page.status, 200);
+    assert_eq!(
+        page.json()["lines"][0]["kind"],
+        "filter-failed",
+        "{}",
+        page.body
+    );
+    let posted = Value::Array(slack.calls("chat.postMessage")).to_string();
+    for (place, text) in [
+        ("events.jsonl", &raw),
+        ("GET /events", &page.body),
+        ("Slack", &posted),
+    ] {
+        assert_no_part_of_credential(place, text);
+    }
+}
+
+#[test]
+fn a_credential_in_the_filters_output_never_reaches_events_once_replaced_while_the_sprint_is_proposing()
+ {
+    let env = Env::new();
+    let replaced = "held-replacement-55c1e0d2";
+    let command = env.write_filter_script(&format!(
+        "cat >/dev/null\nn=$(cat .ovenspring/count 2>/dev/null || echo 0)\nn=$((n + 1))\nprintf '%s\\n' \"$n\" > .ovenspring/count\nif [ \"$n\" -eq 1 ]; then echo 'before {CREDENTIAL} after' >&2; exit 1; fi\nexit 0\n"
+    ));
+    env.configure_filter(&command);
+    let tracker = Arc::new(RecordingTracker::default());
+    reports(&tracker, &["ACME-131"]);
+    let channel = Arc::new(RecordingChannel::default());
+    let services = |secret: &str| ovenspring_daemon::Services {
+        github: None,
+        channel: channel.clone(),
+        tracker: Some(support::linear(tracker.clone())),
+        secrets: vec![secret.to_owned()],
+    };
+    let mut d = daemon(&env, services(CREDENTIAL));
+    let proposal = set_proposing(&d);
+
+    d.tick().unwrap();
+    // One run at a time: ACME-132's run starting shows ACME-131's verdict was taken.
+    reports(&tracker, &["ACME-131", "ACME-132"]);
+    run_until(
+        &mut d,
+        10,
+        |_| assert_eq!(failures(&env, "filter"), 0, "held while Proposing"),
+        |_| std::fs::read_to_string(env.filter_file("count")).is_ok_and(|n| n.trim() == "2"),
+    );
+    d.replace_services(services(replaced));
+    complete_sprint_plan(&mut d, &proposal);
+
+    let lines = filter_lines(&env);
+    assert_eq!(lines.len(), 1, "{lines:?}");
+    assert_eq!(
+        (&lines[0]["issue"], &lines[0]["output"]),
+        (&json!("ACME-131"), &json!("before [masked] after"))
+    );
+    let raw = std::fs::read_to_string(env.state().join("events.jsonl")).unwrap();
+    assert_no_part_of_credential("events.jsonl", &raw);
+}
+
+/// A credential the factory holds, printed by the filter.
+const CREDENTIAL: &str = "Qx7vLm3Kp0Zt9d41b7e2WcRj";
+
+/// No run of 8 or more of the credential's characters is in `text`.
+fn assert_no_part_of_credential(place: &str, text: &str) {
+    for part in CREDENTIAL.as_bytes().windows(8) {
+        let part = std::str::from_utf8(part).unwrap();
+        assert!(!text.contains(part), "{place} holds {part:?}: {text}");
+    }
+}
+
+/// A sprint waiting for its plan, with the plan's item running.
+fn set_proposing(d: &Daemon) -> std::path::PathBuf {
+    let (mut sprint, _) = ovenspring_core::sprint::begin("filter-masking");
+    sprint.stage = SprintStage::Proposing;
+    d.store().write_record("sprint.json", &sprint).unwrap();
+    let name = format!("sprint-plan-{}", sprint.id);
+    let mut item = support::item(d.store(), &name, Step::SprintPlan, None);
+    item.front.sprint = Some(sprint.id);
+    item.front.status = Status::Doing;
+    d.store().file_item(&name, &item).unwrap()
+}
+
+/// Ends Proposing with a plan of no issue.
+fn complete_sprint_plan(d: &mut Daemon, path: &std::path::Path) {
+    let plan = SprintPlanOutput {
+        purpose: "Nothing yet".into(),
+        key_results: vec![],
+        issues: vec![],
+        message: "No issue is ready.".into(),
+    };
+    let item = d.store().read_item(path).unwrap();
+    std::fs::write(&item.front.out, serde_json::to_vec(&plan).unwrap()).unwrap();
+    d.store()
+        .update_item(path, |item| item.front.status = Status::Done)
+        .unwrap();
+    d.tick().unwrap();
+}
 
 // ---------------------------------------------------------------------------------------------
 // 11. Events read (Design § Selected Design > Events read; § Data Contracts > GET /api/v1/events).
@@ -985,73 +1830,6 @@ fn assert_empty_and_unreadable(dash: &Dashboard) {
         (&json!(true), &json!([])),
         "f"
     );
-}
-
-/// The dashboard server over `env`'s state directory, as `ovenspring` starts it.
-struct Dashboard {
-    server: ovenspring_server::Server,
-    store: ovenspring_store::Store,
-    credentials: std::path::PathBuf,
-}
-
-/// Setup's connection checks, which these tests never call.
-struct NoChecks;
-
-impl ovenspring_server::setup::SetupChecks for NoChecks {
-    fn tracker(
-        &self,
-        _: &std::path::Path,
-        _: &ovenspring_server::setup::TrackerSetup,
-        _: Option<&str>,
-    ) -> Result<String, String> {
-        Err("not checked".into())
-    }
-    fn slack(&self, _: &ovenspring_server::setup::SlackSetup) -> Result<String, String> {
-        Err("not checked".into())
-    }
-    fn github(
-        &self,
-        _: &std::path::Path,
-        _: Option<&str>,
-        _: &str,
-    ) -> Result<ovenspring_server::setup::GitHubAccount, String> {
-        Err("not checked".into())
-    }
-}
-
-impl Dashboard {
-    fn start(env: &Env) -> Dashboard {
-        let credentials = env.dir.path().join("config/credentials.toml");
-        let server = ovenspring_server::start(
-            ovenspring_server::Context {
-                repo: env.repo.clone(),
-                store: ovenspring_store::Store::open(env.state()).unwrap(),
-                credentials: credentials.clone(),
-                checks: Arc::new(NoChecks),
-                home: env.dir.path().join("home"),
-                codex_home: env.dir.path().join("home/.codex"),
-                version: support::no_new_version(),
-            },
-            0,
-        )
-        .unwrap();
-        Dashboard {
-            server,
-            store: ovenspring_store::Store::open(env.state()).unwrap(),
-            credentials,
-        }
-    }
-
-    /// Plants `value` as a held credential.
-    fn hold(&self, value: &str) {
-        let mut held = ovenspring_store::credentials::Credentials::default();
-        held.linear.api_key = Some(value.to_owned());
-        ovenspring_store::credentials::write(&self.credentials, &held).unwrap();
-    }
-
-    fn get(&self, path: &str) -> support::http::Response {
-        support::http::request(self.server.addr, &format!("GET {path}"), None)
-    }
 }
 
 /// Two issues, the running sprint and an ended one, and the launch of an item of ACME-2.

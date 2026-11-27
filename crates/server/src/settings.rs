@@ -7,8 +7,8 @@ use std::collections::BTreeMap;
 
 use ovenspring_agents::{assets, mcp};
 use ovenspring_core::config::{
-    AgentsConfig, Cli, Config, ConfigError, GuardConfig, Limits, MergeBy, ReviewConfig, Role,
-    TrackerKind,
+    AgentsConfig, Cli, Config, ConfigError, GuardConfig, Limits, MergeBy, NoticesConfig,
+    ReviewConfig, Role, TrackerKind,
 };
 use ovenspring_core::output::Approval;
 use ovenspring_store::credentials::{self, Credentials};
@@ -150,6 +150,7 @@ pub enum SettingsSection {
     App,
     Guard,
     Review,
+    Notices,
 }
 
 /// `general`: the base branch, who merges, what is held by path, and GitHub's token.
@@ -328,6 +329,7 @@ pub(crate) fn save(
         }
         SettingsSection::Guard => config.guard.deny = lines(parse::<GuardConfig>(body)?.deny),
         SettingsSection::Review => config.review.bots = lines(parse::<ReviewConfig>(body)?.bots),
+        SettingsSection::Notices => config.notices = parse::<NoticesConfig>(body)?,
     }
     if let Err(ConfigError::Invalid { key, message, .. }) = config.check(&context.repo) {
         return Err(Refusal::Invalid(BTreeMap::from([(key, message)])));
@@ -404,7 +406,8 @@ fn check_connection(
         | SettingsSection::Limits
         | SettingsSection::App
         | SettingsSection::Guard
-        | SettingsSection::Review => return Ok(()),
+        | SettingsSection::Review
+        | SettingsSection::Notices => return Ok(()),
     };
     result
         .map(|_| ())
@@ -424,6 +427,7 @@ impl SettingsSection {
             SettingsSection::App => "app",
             SettingsSection::Guard => "guard",
             SettingsSection::Review => "review",
+            SettingsSection::Notices => "notices",
         }
     }
 }
@@ -465,12 +469,38 @@ mod tests {
         }
     }
 
-    #[test]
-    fn tracker_settings_save_sets_and_clears_the_filter() {
-        let temp = tempfile::tempdir().unwrap();
-        let repo = temp.path().join("repo");
+    /// Every service refuses, so a section saved through them would be refused.
+    struct RefusedChecks;
+
+    impl SetupChecks for RefusedChecks {
+        fn tracker(
+            &self,
+            _repo: &Path,
+            _tracker: &TrackerSetup,
+            _github: Option<&str>,
+        ) -> Result<String, String> {
+            Err("the tracker refused".into())
+        }
+
+        fn slack(&self, _slack: &SlackSetup) -> Result<String, String> {
+            Err("Slack refused".into())
+        }
+
+        fn github(
+            &self,
+            _repo: &Path,
+            _token: Option<&str>,
+            _base_branch: &str,
+        ) -> Result<GitHubAccount, String> {
+            Err("GitHub refused".into())
+        }
+    }
+
+    /// A configured repository under `temp`, its services checked by `checks`.
+    fn configured(temp: &Path, checks: Arc<dyn SetupChecks>) -> Context {
+        let repo = temp.join("repo");
         let config_dir = repo.join(".ovenspring");
-        let home = temp.path().join("home");
+        let home = temp.join("home");
         let codex_home = home.join(".codex");
         std::fs::create_dir_all(&config_dir).unwrap();
         std::fs::create_dir_all(&codex_home).unwrap();
@@ -493,19 +523,26 @@ owners = ["U0123456789"]
 "#,
         )
         .unwrap();
-        let context = Context {
-            repo: repo.clone(),
-            store: ovenspring_store::Store::open(temp.path().join("state")).unwrap(),
-            credentials: temp.path().join("credentials.toml"),
-            checks: Arc::new(ConnectedChecks),
+        Context {
+            repo,
+            store: ovenspring_store::Store::open(temp.join("state")).unwrap(),
+            credentials: temp.join("credentials.toml"),
+            checks,
             home,
             codex_home,
             version: crate::version::Sources {
-                executable: temp.path().join("ovenspring"),
+                executable: temp.join("ovenspring"),
                 latest_release: String::new(),
                 transport: Arc::new(ovenspring_integrations::http::Ureq::new()),
             },
-        };
+        }
+    }
+
+    #[test]
+    fn tracker_settings_save_sets_and_clears_the_filter() {
+        let temp = tempfile::tempdir().unwrap();
+        let context = configured(temp.path(), Arc::new(ConnectedChecks));
+        let repo = context.repo.clone();
         let save_filter = |filter: &str| {
             save(
                 &context,
@@ -514,7 +551,7 @@ owners = ["U0123456789"]
             )
             .unwrap_or_else(|_| panic!("the tracker settings save should succeed"))
         };
-        let config_text = || std::fs::read_to_string(config_dir.join("config.toml")).unwrap();
+        let config_text = || std::fs::read_to_string(repo.join(".ovenspring/config.toml")).unwrap();
 
         let saved = save_filter(" scripts/issue-filter ");
         assert_eq!(
@@ -530,5 +567,31 @@ owners = ["U0123456789"]
         assert_eq!(cleared.config.tracker.filter, None);
         assert_eq!(Config::read(&repo).unwrap().tracker.filter, None);
         assert!(!config_text().contains("filter"), "{}", config_text());
+    }
+
+    #[test]
+    fn notices_settings_save_without_checking_any_connection() {
+        let temp = tempfile::tempdir().unwrap();
+        let context = configured(temp.path(), Arc::new(RefusedChecks));
+        let before = Config::read(&context.repo).unwrap();
+
+        let saved = save(
+            &context,
+            SettingsSection::Notices,
+            serde_json::json!({"errors": false}),
+        )
+        .unwrap_or_else(|_| panic!("the notices save should not depend on a connection"));
+
+        assert!(!saved.config.notices.errors);
+        let stored = Config::read(&context.repo).unwrap();
+        assert!(!stored.notices.errors);
+        assert_eq!(
+            Config {
+                notices: before.notices.clone(),
+                ..stored
+            },
+            before,
+            "only [notices] changes"
+        );
     }
 }

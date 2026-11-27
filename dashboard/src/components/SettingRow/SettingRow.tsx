@@ -62,6 +62,16 @@ function reach(el: HTMLElement | null | undefined): void {
   el?.scrollIntoView({ block: 'nearest' })
 }
 
+/** The form's first control; in a group of radios, the one chosen, as the arrow keys move from it. */
+function firstControl(form: HTMLFormElement | null): HTMLElement | null {
+  const first = form?.querySelector<HTMLElement>('input, select, textarea') ?? null
+  if (!(first instanceof HTMLInputElement) || first.type !== 'radio') {
+    return first
+  }
+  const group = form?.querySelectorAll<HTMLInputElement>('input[type="radio"]') ?? []
+  return Array.from(group).find((r) => r.name === first.name && r.checked) ?? first
+}
+
 /** One setting: what it changes and its whole value, and a form that opens under it. */
 export function SettingRow({
   name,
@@ -96,7 +106,7 @@ export function SettingRow({
       return
     }
     if (open) {
-      reach(form.current?.querySelector<HTMLElement>('input, select, textarea'))
+      reach(firstControl(form.current))
       return
     }
     const closed = closing.current

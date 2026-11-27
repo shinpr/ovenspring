@@ -71,6 +71,8 @@ pub struct FakeGitHub {
     pub refuse_replies: std::sync::atomic::AtomicBool,
     /// While set, reading the pull request of this branch is refused (HTTP 403).
     pub refuse_pull_of: Mutex<Option<String>>,
+    /// While set, deleting a branch is refused (HTTP 403).
+    pub refuse_branch_deletes: std::sync::atomic::AtomicBool,
     /// While set, a pull request reads with this head, as GitHub does for a moment after a push.
     pub stale_head: Mutex<Option<String>>,
     /// Every call, as `name args`.
@@ -109,6 +111,7 @@ impl FakeGitHub {
             failing_pull_reads: std::sync::atomic::AtomicBool::new(false),
             refuse_replies: std::sync::atomic::AtomicBool::new(false),
             refuse_pull_of: Mutex::new(None),
+            refuse_branch_deletes: std::sync::atomic::AtomicBool::new(false),
             stale_head: Mutex::new(None),
             checks,
             state: Mutex::new(State {
@@ -203,6 +206,7 @@ impl FakeGitHub {
             head_sha,
             state,
             mergeable: Some(mergeable),
+            base: Some(base),
         })
     }
 
@@ -494,6 +498,19 @@ impl GitHub for FakeGitHub {
 
     fn delete_branch(&self, branch: &str) -> Result<(), HttpError> {
         self.call(format!("delete_branch {branch}"));
+        if self
+            .refuse_branch_deletes
+            .load(std::sync::atomic::Ordering::SeqCst)
+        {
+            return Err(HttpError::Status {
+                method: "DELETE",
+                url: format!(
+                    "https://api.github.test/repos/acme/storefront/git/refs/heads/{branch}"
+                ),
+                status: 403,
+                message: "Resource not accessible by integration".into(),
+            });
+        }
         bare(
             &self.origin,
             &["update-ref", "-d", &format!("refs/heads/{branch}")],

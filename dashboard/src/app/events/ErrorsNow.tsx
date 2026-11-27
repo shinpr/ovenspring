@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import { Link } from 'react-router'
 import type { ErrorNow } from '../../api/types.gen.ts'
+import { settingsPath } from '../../lib/settings.ts'
 import { clockOn } from '../../lib/time.ts'
 import { errorFix, errorName } from '../../lib/vocabulary.ts'
 import { IssueKey, Words } from './EventLine.tsx'
@@ -55,7 +56,7 @@ export function ErrorsNow({ errors, notices, unreadable, now }: Props) {
       {!notices && (
         <p className={styles['note']}>
           Error notices are off, so Slack tells you nothing about these.{' '}
-          <Link to="/settings/connections">Turn them on in Settings</Link>
+          <Link to={settingsPath('notices')}>Turn them on in Settings</Link>
         </p>
       )}
       {body}

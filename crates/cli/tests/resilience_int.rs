@@ -334,6 +334,18 @@ fn fatal_launch_failure_pauses_with_the_cause_until_resume() {
             .contains("usage limit")
     );
 
+    let paused: Vec<_> = env
+        .events()
+        .into_iter()
+        .filter(|e| e["event"] == "paused")
+        .collect();
+    assert_eq!(paused.len(), 1);
+    assert!(
+        paused[0].get("user").is_none(),
+        "the factory's own pause names no owner: {}",
+        paused[0]
+    );
+
     d.begin_issue("ACME-124", "Import", vec![]).unwrap();
     for _ in 0..3 {
         d.tick().unwrap();
@@ -1037,4 +1049,273 @@ fn a_service_out_of_reach_is_recorded_from_its_first_failure_until_it_answers() 
         |d| d.issue("ACME-123").unwrap().unwrap().flow.stage == Stage::Merged,
     );
     assert!(failing(&d).is_empty());
+}
+
+/// The lines of `key`'s error: its starts, repeats and clears, oldest first.
+fn error_lines(env: &Env, key: &str) -> Vec<Value> {
+    env.events()
+        .into_iter()
+        .filter(|e| e["failure"]["key"] == key && e["event"] != "error-notice")
+        .collect()
+}
+
+/// The marked notices posted for `key`'s error, as `(marker, kind, first line of the text)`.
+fn error_notices(channel: &RecordingChannel, key: &str) -> Vec<(String, NoticeKind, String)> {
+    let mut notices = Vec::new();
+    for sent in channel.sent() {
+        let Sent::Notice(n) = sent else { continue };
+        if let Some(marker) = n.marker.filter(|m| m.id.starts_with(&format!("{key}@"))) {
+            let head = n.text.lines().next().unwrap_or_default().to_owned();
+            notices.push((marker.id, n.kind, head));
+        }
+    }
+    notices
+}
+
+fn refusal_now(d: &ovenspring_daemon::Daemon) -> Vec<String> {
+    ovenspring_daemon::prerequisites::missing(d.store())
+        .unwrap()
+        .into_iter()
+        .map(|m| m.what)
+        .filter(|what| what.contains("refused"))
+        .collect()
+}
+
+// AC: PRD AC-077: "When an error starts, the owner is told once in Slack; when it clears, once
+//     more"; Design § Selected Design > Errors (`tracker-refused`: starts when `poll_tracker` gets
+//     any error but an out-of-reach one, repeats each poll, clears when the tracker is read) and
+//     § Notice text; UI Spec § FactoryStatus (a refused connection is a prerequisite on Now).
+// Behavior: the connected tracker refuses its key on several polls -> one start naming the
+//     tracker and the refusal's status, repeats for the others, one M-13, and Now asks to fix the
+//     connection -> the tracker reads again -> one clear and one M-14, and Now asks nothing.
+// @lane: integration
+// @dependency: daemon, store, RecordingTracker, RecordingChannel
+#[test]
+fn a_tracker_that_refuses_is_one_error_told_when_it_starts_and_when_it_reads_again() {
+    let env = Env::new();
+    env.configure("");
+    let tracker = Arc::new(RecordingTracker::default());
+    tracker
+        .refused
+        .store(true, std::sync::atomic::Ordering::SeqCst);
+    let channel = Arc::new(RecordingChannel::default());
+    let mut d = daemon(
+        &env,
+        services(passing_github(&env), channel.clone(), tracker.clone()),
+    );
+    for _ in 0..3 {
+        d.tick().unwrap();
+    }
+    let lines = error_lines(&env, "tracker-refused");
+    let since = lines[0]["failure"]["since"].as_str().unwrap().to_owned();
+    let shape = |l: &Value| {
+        (
+            l["event"].clone(),
+            l["tracker"].clone(),
+            l["failure"]["since"] == since.as_str(),
+            l["failure"]["start"].clone(),
+            l["failure"]["cause"].clone(),
+        )
+    };
+    let repeat = (
+        json!("tracker-error"),
+        json!("linear"),
+        true,
+        Value::Null,
+        json!("HTTP 401"),
+    );
+    let started = (
+        json!("tracker-error"),
+        json!("linear"),
+        true,
+        json!(true),
+        json!("HTTP 401"),
+    );
+    assert_eq!(
+        lines.iter().map(shape).collect::<Vec<_>>(),
+        vec![started, repeat.clone(), repeat],
+        "a start, then a repeat for each later poll"
+    );
+    let m13 = (
+        format!("tracker-refused@{since}/started"),
+        NoticeKind::ErrorStarted,
+        "**Error: Linear refuses the connection.** Linear refused the connection (HTTP 401)."
+            .to_owned(),
+    );
+    assert_eq!(
+        error_notices(&channel, "tracker-refused"),
+        vec![m13.clone()]
+    );
+    assert_eq!(refusal_now(&d), vec!["Linear refused the connection."]);
+
+    tracker
+        .refused
+        .store(false, std::sync::atomic::Ordering::SeqCst);
+    for _ in 0..3 {
+        d.tick().unwrap();
+    }
+    let cleared: Vec<(Value, Value)> = error_lines(&env, "tracker-refused")
+        .into_iter()
+        .filter(|l| l["event"] == "error-cleared")
+        .map(|l| (l["count"].clone(), l["tracker"].clone()))
+        .collect();
+    assert_eq!(cleared, vec![(json!(3), json!("linear"))]);
+    let m14 = (
+        format!("tracker-refused@{since}/cleared"),
+        NoticeKind::ErrorCleared,
+        "**Cleared: Linear accepts the connection again.** It failed 3 times from ".to_owned(),
+    );
+    let notices = error_notices(&channel, "tracker-refused");
+    assert_eq!(notices.len(), 2, "{notices:?}");
+    assert_eq!(notices[0], m13);
+    assert_eq!((&notices[1].0, notices[1].1), (&m14.0, m14.1));
+    assert!(notices[1].2.starts_with(&m14.2), "{}", notices[1].2);
+    assert_eq!(refusal_now(&d), Vec::<String>::new());
+}
+
+// AC: UI Spec § FactoryStatus: Now shows the connection in use; Design § Selected Design > Errors
+//     (`tracker-refused` clears when the tracker is read); PRD AC-060, AC-076.
+// Behavior: the tracker refuses and the factory is paused -> the owner enters a new key, which
+//     replaces the connection -> Now no longer asks to fix the connection, while the Events page
+//     still shows the refusal going on, since nothing has read the tracker -> the owner resumes ->
+//     the new connection reads it -> the error clears once and Events shows nothing going on.
+// @lane: integration
+// @dependency: daemon, store, the real dashboard server, RecordingTracker, RecordingChannel
+#[test]
+fn replacing_a_refused_connection_while_paused_clears_now_and_the_error_waits_for_a_read() {
+    let env = Env::new();
+    env.configure("");
+    let gh = passing_github(&env);
+    let refusing = Arc::new(RecordingTracker::default());
+    refusing
+        .refused
+        .store(true, std::sync::atomic::Ordering::SeqCst);
+    let channel = Arc::new(RecordingChannel::default());
+    let mut d = daemon(&env, services(gh.clone(), channel.clone(), refusing));
+    // A pass checks the prerequisites before it reads the tracker, so Now shows the refusal from
+    // the next pass.
+    d.tick().unwrap();
+    d.tick().unwrap();
+    assert_eq!(refusal_now(&d), vec!["Linear refused the connection."]);
+    std::fs::write(d.halt_file(), "lunch\n").unwrap();
+    let dash = support::dashboard::Dashboard::start(&env);
+    let going_on = || {
+        let page = dash.get("/api/v1/events");
+        assert_eq!(page.status, 200);
+        page.json()["errorsNow"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|e| (e["key"].clone(), e["tracker"].clone()))
+            .collect::<Vec<_>>()
+    };
+
+    let reading = Arc::new(RecordingTracker::default());
+    d.replace_services(services(gh, channel, reading));
+    d.tick().unwrap();
+    assert!(
+        refusal_now(&d).is_empty(),
+        "Now asks about the connection in use"
+    );
+    assert_eq!(
+        going_on(),
+        vec![(json!("tracker-refused"), json!("linear"))],
+        "no read has cleared it yet"
+    );
+
+    d.resume().unwrap();
+    d.tick().unwrap();
+    assert_eq!(going_on(), Vec::new());
+    let cleared = error_lines(&env, "tracker-refused")
+        .into_iter()
+        .filter(|l| l["event"] == "error-cleared")
+        .count();
+    assert_eq!(cleared, 1);
+}
+
+// AC: Design § Interface Change Matrix and § Field Propagation Map: `sprint` on
+//     `operation-failed`, `service-unreachable` and `github-error` is the sprint's id (was `true`,
+//     or the id in `issue`); PRD AC-076 (each event names what it concerns).
+// Behavior: the sprint applies its agreements -> reading their pull request is refused, then out
+//     of reach -> the agreements are merged and deleting their branch is refused -> each line
+//     names the sprint by its id, and none names it as an issue.
+// @lane: integration
+// @dependency: daemon, store, FakeGitHub
+#[test]
+fn the_sprint_s_failing_operations_are_recorded_with_its_id() {
+    use ovenspring_core::sprint::{SprintStage, SprintState};
+    const SPRINT: &str = "20261127-0900";
+    let env = Env::new();
+    env.configure("");
+    let branch = format!("ovenspring/agreements-{SPRINT}");
+    env.add_branch(&branch);
+    let gh = passing_github(&env);
+    let pr = gh.add_pull(&branch, "main");
+    let store = ovenspring_store::Store::open(env.state()).unwrap();
+    store
+        .write_record(
+            "sprint.json",
+            &SprintState {
+                id: SPRINT.into(),
+                stage: SprintStage::ApplyingAgreements,
+                plan: None,
+                review: None,
+                agreements_pr: Some(pr),
+                agreements_url: None,
+                agreements_need_approval: false,
+                agreements_pushed_at: None,
+                started_at: None,
+                ended_at: None,
+                failed: None,
+                failure: None,
+                resume: None,
+            },
+        )
+        .unwrap();
+    let mut d = daemon(
+        &env,
+        services(
+            gh.clone(),
+            Arc::new(RecordingChannel::default()),
+            Arc::new(RecordingTracker::default()),
+        ),
+    );
+    let last = |kind: &str| {
+        env.events()
+            .into_iter()
+            .rfind(|e| e["event"] == kind)
+            .unwrap_or_else(|| panic!("no {kind} line"))
+    };
+
+    *gh.refuse_pull_of.lock().unwrap() = Some(branch.clone());
+    d.tick().unwrap();
+    let failed = last("operation-failed");
+    assert_eq!(
+        (&failed["operation"], &failed["sprint"]),
+        (&json!("applying the working agreements"), &json!(SPRINT))
+    );
+
+    *gh.refuse_pull_of.lock().unwrap() = None;
+    gh.failing_pull_reads
+        .store(true, std::sync::atomic::Ordering::SeqCst);
+    d.tick().unwrap();
+    let unreachable = env
+        .events()
+        .into_iter()
+        .rfind(|e| {
+            e["event"] == "service-unreachable"
+                && e["operation"] == "applying the working agreements"
+        })
+        .unwrap();
+    assert_eq!(unreachable["sprint"], json!(SPRINT));
+
+    gh.failing_pull_reads
+        .store(false, std::sync::atomic::Ordering::SeqCst);
+    gh.merge_as_owner(pr);
+    gh.refuse_branch_deletes
+        .store(true, std::sync::atomic::Ordering::SeqCst);
+    d.tick().unwrap();
+    let error = last("github-error");
+    assert_eq!(error["sprint"], json!(SPRINT));
+    assert!(error.get("issue").is_none(), "{error}");
 }

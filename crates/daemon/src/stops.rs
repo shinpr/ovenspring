@@ -85,16 +85,18 @@ impl Daemon {
             Err(e) => e,
         };
         let (owner, _) = &id;
-        let (field, value) = match owner {
-            Owner::Issue(key) => ("issue", json!(key)),
-            Owner::Sprint => ("sprint", json!(true)),
-            Owner::Pass => ("pass", json!(true)),
+        let subject = match owner {
+            Owner::Issue(key) => Some(("issue", json!(key))),
+            Owner::Sprint => self.sprint()?.map(|s| ("sprint", json!(s.id))),
+            Owner::Pass => Some(("pass", json!(true))),
         };
         let mut event = Map::from_iter([
             ("operation".to_owned(), json!(operation)),
             ("error".to_owned(), json!(e.to_string())),
-            (field.to_owned(), value),
         ]);
+        if let Some((field, value)) = subject {
+            event.insert(field.to_owned(), value);
+        }
         if let Some((why, cause, via)) = self.unreachable(&e) {
             event.insert("event".into(), json!("service-unreachable"));
             event.insert("why".into(), json!(why));
@@ -104,6 +106,7 @@ impl Daemon {
                     event: Value::Object(event),
                     cause,
                     via: Some(via),
+                    reason: None,
                 },
             )?;
             return Ok(None);
@@ -139,10 +142,13 @@ impl Daemon {
                 error: e.to_string(),
             })?,
             // A pause reason completes "paused because …".
-            Owner::Pass => self.pause(&format!(
-                "{operation} failed twice in a row: {}",
-                e.to_string().trim_end_matches('.')
-            ))?,
+            Owner::Pass => self.pause(
+                &format!(
+                    "{operation} failed twice in a row: {}",
+                    e.to_string().trim_end_matches('.')
+                ),
+                None,
+            )?,
         }
         Ok(None)
     }

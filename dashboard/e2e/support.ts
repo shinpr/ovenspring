@@ -57,8 +57,8 @@ async function delayed(delay: Fixtures['delay'], path: string, search: string): 
 }
 
 /**
- * Answers `/api/v1/**` from fixtures and records every request the app sends. A saved goal is
- * served back from then on, as the server would.
+ * Answers `/api/v1/**` from fixtures and records every request the app sends. A saved goal and a
+ * saved Error notices choice are served back from then on, as the server would.
  */
 export async function serve(page: Page, given: Partial<Fixtures> = {}): Promise<Sent[]> {
   const f: Fixtures = {
@@ -103,6 +103,21 @@ export async function serve(page: Page, given: Partial<Fixtures> = {}): Promise<
     '/version': () => f.version,
     '/events': (query) => eventsPage(f.events, query),
   }
+  /**
+   * A settings save: refused as `refuse` says, else the settings, with a saved Error notices
+   * choice kept so the settings answered from then on carry it.
+   */
+  const saveSettings = (path: string, body: unknown): Parameters<Route['fulfill']>[0] => {
+    const refused = f.refuse[path.replace('/settings/', '')]
+    if (refused !== undefined) {
+      return { status: 400, json: { errors: refused } }
+    }
+    if (path === '/settings/notices' && typeof body === 'object' && body !== null) {
+      const errors = 'errors' in body && body.errors === true
+      f.settings = { ...f.settings, config: { ...f.settings.config, notices: { errors } } }
+    }
+    return { json: f.settings }
+  }
   const write = async (route: Route, path: string, body: unknown): Promise<void> => {
     const next = NEXT[path]
     if (next !== undefined && step !== 'done') {
@@ -117,10 +132,7 @@ export async function serve(page: Page, given: Partial<Fixtures> = {}): Promise<
       await route.fulfill({ json: { goal } })
       return
     }
-    const refused = f.refuse[path.replace('/settings/', '')]
-    await route.fulfill(
-      refused === undefined ? { json: f.settings } : { status: 400, json: { errors: refused } }
-    )
+    await route.fulfill(saveSettings(path, body))
   }
   await page.clock.setFixedTime(f.now)
   await page.route('**/api/v1/**', async (route: Route) => {

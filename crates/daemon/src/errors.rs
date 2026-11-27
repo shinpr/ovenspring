@@ -41,6 +41,15 @@ pub enum ErrorKey {
 }
 
 impl ErrorKey {
+    /// The error of an agent CLI's runs.
+    pub fn of_cli(cli: Cli) -> ErrorKey {
+        match cli {
+            Cli::Claude => ErrorKey::CliClaude,
+            Cli::Codex => ErrorKey::CliCodex,
+            Cli::Opencode => ErrorKey::CliOpencode,
+        }
+    }
+
     /// The agent CLI whose runs fail, for a CLI's error.
     pub fn cli(self) -> Option<Cli> {
         match self {
@@ -123,11 +132,21 @@ pub struct Waiting {
     pub line: Value,
 }
 
+impl Waiting {
+    /// Whether it is the M-08 of a pause an agent CLI's error caused, which the owner hears of
+    /// whether error notices are on or off.
+    pub fn pauses(&self) -> bool {
+        self.phase == Phase::Started && self.key.cli().is_some()
+    }
+}
+
 /// The errors going on and the notices waiting, as the lines of `events.jsonl` leave them.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Errors {
     open: BTreeMap<ErrorKey, Occurrence>,
     waiting: Vec<Waiting>,
+    /// The pause reasons of agent CLI errors whose start has no `paused` line after it.
+    unpaused: Vec<String>,
 }
 
 fn text(v: &Value, key: &str) -> Option<String> {
@@ -150,6 +169,17 @@ impl Errors {
 
     /// Advances the state by one line of `events.jsonl`; a line that is not an error's is ignored.
     pub fn apply(&mut self, line: &Value) {
+        if text(line, "event").as_deref() == Some("paused") {
+            let reason = text(line, "reason");
+            if let Some(at) = self
+                .unpaused
+                .iter()
+                .position(|r| Some(r) == reason.as_ref())
+            {
+                self.unpaused.remove(at);
+            }
+            return;
+        }
         let Some(failure) = line.get("failure") else {
             return;
         };
@@ -174,6 +204,12 @@ impl Errors {
                 Some(Phase::Cleared)
             }
             _ if failure.get("start").and_then(Value::as_bool) == Some(true) => {
+                // The start commits its pause, whatever later clears the occurrence.
+                if key.cli().is_some()
+                    && let Some(reason) = text(failure, "reason")
+                {
+                    self.unpaused.push(reason);
+                }
                 self.open.insert(
                     key,
                     Occurrence {
@@ -210,7 +246,10 @@ impl Errors {
             }
         };
         if let Some(phase) = transition
-            && text(failure, "notice").as_deref() == Some("waiting")
+            && matches!(
+                text(failure, "notice").as_deref(),
+                Some("waiting" | "pause")
+            )
         {
             self.waiting.push(Waiting {
                 key,
@@ -228,6 +267,11 @@ impl Errors {
     /// The notices still to post, in the order their lines were appended.
     pub fn waiting(&self) -> &[Waiting] {
         &self.waiting
+    }
+
+    /// The pauses agent CLI errors committed and no `paused` line records yet.
+    pub fn unpaused(&self) -> &[String] {
+        &self.unpaused
     }
 
     /// The services out of reach, since their first failure and why the latest failed: what Now
@@ -289,8 +333,16 @@ pub(crate) fn out_of_reach(e: &HttpError) -> Option<(Unanswered, String)> {
     }
 }
 
+/// The cause of a refusal: the status it answered with, else what it said.
+pub(crate) fn refused_cause(e: &HttpError) -> String {
+    match e {
+        HttpError::Status { status, .. } => format!("HTTP {status}"),
+        HttpError::Transient { .. } | HttpError::Decode(_) => e.to_string(),
+    }
+}
+
 /// `text` cut to at most `TEXT_MAX` bytes, at a character boundary.
-fn cut(text: &str) -> String {
+pub(crate) fn cut(text: &str) -> String {
     let mut end = text.len().min(TEXT_MAX);
     while !text.is_char_boundary(end) {
         end -= 1;
@@ -315,7 +367,7 @@ fn bounded(value: Value, secrets: &[&str], bound: bool) -> Value {
         Value::Object(map) => Value::Object(
             map.into_iter()
                 .map(|(k, v)| {
-                    let bound = matches!(k.as_str(), "cause" | "error");
+                    let bound = matches!(k.as_str(), "cause" | "error" | "command" | "output");
                     (k, bounded(v, secrets, bound))
                 })
                 .collect(),
@@ -342,6 +394,8 @@ pub(crate) struct Failure {
     pub event: Value,
     pub cause: String,
     pub via: Option<Via>,
+    /// The pause an agent CLI's error causes, for its start.
+    pub reason: Option<String>,
 }
 
 impl Daemon {
@@ -358,7 +412,15 @@ impl Daemon {
         } else {
             note.insert("since".into(), json!(jiff::Timestamp::now().to_string()));
             note.insert("start".into(), json!(true));
-            note.insert("notice".into(), json!(self.notice_state()));
+            // An agent CLI's error pauses the factory, and the owner hears of a pause in any case.
+            let notice = match key.cli() {
+                Some(_) => "pause",
+                None => self.notice_state(),
+            };
+            note.insert("notice".into(), json!(notice));
+            if let Some(reason) = failure.reason {
+                note.insert("reason".into(), json!(reason));
+            }
         }
         note.insert("cause".into(), json!(failure.cause));
         if let Some(via) = failure.via {
@@ -402,6 +464,21 @@ impl Daemon {
         let line = self.bounded(line.clone());
         let appended = records::append_event(&self.store, &line)?;
         self.errors.state.apply(&appended);
+        // The pause this start commits is told by the start's own notice, not announced again.
+        if appended.pointer("/failure/notice") == Some(&json!("pause")) {
+            self.pause_announced = true;
+        }
+        Ok(())
+    }
+
+    /// Pauses the factory for each agent CLI error whose start is recorded and whose pause is
+    /// not: one interrupted, or whose halt file or `paused` line could not be written. Runs before
+    /// anything launches in a pass, so nothing launches under a committed pause.
+    pub(crate) fn pause_for_cli_errors(&mut self) -> Result<(), DaemonError> {
+        for reason in self.errors.state.unpaused.clone() {
+            self.pause(&reason, None)?;
+            self.pause_announced = true;
+        }
         Ok(())
     }
 
@@ -467,7 +544,7 @@ impl Daemon {
     pub(crate) fn deliver_error_notices(&mut self) -> Result<(), DaemonError> {
         for waiting in self.errors.state.waiting.clone() {
             let failure = json!({"key": waiting.key.to_string(), "since": waiting.since});
-            if !self.config.notices.errors {
+            if !self.config.notices.errors && !waiting.pauses() {
                 self.record_notice(&json!({
                     "event": "error-notice", "failure": failure,
                     "phase": waiting.phase, "outcome": "dropped",

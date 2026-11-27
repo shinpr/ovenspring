@@ -179,6 +179,101 @@ describe('eventSentence', () => {
       }),
       'Settings changed: Error notices are now on. Who merges was changed.',
     ],
+    [
+      'a merge with its pull request and base',
+      line('merged', { issue: 'ACME-141', pr: 86, base: 'main', sha: 'a', merge_commit: 'b' }),
+      'Merged pull request #86 into main.',
+    ],
+    [
+      'a merge whose read named no base',
+      line('merged', { issue: 'ACME-141', pr: 86, sha: 'a', merge_commit: 'b' }),
+      'Merged pull request #86.',
+    ],
+    [
+      'a merge recorded before the number was',
+      line('merged', { issue: 'ACME-141', sha: 'a', merge_commit: 'b' }),
+      'Merged its pull request.',
+    ],
+    [
+      "a sprint's merge recorded before the number was",
+      {
+        ...line('merged', { sprint: '20261127-0902', sha: 'a', merge_commit: 'b' }),
+        sprint: { id: '20261127-0902', purpose: null, listed: true },
+      },
+      "Merged the working agreements' pull request.",
+    ],
+    [
+      'a review round with findings',
+      line('review-round-ended', { issue: 'ACME-142', round: 1, findings: 3 }),
+      'Review round 1 ended with 3 findings.',
+    ],
+    [
+      'a review round with one finding',
+      line('review-round-ended', { issue: 'ACME-142', round: 2, findings: 1 }),
+      'Review round 2 ended with 1 finding.',
+    ],
+    [
+      'a review round with none',
+      line('review-round-ended', { issue: 'ACME-142', round: 3, findings: 0 }),
+      'Review round 3 ended with 0 findings.',
+    ],
+    [
+      'a step finishing, as an issue fact still reads',
+      line('fact', {
+        issue: 'ACME-142',
+        fact: 'Done',
+        from: { stage: 'running', step: 'code-review' },
+        to: { stage: 'reviewing' },
+      }),
+      'Code review finished.',
+    ],
+    [
+      'a sprint proposal Slack accepted, with its summary',
+      line('decision', {
+        id: 'sprint-20261127-0902-sprint-1',
+        kind: 'sprint',
+        issue: null,
+        sprint: '20261127-0902',
+        posted: true,
+        proposal: { issues: 1, purpose: 'Search works.' },
+      }),
+      'Proposed the sprint in Slack: 1 issue toward “Search works.”',
+    ],
+    [
+      'a posted sprint decision without a summary',
+      line('decision', { id: 'x', kind: 'sprint', issue: null, sprint: 'y', posted: true }),
+      'Proposed the sprint in Slack.',
+    ],
+    [
+      'another posted decision, by its kind',
+      line('decision', { id: 'x', kind: 'design', issue: 'ACME-144', posted: true }),
+      'Asked you in Slack to approve its design.',
+    ],
+    [
+      'a sprint proposal recorded before it was sent',
+      line('decision', { id: 'x', kind: 'sprint', issue: null }),
+      'Prepared a sprint proposal.',
+    ],
+    [
+      'another decision recorded before it was sent',
+      line('decision', { id: 'x', kind: 'design', issue: 'ACME-144' }),
+      'Prepared a decision for you.',
+    ],
+    [
+      "the owner's pause with their words",
+      line('paused', { reason: 'lunch', user: 'U0123456789' }),
+      'Paused. You sent !pause in Slack: “lunch”.',
+    ],
+    [
+      "the owner's pause without words",
+      line('paused', { reason: 'paused by the owner', user: 'U0123456789' }),
+      'Paused. You sent !pause in Slack.',
+    ],
+    [
+      "the factory's own pause, which names no owner",
+      line('paused', { reason: 'the agent on ACME-1 (requirements) stopped with an error: x' }),
+      'Paused: “the agent on ACME-1 (requirements) stopped with an error: x”.',
+    ],
   ])('words %s', (_, given, expected) => {
     expect(plain(eventSentence(given))).toBe(expected)
   })
