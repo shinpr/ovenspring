@@ -32,7 +32,7 @@ So that I can delegate a sprint of issues without building or maintaining the fa
 
 ```
 As an owner
-I want every decision that is mine to reach me in Slack, and nothing else
+I want every decision that is mine to reach me in Slack
 So that the factory keeps working while I only answer what it cannot settle
 ```
 
@@ -40,6 +40,12 @@ So that the factory keeps working while I only answer what it cannot settle
 As an owner
 I want to see at a glance whether the factory is working, whether anything waits on me, and how far the sprint has come
 So that I can trust it without following every step
+```
+
+```
+As an owner
+I want to read on the dashboard what the factory did, and to hear about an error once when it starts and once when it clears
+So that I know whether something went wrong without opening the factory's files
 ```
 
 ```
@@ -69,7 +75,8 @@ So that I can analyze a sprint or account for it
 5. An agent CLI reaches its usage limit. The factory pauses, tells the owner why in Slack, and resumes when the owner mentions the bot with `!resume`. The owner can also pause it from Slack when the work is not going as intended.
 6. At the end of the sprint the owner receives the sprint review in Slack: key results judged and the retrospective's agreement changes. The owner replies with what they think of the result, or closes the sprint; closing lets the review's agreement and knowledge changes merge and approves nothing else, the next sprint least of all. The next sprint is proposed on its own, from what the sprint showed and what the owner said about it, and starts when the owner approves that proposal.
 7. The owner downloads the sprint's records and gives them to an agent to analyze where time went.
-8. The repository's tracker accepts issues from anyone. The owner sets a filter command that judges each incoming issue by the owner's own criteria; an issue it drops is removed from intake, so no agent or sprint proposal receives it from then on, and each drop is recorded with its reason.
+8. The repository's tracker accepts issues from anyone. The owner sets a filter command that judges each incoming issue by the owner's own criteria; an issue it drops is removed from intake, so no agent or sprint proposal receives it from then on, and each drop is recorded with its reason, which the owner reads on the dashboard's events page; when the command fails, the owner hears once that the error started and once that it cleared.
+9. Something in the factory starts failing and keeps failing. The owner hears once that the error started, nothing more while it repeats, and once that it cleared; the events page shows what the factory did meanwhile.
 
 ### User Journey Diagram
 
@@ -144,7 +151,7 @@ All requirements below are `desired-future`.
   - AC-057: Every agent launch receives the product goal and the current sprint's purpose, and every message that proposes or reviews a sprint states the product goal it serves.
   - AC-016: When the owner approves a sprint proposal in Slack, then the sprint starts and its independent issues run in parallel, each on its own branch and worktree.
   - AC-017: When the owner answers a sprint proposal with anything other than approval, then the lead revises the proposal from that answer.
-  - AC-072: When the owner sets a filter command in the dashboard's Settings (stored as `[tracker] filter` in `.ovenspring/config.toml`), then intake publishes only the candidates it admits; without a filter, intake admits every candidate. The command runs through `sh -c` with the root of the owner's working tree (the repository checkout the owner works in) as its working directory, so a relative path is relative to the repository, and receives one issue on stdin as JSON: `key`, `title`, `body`, `url`, `labels`, `author`, and `comments`, each with `author` and `body`, from either tracker. Exit 0 admits the issue. Exit 2 drops it: its snapshot and its entry in the factory's open issues are removed, so no agent reads it from then on, it is not counted as open and it prompts no proposal, and an event records its key, URL and the first line of the command's stdout as the reason. Any other exit, a command that cannot start, or a run longer than 60 seconds (fixed, not configurable) is a failure: the issue goes on as without a filter, and an event records its key and what failed. Nothing about a drop or a failure is posted to Slack or the tracker.
+  - AC-072: When the owner sets a filter command in the dashboard's Settings (stored as `[tracker] filter` in `.ovenspring/config.toml`), then intake publishes only the candidates it admits; without a filter, intake admits every candidate. The command runs through `sh -c` with the root of the owner's working tree (the repository checkout the owner works in) as its working directory, so a relative path is relative to the repository, and receives one issue on stdin as JSON: `key`, `title`, `body`, `url`, `labels`, `author`, and `comments`, each with `author` and `body`, from either tracker. Exit 0 admits the issue. Exit 2 drops it: its snapshot and its entry in the factory's open issues are removed, so no agent reads it from then on, it is not counted as open and it prompts no proposal, and an event records its key, URL and the first line of the command's stdout as the reason. Any other exit, a command that cannot start, or a run longer than 60 seconds (fixed, not configurable) is a failure: the issue goes on as without a filter, and an event records its key and what failed. Nothing about a drop or a failure is posted to the tracker, and nothing about a drop is posted to Slack; the owner reads drops and failures on the events page (AC-076), and a failure reaches the owner as an error notice (AC-077).
   - AC-073: The filter command runs on new or changed candidate content; an unchanged issue, admitted or dropped, does not run it again on the next poll. When the owner first sets the filter or changes the command, every open candidate is checked once, unchanged ones included; the factory keeps working meanwhile, and a candidate the command has not judged yet is handled as without a filter, so an agent can read it before a later drop removes it from intake. While it runs, the factory remembers each dropped issue's key and a hash of its text; it forgets a key the tracker no longer reports open, so an issue reported open again is checked again. After a restart, each dropped issue is checked once more.
   - AC-074: An issue stops being a candidate when the lead includes it in a sprint proposal: from then on the work uses the content the lead selected, and later tracker edits neither change it nor run the filter command. An issue that a revised proposal leaves out is a candidate again.
   - AC-075: The guide states the filter command's contract (AC-072) and gives a short example wrapper.
@@ -196,6 +203,8 @@ All requirements below are `desired-future`.
   - AC-047: Every downloaded format masks the credentials the factory holds and values in common token formats.
   - AC-048: The dashboard offers light, dark, and system themes, and every text and control meets WCAG 2.2 AA in both themes.
   - AC-049: Owner decisions are not made in the dashboard; where a decision is pending, the dashboard links to it in Slack. Rewriting the product goal (AC-056), canceling an issue (AC-067) and changing settings are not such decisions.
+  - AC-076: The dashboard has a page that lists the factory's recorded events, newest first. Each entry shows when it happened, what happened, and the issue or sprint it concerns when it concerns one, so the owner can tell what the factory did without opening its files. The filter command's drops, with key, URL and reason, and its failures, with key and what failed, appear there (AC-072).
+  - AC-077: When an error starts, the owner is told once that it started; however often it repeats while it lasts, they are told nothing more about it; when it clears, they are told once that it cleared. A failure of the filter command is such an error. Which other events count as errors, and whether the notice reaches the owner in Slack, on the dashboard, or both, are settled by the design (source: GH-9, "Left to the design").
   - AC-050: Every text in the product, the dashboard and the factory's own Slack messages, is in English.
 
 - [ ] **R10 Agent backends**
@@ -221,7 +230,6 @@ All requirements below are `desired-future`.
 | Making owner decisions in the dashboard | out-of-scope | Decisions are made in Slack; the dashboard shows state, settings and logs. |
 | Reaching a preview from another machine | out-of-scope | A preview's address is local to the factory's machine; remote access needs a tunnel the owner sets up outside the product. |
 | Windows as a host | out-of-scope | The guard hooks, worktree processes and agent CLIs are targeted at macOS and Linux first. |
-| Showing filter events in the dashboard and notifying the owner of filter failures | future | Covered by shinpr/ovenspring#9. |
 | Holding the filter's dropped issues across restarts, and coping with a very large number of open issues | future | The tracker poll, which reads every open issue each time, gives way first; both are considered together when it does. |
 | Stopping intake when the filter command fails | out-of-scope | A failure lets the issue go on as without a filter and records an event (AC-072). |
 | Filtering beyond intake: changing sprint planning or selection, handling work already in progress, or withdrawing material an agent already read | out-of-scope | The filter acts on intake only, which ends for an issue when the lead proposes it (AC-074). |
@@ -273,6 +281,7 @@ None sourced for v0.1.0.
 1. The owner runs complete sprints on several repositories with real issues and judges the result fit to release as v0.1.0.
 2. During those sprints, decisions reach the owner only when they are the owner's to make, and the owner does not need to read code to approve merges.
 3. An owner whose tracker accepts text from anyone stops the issues their own filter command rejects before any agent reads them, apart from issues read while a newly set or changed command has yet to judge them (AC-073), while issues the command admits or cannot judge keep flowing as without a filter.
+4. The owner can read what the factory did from the dashboard, and hears about an error once when it starts and once when it clears, instead of finding it in a file or not at all (source: GH-9).
 
 ### UI Quality Metrics
 
