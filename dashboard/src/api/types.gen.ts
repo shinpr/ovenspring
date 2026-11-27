@@ -238,7 +238,11 @@ phase: Phase | null, cli: Cli, result: RunResult,
 /**
  * None while it runs, and when its CLI reports no cost.
  */
-costUsd: number | null, detail: RunDetail, };
+costUsd: number | null, 
+/**
+ * What a design-phase step's preparation turn came to; `None` for every other run.
+ */
+preparation: Preparation | null, detail: RunDetail, };
 
 /**
  * One launch as Activity and the issue page list it.
@@ -255,7 +259,11 @@ phase: Phase | null, cli: Cli, result: RunResult,
 /**
  * None while it runs, and when its CLI reports no cost.
  */
-costUsd: number | null, detail: RunDetail, };
+costUsd: number | null, 
+/**
+ * What a design-phase step's preparation turn came to; `None` for every other run.
+ */
+preparation: Preparation | null, detail: RunDetail, };
 
 export type Limits = { issues_at_once: number, 
 /**
@@ -355,6 +363,11 @@ onHold: boolean,
  * When the issue entered its current activity (in progress only).
  */
 since: string | null, wait: Wait | null, ended: Ending | null, endedAt: string | null, };
+
+/**
+ * What a preparation turn came to, read from its output once it ended without failing.
+ */
+export type Preparation = "unsettled" | "nothing-to-ask" | "told" | "asked";
 
 /**
  * How far the implementation follows a prototype, as the UI Spec records it: `binding`, its

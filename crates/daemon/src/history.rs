@@ -8,7 +8,7 @@ use ovenspring_core::config::{Cli, Role};
 use ovenspring_core::flow::Stage;
 use ovenspring_core::item::{Item, Status};
 use ovenspring_core::output::{
-    CheckResult, Decision, Disposition, DocumentOutput, ExecutorOutput, KeyResult,
+    CheckResult, Decision, Disposition, DocumentOutput, ExecutorOutput, KeyResult, PrepareOutput,
     ReferenceStrength, Scale, ScopeCheckOutput, StepOutput,
 };
 use ovenspring_core::phase::Phase;
@@ -43,6 +43,8 @@ struct Launch {
     /// Why it failed, when it did.
     failure: Option<String>,
     cost_usd: Option<f64>,
+    /// A design-phase step's preparation turn.
+    prepare: bool,
 }
 
 /// Every launch in `launches.jsonl`, oldest first, each with its end when it ended.
@@ -65,6 +67,7 @@ fn launches(store: &Store) -> Result<Vec<Launch>, DaemonError> {
                 ended_at: None,
                 failure: None,
                 cost_usd: None,
+                prepare: start.prepare,
             }),
             LaunchLine::End(end) => {
                 if let Some(l) = out
@@ -527,7 +530,41 @@ pub struct LaunchRow {
     pub result: RunResult,
     /// None while it runs, and when its CLI reports no cost.
     pub cost_usd: Option<f64>,
+    /// What a design-phase step's preparation turn came to; `None` for every other run.
+    pub preparation: Option<Preparation>,
     pub detail: RunDetail,
+}
+
+/// What a preparation turn came to, read from its output once it ended without failing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "kebab-case")]
+pub enum Preparation {
+    /// Running, failed, or ended without an output that says.
+    Unsettled,
+    /// It found nothing the owner must answer or know.
+    NothingToAsk,
+    /// It told the owner something, and the work went on without waiting.
+    Told,
+    /// It asked the owner a question the work waits on.
+    Asked,
+}
+
+fn preparation(l: &Launch, item: Option<&Item>) -> Option<Preparation> {
+    if !l.prepare {
+        return None;
+    }
+    if l.ended_at.is_none() || l.failure.is_some() {
+        return Some(Preparation::Unsettled);
+    }
+    let came = item
+        .and_then(raw_of)
+        .and_then(|v| PrepareOutput::parse(v).ok())
+        .map(|p| match (p.message, p.question) {
+            (_, true) => Preparation::Asked,
+            (Some(_), false) => Preparation::Told,
+            (None, false) => Preparation::NothingToAsk,
+        });
+    Some(came.unwrap_or(Preparation::Unsettled))
 }
 
 /// What a run's item and output add to its line, as far as they are known.
@@ -731,6 +768,7 @@ fn heading_of(path: &str) -> Option<String> {
 }
 
 fn row(store: &Store, l: &Launch, all: &[Launch], record: Option<&IssueRecord>) -> LaunchRow {
+    let item = item_named(store, &l.item);
     LaunchRow {
         id: id_of(l),
         started_at: l.started_at.clone(),
@@ -742,7 +780,8 @@ fn row(store: &Store, l: &Launch, all: &[Launch], record: Option<&IssueRecord>) 
         cli: l.cli,
         result: result_of(store, l, all),
         cost_usd: l.cost_usd,
-        detail: detail(item_named(store, &l.item).as_ref(), record),
+        preparation: preparation(l, item.as_ref()),
+        detail: detail(item.as_ref(), record),
     }
 }
 
@@ -908,6 +947,75 @@ mod tests {
 
         let comments = with_findings(Origin::PrComments, &[("comments", 3), ("code-review/1", 1)]);
         assert_eq!(judging(&comments), Some(3));
+    }
+
+    #[test]
+    fn a_preparation_turn_reads_as_what_its_output_came_to() {
+        use ovenspring_core::item::{Front, Status};
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::open(dir.path().join("state")).unwrap();
+        let launch = |prepare: bool, ended: bool, failure: Option<&str>| Launch {
+            item: "req-ACME-1".to_owned(),
+            attempt: 1,
+            step: Step::Requirements,
+            phase: Some(Phase::Requirements),
+            role: Role::Lead,
+            issue: Some("ACME-1".to_owned()),
+            sprint: None,
+            cli: Cli::Claude,
+            model: None,
+            effort: None,
+            started_at: "2026-11-27T09:00:00Z".to_owned(),
+            ended_at: ended.then(|| "2026-11-27T09:05:00Z".to_owned()),
+            failure: failure.map(String::from),
+            cost_usd: None,
+            prepare,
+        };
+        let out = store.output_path("req-ACME-1");
+        let item = Item {
+            front: Front {
+                step: Step::Requirements,
+                to: Step::Requirements.role(),
+                status: Status::Done,
+                issue: Some("ACME-1".to_owned()),
+                sprint: None,
+                round: None,
+                unit: None,
+                refs: vec![],
+                out: out.display().to_string(),
+                prepare: true,
+                resume: None,
+            },
+            body: String::new(),
+        };
+        fs::create_dir_all(out.parent().unwrap()).unwrap();
+        let came_to = |output: &str| {
+            fs::write(&out, output).unwrap();
+            preparation(&launch(true, true, None), Some(&item))
+        };
+
+        assert_eq!(
+            came_to(r#"{"message": "Which plan?", "question": true}"#),
+            Some(Preparation::Asked)
+        );
+        assert_eq!(
+            came_to(r#"{"message": "Sign in to Stripe.", "question": false}"#),
+            Some(Preparation::Told)
+        );
+        assert_eq!(
+            came_to(r#"{"message": null, "question": false}"#),
+            Some(Preparation::NothingToAsk)
+        );
+        assert_eq!(came_to("{}"), Some(Preparation::Unsettled));
+        assert_eq!(
+            preparation(&launch(true, false, None), Some(&item)),
+            Some(Preparation::Unsettled)
+        );
+        assert_eq!(
+            preparation(&launch(true, true, Some("fatal: x")), Some(&item)),
+            Some(Preparation::Unsettled)
+        );
+        assert_eq!(preparation(&launch(false, true, None), Some(&item)), None);
     }
 
     #[test]

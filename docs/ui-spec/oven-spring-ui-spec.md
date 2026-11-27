@@ -260,9 +260,13 @@ Opened by "Cancel issue…", a plain button at the end of the title's line (unde
 | Ahead | Phase name, "ahead", one sentence of what the phase holds (also for an issue waiting to start; why it waits is said once, above the path) | AC-044 |
 | Skipped | Phase name, "skipped", why (a small change goes straight to building; "Not needed: you canceled the issue." after a cancel; not needed after a close) | AC-018 |
 
+A phase lists each step once: a design-phase step's preparation turn (whether to ask the owner anything first) is left out once it ended normally, while its span still counts it. One running or failed stays listed, to be followed or opened. "n runs" in Runs and cost counts every run.
+
 ### Component: RunLine
 
 The time (mono): `<start>–<end>` on S-02; on S-04 the end time (`<start>–` while running) and the issue's key · "<Role> <what it did>", "· for <duration>" while running, and "→ <result>" (`color-ok` for pass, `color-fail` for a failure, muted otherwise) · "open run" (or "follow" while running).
+
+A preparation turn reads by what it came to, before the step it prepares: "Lead asked you a question before reading the code", "found nothing to ask you before…", "told you something before…"; "is checking whether to ask you anything before…" while it runs, and "checked whether to ask you anything before…" when it failed.
 
 ### Component: RunPanel (D-01)
 
@@ -541,3 +545,4 @@ These are explained in `docs/GUIDE.md`:
 | 2026-11-24 | 1.1 | Copy on Screen: copy cut to what changes the owner's action; moved explanations listed for the guide; typed commands set apart; the resume mention uses the bot's name from Slack | Oven Spring team |
 | 2026-11-25 | 1.2 | AppHeader: the version and its update notice (AC-071) | Oven Spring team |
 | 2026-11-25 | 1.3 | Reconciled with the implementation: Slack messages, Now and issue page states, RunLine, the row breakpoint, boxes and colours, the component map | Oven Spring team |
+| 2026-11-27 | 1.4 | PhaseItem leaves out a preparation turn that ended normally; RunLine words a preparation turn by what it came to (GH-10) | Oven Spring team |

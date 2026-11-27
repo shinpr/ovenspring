@@ -92,6 +92,7 @@ const run = (
   cli: 'codex',
   result: endedAt === null ? 'running' : 'done',
   costUsd: null,
+  preparation: null,
   detail: NO_DETAIL,
   ...change,
 })

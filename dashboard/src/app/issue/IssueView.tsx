@@ -173,8 +173,16 @@ interface PhaseProps {
   onOpenRun: (id: string) => void
 }
 
+/**
+ * Whether the issue's path lists a run: a preparation turn that came to something is left out, so
+ * each step reads once; one running or failed stays, to be followed or opened.
+ */
+function onPath(run: LaunchRow): boolean {
+  return run.preparation === null || run.preparation === 'unsettled'
+}
+
 function PhaseItem({ phase, issue, runs, now, onOpenRun }: PhaseProps) {
-  const mine = [...runs.filter((r) => r.phase === phase.phase)].reverse()
+  const mine = [...runs.filter((r) => r.phase === phase.phase && onPath(r))].reverse()
   const list = (
     <ul className={styles['runs']}>
       {mine.map((r) => (
