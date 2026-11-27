@@ -1012,6 +1012,23 @@ mod tests {
             ],
         });
         assert_eq!(rerun_count(Step::CodeReview, &code), Some(1));
+
+        let test = serde_json::json!({
+            "status": "needs_revision",
+            "prior_feedback_reconciliation": [
+                {"id": "T1", "prior_disposition": "apply", "status": "maintained"},
+            ],
+        });
+        assert_eq!(rerun_count(Step::TestReview, &test), Some(1));
+
+        let security = serde_json::json!({
+            "status": "blocked",
+            "findings": [{"id": "S002", "category": "confirmed_risk"}],
+            "prior_feedback_reconciliation": [
+                {"id": "S001", "prior_disposition": "apply", "status": "maintained"},
+            ],
+        });
+        assert_eq!(rerun_count(Step::SecurityReview, &security), Some(2));
     }
 
     #[test]
