@@ -578,17 +578,21 @@ function expectSameBox(ours: Box, theirs: Box, name: string): void {
   }
 }
 
-/** The page's words, then each event line's, compared with the prototype's after the overrides. */
+/**
+ * Each event line's words, then the page's, compared with the prototype's after the overrides.
+ * The product's side is awaited: its heading and filters show before the polled events arrive.
+ */
 async function expectSameWords(page: Page, reference: Page, used: Set<string>, where: string) {
-  const ours = await page.locator('li[id^="event-"]').allInnerTexts()
-  const theirs = await reference.locator('li.ev').allInnerTexts()
   const normal = (t: string): string => t.replace(/\s+/g, ' ').trim()
-  theirs.forEach((text, i) => {
-    expect(normal(ours[i] ?? ''), `${where}: line ${i + 1}`).toBe(overridden(normal(text), used))
+  const theirs = (await reference.locator('li.ev').allInnerTexts()).map((text) =>
+    overridden(normal(text), used)
+  )
+  await expect(page.locator('li[id^="event-"]'), `${where}: lines`).toHaveText(theirs, {
+    useInnerText: true,
   })
-  expect(ours.length, `${where}: lines`).toBe(theirs.length)
-  expect(await words(page.locator('main')), `${where}: the page`).toBe(
-    overridden(await words(reference.locator('#app')), used)
+  await expect(page.locator('main'), `${where}: the page`).toHaveText(
+    overridden(await words(reference.locator('#app')), used),
+    { useInnerText: true }
   )
 }
 

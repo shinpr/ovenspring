@@ -263,6 +263,9 @@ pub fn run(repo: &Path) -> Result<()> {
     if let Some(d) = daemon.as_mut() {
         d.stop_launches();
     }
+    // The port is free before the lock says this daemon ended, so a `start` that follows `stop` at
+    // once serves at the same address.
+    drop(server);
     let _ = fs::remove_file(pid_file(repo));
     drop(lock);
     Ok(())
