@@ -256,6 +256,7 @@ pub enum After {
     /// The next task, or the final quality run.
     NextTask,
     /// The quality run after a correction of the review round or of pull request comments.
+    /// Retained for issues saved by earlier versions: a correction no longer passes a test review.
     Correction(Origin),
     /// The review round, after the Design Doc its author corrected passed its own checks.
     ReturnToRound,
@@ -1255,12 +1256,8 @@ fn corrected_by_executor(
         s.stage = Stage::Gate;
         return vec![Action::AnswerComments, Action::RunGate];
     }
-    if test_review_follows(s, e) {
-        s.after = Some(After::Correction(origin));
-        check(s, Check::TestReview)
-    } else {
-        run(s, Step::Quality)
-    }
+    // Whoever raised the findings reviews the correction again, its tests included.
+    run(s, Step::Quality)
 }
 
 /// The round's reviews that raised a finding the executor applied: they recheck after it. A
@@ -2802,8 +2799,15 @@ mod tests {
                     Fact::BotWaitEnded { comments: true },
                     vec!["review-response"],
                 ),
+                // The commenter reviews the correction's tests: no test review comes between.
                 (
-                    answered(&json!([apply("review-comment-1", None)])),
+                    done(
+                        "review-response",
+                        json!({"status": "completed", "taskName": "t",
+                               "changeSummary": "Escape commas", "testsAdded": ["a.int.test.ts"],
+                               "requiresTestReview": true, "newTestsPassed": true,
+                               "dispositions": [apply("review-comment-1", None)]}),
+                    ),
                     vec!["quality"],
                 ),
                 (quality("pass"), vec!["commit after quality", "Push"]),
