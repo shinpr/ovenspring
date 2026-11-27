@@ -1,6 +1,6 @@
 import { type ReactNode, useState } from 'react'
 import { Link } from 'react-router'
-import type { IssueDetail, LaunchRow, PhaseSpan } from '../../api/types.gen.ts'
+import type { IssueDetail, LaunchRow, PhaseSpan, Preparation } from '../../api/types.gen.ts'
 import { Breadcrumb } from '../../components/Breadcrumb/Breadcrumb.tsx'
 import { Button } from '../../components/Button/Button.tsx'
 import { CancelPanel } from '../../components/CancelPanel/CancelPanel.tsx'
@@ -173,8 +173,23 @@ interface PhaseProps {
   onOpenRun: (id: string) => void
 }
 
+/**
+ * Whether the issue's path lists a run: a preparation turn that came to something is left out, so
+ * each step reads once; one running or failed stays, to be followed or opened.
+ */
+function onPath(run: LaunchRow): boolean {
+  return run.preparation === null || PREPARATION_ON_PATH[run.preparation]
+}
+
+const PREPARATION_ON_PATH: Record<Preparation, boolean> = {
+  unsettled: true,
+  'nothing-to-ask': false,
+  told: false,
+  asked: false,
+}
+
 function PhaseItem({ phase, issue, runs, now, onOpenRun }: PhaseProps) {
-  const mine = [...runs.filter((r) => r.phase === phase.phase)].reverse()
+  const mine = [...runs.filter((r) => r.phase === phase.phase && onPath(r))].reverse()
   const list = (
     <ul className={styles['runs']}>
       {mine.map((r) => (

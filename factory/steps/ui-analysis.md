@@ -16,17 +16,17 @@ Supply exactly one of `prd_path` or `requirements`.
 
 ## Evidence Boundary
 
-Gather UI facts only; the parent and document owners select scope and design. Return evidence when it can change the UI Spec, a component or service contract, preserved visible behavior, reuse, or verification for the change. Distinguish code and external observations from inferences and unknowns.
+Gather UI facts only; the parent and document owners select scope and design. Record evidence when it can change the UI Spec, a component or service contract, preserved visible behavior, reuse, or verification for the change. Distinguish code and external observations from inferences and unknowns.
 
 When a current UI decision depends on a resource `docs/project-context/external-resources.md` records, inspect the relevant subset through its recorded access method (ovenspring-external-resource-context Reference Protocol). Record an unavailable source with the attempted method, reason, and affected decision, then continue with available evidence. A supplied prototype remains analysis input.
 
-Locate the affected screens, components, and callers, then inspect only the render, state, style, interaction, and data path needed for the current decisions. Include Props and variants, DOM or layout behavior, display conditions, responsive behavior, accessibility, localization, and generated artifacts when they can change the result, a preserved contract, reuse, or verification. From evidence already gathered, record a simplification when a responsibility, branch, artifact, or change can be omitted while the outcome still holds; it remains a candidate for the parent and document owner. Inspect every consumer only when the complete consumer set controls compatibility; otherwise use representative consumers, tests, stories, and style peers.
+Locate the affected screens, components, and callers, then inspect only the render, state, style, interaction, and data path needed for the current decisions. Include Props and variants, DOM or layout behavior, display conditions, responsive behavior, accessibility, localization, and generated artifacts when they can change the UI Spec, a preserved contract, reuse, or verification. From evidence already gathered, record a simplification when a responsibility, branch, artifact, or change can be omitted while the outcome still holds; it remains a candidate for the parent and document owner. Inspect every consumer only when the complete consumer set controls compatibility; otherwise use representative consumers, tests, stories, and style peers.
 
 Stop when the facts that could change one of those outcomes have been checked; a search with no match shows only that the search found nothing.
 
-## Output Format
+## Output
 
-Return one compact JSON object. Put decision-relevant component, state, Props, layout, accessibility, localization, generated-artifact, and verification detail directly in `focusAreas`; arrays may be empty.
+Write to the path in your item's `out` field one compact JSON object. Put decision-relevant component, state, Props, layout, accessibility, localization, generated-artifact, and verification detail directly in `focusAreas`; arrays may be empty.
 
 ```json
 {

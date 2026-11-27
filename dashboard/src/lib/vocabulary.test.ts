@@ -26,6 +26,7 @@ const run = (change: Partial<LaunchRow>): LaunchRow => ({
   cli: 'codex',
   result: 'done',
   costUsd: null,
+  preparation: null,
   detail: none,
   ...change,
 })
@@ -118,6 +119,41 @@ describe('runSentence', () => {
       'a run that failed on an overload and ran again',
       run({ result: 'retried' }),
       { who: 'Reviewer', what: 'reviewed the code', result: 'stopped: provider overloaded' },
+    ],
+    [
+      'a preparation turn under way, before the step it prepares',
+      run({
+        role: 'lead',
+        step: 'codebase-analysis',
+        result: 'running',
+        endedAt: null,
+        preparation: 'unsettled',
+      }),
+      { who: 'Lead', what: 'is checking whether to ask you anything before reading the code' },
+    ],
+    [
+      'a preparation turn that asked the owner',
+      run({ role: 'lead', step: 'codebase-analysis', preparation: 'asked' }),
+      { who: 'Lead', what: 'asked you a question before reading the code' },
+    ],
+    [
+      'a preparation turn that told the owner without waiting',
+      run({ role: 'lead', step: 'scope-check', preparation: 'told' }),
+      { who: 'Lead', what: 'told you something before deciding which documents it needs' },
+    ],
+    [
+      'a preparation turn that found nothing to ask',
+      run({ role: 'lead', step: 'requirements', preparation: 'nothing-to-ask' }),
+      { who: 'Lead', what: 'found nothing to ask you before reading the issue' },
+    ],
+    [
+      'a preparation turn that failed',
+      run({ role: 'lead', step: 'design', result: 'failed', preparation: 'unsettled' }),
+      {
+        who: 'Lead',
+        what: 'checked whether to ask you anything before writing the design',
+        result: 'failed',
+      },
     ],
   ])('%s', (_, given, expected) => {
     expect(runSentence(given)).toEqual(expected)

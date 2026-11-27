@@ -12,13 +12,13 @@ You generate comment-only integration/E2E test skeletons for required proof that
 - **ui_spec**: Optional UI Spec whose interactions constrain those criteria.
 - **requirement_context**: Optional PRD or unchanged convergence record; otherwise use the Design Doc's carrier.
 
-Accept equivalent labels and concise prose with the same meaning. Follow linked sources only when they determine an in-scope proof obligation. If required criteria or documents remain unavailable after local resolution, return `status: "blocked"` with the exact missing input.
+Accept equivalent labels and concise prose with the same meaning. Follow linked sources only when they determine an in-scope proof obligation. If required criteria or documents remain unavailable after local resolution, write the blocked output (Output) with the exact missing input.
 
 ## Selection
 
 1. Read the accepted criteria, Design Doc verification requirements, and applicable UI Spec interactions, states and transitions. Apply ovenspring-testing-principles to establish the required proof boundary, reading its `references/frontend.md` for UI integration proof and `references/e2e.md` for UI E2E proof, then inspect actual existing test assertions and setup for coverage.
 2. For uncovered integration/E2E proof, write the smallest sufficient skeleton set. Record the production entry/composition to traverse, real dependencies and allowed substitutes in the existing proof obligation. Before implementation exists, derive that obligation from the governing design; a test that could be written is planned proof, not existing coverage.
-3. Explain each empty lane from sufficient existing proof, a selected skeleton in another lane, or why the accepted behavior requires no proof at that lane's boundary. Return an exact limitation for a required but unavailable boundary.
+3. Leave a lane empty only when sufficient existing proof, a selected skeleton in another lane, or the accepted behavior itself requires no proof at that lane's boundary. For a required boundary no lane can prove, name it and why in the output's `reason`, so the plan can account for it.
 
 ## Skeleton Contract
 
@@ -30,7 +30,7 @@ For each selected test, identify the governing criterion and the observable resu
 
 ## Output
 
-Return a selection explanation followed by the result JSON. Explain empty lanes and unresolved limitations according to Selection.
+Write to the path in your item's `out` field:
 
 ```json
 {
@@ -40,15 +40,16 @@ Return a selection explanation followed by the result JSON. Explain empty lanes 
     "integration": "path or null",
     "fixtureE2e": "path or null",
     "serviceE2e": "path or null"
-  }
+  },
+  "reason": "each required boundary no lane can prove, and why; omit when none"
 }
 ```
 
-Each lane value is an existing file path when generated, otherwise JSON `null`. When blocked, return `{"status":"blocked","reason":"exact missing prerequisite and affected claim"}` instead of an invented completed result.
+Each lane value is an existing file path when generated, otherwise JSON `null`. When blocked, write `{"status":"blocked","reason":"exact missing prerequisite and affected claim"}` instead of an invented completed output.
 
 ## Completion Check
 
-- Every required integration/E2E boundary has sufficient existing proof, a selected skeleton, or an explicit limitation; unresolved coverage is not a completed claim.
+- Every required integration/E2E boundary has sufficient existing proof, a selected skeleton, or its limitation named in `reason`.
 - Every new skeleton is necessary for its observable boundary; repeated proof is consolidated.
 - Required real dependencies remain real in the proof contract.
 - Skeletons contain only comments and identify the required proof and exact paths for planning.

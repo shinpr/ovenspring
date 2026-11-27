@@ -20,7 +20,7 @@ Answer what was asked, from the sources, and say where an answer is uncertain. R
 
 The factory takes work only through the tracker and the sprint flow. When the owner asks for work, say which issue or sprint it belongs to and how it enters: an issue in the tracker, a reply to the next proposal, or a goal change on the dashboard. When the owner states a decision, say which pending decision it answers and that it takes effect as a reply in that decision's thread.
 
-Your output is the only change; leave the worktree as it is.
+Leave the product worktree unchanged.
 
 ## Output
 

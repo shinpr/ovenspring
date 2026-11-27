@@ -14,7 +14,7 @@ Operates in an independent context, executing autonomously until task completion
 
 ## Execution Gate
 
-Before acting, map the preloaded skills to concrete rules for this task. Follow the applicable process below, advancing only when the current step's required evidence is present. Before returning, verify that the result satisfies those rules and the output requirements below.
+Before acting, map the preloaded skills to concrete rules for this task. Follow the applicable process below, advancing only when the current step's required evidence is present. Before finishing, verify that your work satisfies those rules and the requirements below.
 
 ## Preparation
 
@@ -36,13 +36,13 @@ Before reviewing, read these files; they hold review criteria beyond the preload
 
 Treat a test as acceptable when the selected proof is clear and valid. Emit only a material gap that makes the selected claim unproven, invalid, non-reproducible, or dependent on an impermissible substitute boundary. AAA organization, additional edge cases, assertion splitting, comments, and readability changes become findings only when they cause such a proof gap.
 
-Each issue contains one material proof gap and the smallest correction that restores the selected proof. When no material proof gap remains, return `pass`.
+Each issue contains one material proof gap and the smallest correction that restores the selected proof. When no material proof gap remains, the status is `pass`.
 
 ## Verification Process
 
 ### 1. Review Basis Selection
 
-Confirm every changed path exists and differs from `diffBase`. Select the first basis covering every test: the planned claim from the `skeleton` (when available), task verification, then explicit `prompt-claims`; return `blocked` when the inputs or a complete basis are unavailable.
+Confirm every changed path exists and differs from `diffBase`. Select the first basis covering every test: the planned claim from the `skeleton` (when available), task verification, then explicit `prompt-claims`; the status is `blocked` when the inputs or a complete basis are unavailable.
 
 #### 1-1. Select Review Path
 
@@ -53,7 +53,7 @@ When `prior_feedback` is present, complete the correction re-review here:
 2. Mark an applied item `resolved` only when current evidence shows that the tests satisfy the finding without a correction-caused regression in the changed boundary; otherwise mark that item `maintained` with current evidence.
 3. Mark a declined item `withdrawn` only when current evidence no longer supports it; otherwise mark that item `maintained` with current evidence.
 4. Emit exactly one `prior_feedback_reconciliation` entry for every received ID.
-5. Derive status only from these reconciliation entries, apply only the prior-feedback Quality Checklist item, and return the final JSON.
+5. Derive status only from these reconciliation entries, apply only the prior-feedback Quality Checklist item, and write the output.
 
 ### 2. Claim-to-Implementation Verification
 For each test case:
@@ -86,13 +86,9 @@ Run a fresh mutation for the relevant claim and restore the code afterwards; a t
 
 Give every issue a stable ID. Correction re-review follows Step 1-1 and emits one `prior_feedback_reconciliation` entry for every received item using `resolved`, `withdrawn`, or `maintained`.
 
-## Output Format
+## Output
 
-### Output Protocol
-
-- During execution, intermediate progress messages MAY be emitted as plain text or markdown.
-- The output is a single JSON object that matches the schema below.
-- For correction re-review, emit only `status`, `testFiles`, `reviewBasis`, and `prior_feedback_reconciliation`; initial-review issue and fix arrays are not repeated.
+Write to the path in your item's `out` field one JSON object matching the schema below. For correction re-review, it carries only `status`, `testFiles`, `reviewBasis`, and `prior_feedback_reconciliation`; initial-review issue and fix arrays are not repeated.
 
 ```json
 {

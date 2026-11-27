@@ -889,11 +889,7 @@ impl Daemon {
     /// word that does not), and its session is kept for the work turn.
     fn take_prepared(&mut self, path: &Path, item: &Item, key: &str) -> Result<(), DaemonError> {
         let step = item.front.step;
-        let prepared = (item.front.status == Status::Done)
-            .then(|| fs::read_to_string(&item.front.out).ok())
-            .flatten()
-            .and_then(|t| serde_json::from_str(&t).ok())
-            .and_then(|v| PrepareOutput::parse(v).ok());
+        let prepared = prepared(item);
         let session = self.session_of(&item_name(path))?;
         let archived = self.store.archive_item(path)?.display().to_string();
         let Some(prepared) = prepared else {
@@ -1307,6 +1303,17 @@ impl Daemon {
         fs::write(path, text).map_err(StoreError::io(path))?;
         Ok(path.display().to_string())
     }
+}
+
+/// What a finished preparation item came to: its output, when its agent set it done with one
+/// that parses; `None` sends the step down its failure path. The daemon acts on this alone, and
+/// history reads a preparation run by it, so the two cannot disagree.
+pub(crate) fn prepared(item: &Item) -> Option<PrepareOutput> {
+    if item.front.status != Status::Done {
+        return None;
+    }
+    let text = fs::read_to_string(&item.front.out).ok()?;
+    PrepareOutput::parse(serde_json::from_str(&text).ok()?).ok()
 }
 
 /// A commit message for one of the flow's fixed points: what passed, and for an implementation

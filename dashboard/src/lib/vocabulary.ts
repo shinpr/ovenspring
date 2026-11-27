@@ -15,6 +15,7 @@ import type {
   LaunchRow,
   Phase,
   Position,
+  Preparation,
   Role,
   RunResult,
   Scale,
@@ -227,43 +228,43 @@ const STEP_DID: Record<Step, string> = {
   'run-commands': 'found how the product runs',
 }
 
-/** What a run of each step is doing while it runs: "Reviewer is reviewing the design". */
+/** What a run of each step is doing while it runs, after "is": "Reviewer is reviewing the design". */
 const STEP_DOING: Record<Step, string> = {
-  requirements: 'is reading the issue',
-  prd: 'is writing the PRD',
-  'prd-review': 'is reviewing the PRD',
-  'codebase-analysis': 'is reading the code',
-  'scope-check': 'is deciding which documents it needs',
-  prototype: 'is making the prototype',
-  'ui-analysis': 'is reading the screens',
-  'ui-spec': 'is writing the UI Spec',
-  'ui-spec-review': 'is reviewing the UI Spec',
-  adr: 'is recording the decisions',
-  'adr-review': 'is reviewing the decisions',
-  design: 'is writing the design',
-  'design-verify': 'is checking the design against the code',
-  'design-review': 'is reviewing the design',
-  'design-sync': 'is comparing it with the other designs',
-  'test-design': 'is writing the test skeletons',
-  'work-plan': 'is writing the work plan',
-  'plan-review': 'is reviewing the work plan',
-  decompose: 'is splitting the plan into tasks',
-  implement: 'is implementing the change',
-  'test-review': 'is checking the tests',
-  quality: 'is running the quality checks',
-  'code-review': 'is reviewing the code',
-  'security-review': 'is reviewing security',
-  'rerun-check': 'is choosing what to recheck',
-  'review-response': 'is judging the findings',
-  'fix-ci': 'is fixing CI',
-  'merge-base': 'is resolving a conflict',
-  exception: 'is looking into a problem',
-  'sprint-plan': 'is proposing the sprint',
-  facts: "is gathering the sprint's facts",
-  'sprint-review': 'is writing the sprint review',
-  'agreements-check': 'is checking the working agreements',
-  conversation: 'is answering you',
-  'run-commands': 'is finding how the product runs',
+  requirements: 'reading the issue',
+  prd: 'writing the PRD',
+  'prd-review': 'reviewing the PRD',
+  'codebase-analysis': 'reading the code',
+  'scope-check': 'deciding which documents it needs',
+  prototype: 'making the prototype',
+  'ui-analysis': 'reading the screens',
+  'ui-spec': 'writing the UI Spec',
+  'ui-spec-review': 'reviewing the UI Spec',
+  adr: 'recording the decisions',
+  'adr-review': 'reviewing the decisions',
+  design: 'writing the design',
+  'design-verify': 'checking the design against the code',
+  'design-review': 'reviewing the design',
+  'design-sync': 'comparing it with the other designs',
+  'test-design': 'writing the test skeletons',
+  'work-plan': 'writing the work plan',
+  'plan-review': 'reviewing the work plan',
+  decompose: 'splitting the plan into tasks',
+  implement: 'implementing the change',
+  'test-review': 'checking the tests',
+  quality: 'running the quality checks',
+  'code-review': 'reviewing the code',
+  'security-review': 'reviewing security',
+  'rerun-check': 'choosing what to recheck',
+  'review-response': 'judging the findings',
+  'fix-ci': 'fixing CI',
+  'merge-base': 'resolving a conflict',
+  exception: 'looking into a problem',
+  'sprint-plan': 'proposing the sprint',
+  facts: "gathering the sprint's facts",
+  'sprint-review': 'writing the sprint review',
+  'agreements-check': 'checking the working agreements',
+  conversation: 'answering you',
+  'run-commands': 'finding how the product runs',
 }
 
 const plural = (n: number, one: string): string => `${n} ${one}${n === 1 ? '' : 's'}`
@@ -318,9 +319,28 @@ function documents(chosen: readonly DocumentKind[]): string {
   return names.length === 1 ? `${names[0] ?? ''} only` : names.join(', ')
 }
 
+/** What a preparation turn did, before the step it prepares: "found nothing to ask you". */
+const PREPARED: Record<Preparation, string> = {
+  unsettled: 'checked whether to ask you anything',
+  'nothing-to-ask': 'found nothing to ask you',
+  told: 'told you something',
+  asked: 'asked you a question',
+}
+
+/** What a preparation turn did or is doing: "asked you a question before reading the code". */
+function prepared(run: LaunchRow, preparation: Preparation, running: boolean): string {
+  const what = running ? 'is checking whether to ask you anything' : PREPARED[preparation]
+  return `${what} before ${STEP_DOING[run.step]}`
+}
+
 /** What the run did or is doing, after the role's name. */
 function did(run: LaunchRow, running: boolean): string {
-  const base = NAMED[run.step]?.(run.detail, running) ?? (running ? STEP_DOING : STEP_DID)[run.step]
+  if (run.preparation !== null) {
+    return prepared(run, run.preparation, running)
+  }
+  const base =
+    NAMED[run.step]?.(run.detail, running) ??
+    (running ? `is ${STEP_DOING[run.step]}` : STEP_DID[run.step])
   return run.detail.round === null ? base : `${base} again (round ${run.detail.round})`
 }
 
