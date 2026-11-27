@@ -129,27 +129,6 @@ An interim correction must also satisfy the agreed boundary. Report a required u
 
 When changes are authorized, implement the selected response at the responsible owner and verify the affected boundary described by the applicable reference. Re-evaluate the original problem groups after verification; completion requires their observable causes to be resolved or explicitly dispositioned.
 
-## Response Contract
-
-Report decisions by underlying problem group rather than by comment count:
-
-```text
-Problem:
-Findings grouped:
-  - <finding ID or source label>: confirmed | unsupported | unresolved
-Evidence: observed | inferred | unknown
-Cause and owner:
-Reviewed change or mechanism necessity and decision-changing alternatives considered:
-Recommendation and disposition:
-Authority: recommend only | execute selected response
-Why it wins in the decision order:
-Retained debt or required proof:
-Required evidence and resume condition, if any:
-User decision, if any:
-```
-
-Keep the report proportional. Use the existing response to retain the disposition and reason; for a mechanism-preserving or additive repair, include the required result that subtraction cannot deliver. Keep the problem/fix separation, causal owner, and any user-owned tradeoff. No separate plan tool, file, or alternative inventory is required.
-
 ## Completion Check
 
 - Every accepted finding maps to a confirmed underlying problem and material effect.
