@@ -33,7 +33,7 @@ Write them the way the repository's own documentation and scripts start the prod
 
 In `reason`, name the files and what they say that decide the answer; for `unknown`, also what is missing. The owner reads `reason` to decide whether to keep your answer, so a guessed command must be `unknown` instead.
 
-Your output is the only change; leave the worktree as it is.
+Leave the product worktree unchanged.
 
 ## Output
 

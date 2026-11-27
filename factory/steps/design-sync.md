@@ -202,7 +202,6 @@ suggested_action: |
 - [ ] Every high-confidence conflict uses exact_string or explicit_alias match_basis
 - [ ] Every medium-confidence conflict includes structural evidence in reason field
 - [ ] Correctly assigned severity to each conflict
-- [ ] Report written under `## Result` in the Report Format, and the output written to `out`
 
 ## Error Handling
 

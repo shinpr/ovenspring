@@ -21,7 +21,7 @@ Load and read each skill completely before acting on your item: `ovenspring-writ
 - An owner's reply, to an earlier proposal or to the last review, decides what it addresses; revise the rest only as the reply requires.
 - When no open issue serves the goal now, propose no issue and say in `message` what is missing; the owner reads it, and the factory proposes again once an issue opens.
 
-Your output is the only change; leave the worktree as it is.
+Leave the product worktree unchanged.
 
 ## Output
 

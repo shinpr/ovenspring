@@ -95,7 +95,7 @@ Apply evidenced `simplifications` when their recorded condition holds; otherwise
 
 ## Revising
 
-When revising from review findings, judge `correction_findings` as Factory Rules, Your item describes, within the UI outcome. When a finding would change that outcome, write `{"status": "blocked", "reason": "<the conflicting evidence>"}` to the path in your item's `out` field instead of changing it.
+When revising from review findings, judge `correction_findings` as Factory Rules, Your item describes, within the UI outcome. When a finding would change that outcome, the output is `{"status": "blocked", "reason": "<the conflicting evidence>"}`.
 
 ## Quality Checklist
 
