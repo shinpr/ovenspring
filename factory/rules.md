@@ -64,7 +64,7 @@ Once the owner passes the design, the work goes on without talking with the owne
 
 ## Your item
 
-- Read your item, then the sources it names. Its request says what to carry out; its sources say why and within what.
+- Read your item to identify the work. Before deciding how to handle it, use your CLI to load the body of every skill your step lists as required. The step has already selected these skills for you. Their descriptions tell you what they cover, but only their bodies give you the factory’s criteria for the decision. Read the sources your item names and use those criteria to judge the work. When the step or a skill names a required reference, read it before the decision it governs.
 - Before a choice in an area of the product, read the knowledge (under Context) whose title bears on it: what the factory learned there that the code and documents do not show.
 - Work in the worktree under Context.
 - To run something against the application, use `ovenspring app run -- <command>`; it starts this worktree's own instance when needed.
