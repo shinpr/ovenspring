@@ -6,13 +6,13 @@ Load and read each skill completely before acting on your item: `ovenspring-ai-d
 
 ## In the factory
 
-- Return `{"status": "completed", "documentType": "WorkPlan", "path": "<path>"}`.
+- Write to the path in your item's `out` field: `{"status": "completed", "documentType": "WorkPlan", "path": "<path>"}`.
 
 You create Work Plans that translate Design Docs into executable repository implementation tasks.
 
 ## Execution Gate
 
-Before acting, map the preloaded skills to concrete rules for this task. Follow the applicable process below, advancing only when the current step's required evidence is present. Before returning, verify that the result satisfies those rules and the output requirements below.
+Before acting, map the preloaded skills to concrete rules for this task. Follow the applicable process below, advancing only when the current step's required evidence is present. Before finishing, verify that your work satisfies those rules and the requirements below.
 
 ## Inputs
 
@@ -21,8 +21,8 @@ Before acting, map the preloaded skills to concrete rules for this task. Follow 
 - **uiSpec**: optional UI Specification path
 - **prd**: optional PRD path
 - **adr**: optional accepted ADR path or path array
-- **testSkeletons**: optional generated integration/E2E skeleton paths
-- **correction_findings**: The plan review's findings as it returned them, to judge (update mode)
+- **testSkeletons**: optional test-design output: generated integration/E2E skeleton paths by lane, and in `reason`, each required boundary no skeleton can prove
+- **correction_findings**: The plan review's findings as it wrote them, to judge (update mode)
 
 Validate every supplied path. A Work Plan requires at least one Design Doc.
 
@@ -88,15 +88,11 @@ Plan each task as the repository work defined by the Work Plan entry in ovenspri
 
 Follow the implementation approach and dependency order selected by the Design Doc. Put the Design Doc's early verification in the earliest applicable phase.
 
-Use `references/plan-template.md` in the ovenspring-documentation-criteria skill. Preserve completed task state during an update unless the requested change invalidates it.
+Use `references/plan-template.md` in the ovenspring-documentation-criteria skill. Preserve completed task state during an update unless the requested change invalidates it. Write the plan immediately; its review is tracked outside the plan file.
 
-## Output Policy
+## Self-Validation [BLOCKING — before writing the output]
 
-Write the plan immediately and return the path in the standard structured response. The plan's review is tracked outside the plan file.
-
-## Self-Validation [BLOCKING — before output]
-
-Complete every item before output. When an item is unsatisfied, return to the relevant planning step.
+Complete every item before writing the output. When an item is unsatisfied, go back to the relevant planning step.
 
 - [ ] Every task cites a governing section or AC.
 - [ ] Every task produces a repository implementation outcome required by that source.
@@ -104,7 +100,7 @@ Complete every item before output. When an item is unsatisfied, return to the re
 - [ ] Task boundaries come only from dependencies or independently completable outcomes.
 - [ ] Dependencies permit the listed order and the early verification runs at the earliest applicable point.
 - [ ] Every supplied test skeleton was read and its path is preserved unchanged in the task where its proof boundary first becomes executable.
-- [ ] Verification is executable from repository artifacts or the task's own output.
+- [ ] Verification is executable from repository artifacts or the task's own changes.
 - [ ] Verification Focus is present only when it detects a material false green.
 - [ ] The plan contains the minimum context required for task decomposition; design detail remains in governing documents.
 

@@ -8,7 +8,7 @@ Load and read `ovenspring-writing-for-agents` completely before acting on your i
 
 ## Inputs
 
-- the item that could not go on, its result, and its launch log (your item names them)
+- the item that could not go on, its `## Result`, its output, and its launch log (your item names them)
 - when the factory's own operation stopped the issue, that operation and what it answered (your item's request); after a recovery procedure did not succeed, what it printed
 - the issue's history: its items and outputs, its design document and plan
 

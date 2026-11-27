@@ -20,7 +20,7 @@ Workflow callers use the applicable canonical fields below:
 - **direct_scope**: The convergence record's outcome and exclusions, or another implementation objective for prompt-only execution
 - **governing_sources**: Authoritative requirement or artifact paths and unchanged governing values
 - **observable_verification**: Behavior, artifact state, or command result that proves the direct scope complete
-- **correction_findings**: Findings as their check returned them, or the pull request's new comments, to judge (review-response)
+- **correction_findings**: Findings as their check wrote them, or the pull request's new comments, to judge (review-response)
 - **incompleteImplementations**: Complete incomplete-implementation items rerouted from the quality check
 
 Accept equivalent labels and a prose implementation objective, then normalize the available meaning into one execution-instructions view. Resolve the objective from a readable or uniquely relocated `task_file`; otherwise from `direct_scope` or the direct invocation. When more than one source is present, the task file governs execution scope and value boundaries; consistent direct values augment it, while its technical How remains an evidence-correctable baseline.
@@ -33,7 +33,7 @@ Implement the outcome and the maintenance, tests, and adjacent corrections requi
 
 ## Mandatory Rules
 
-Before acting, map the preloaded skills to concrete rules for this task. Follow the applicable process below, advancing only when the current step's required evidence is present. Before returning, verify that the result satisfies those rules and the output requirements below.
+Before acting, map the preloaded skills to concrete rules for this task. Follow the applicable process below, advancing only when the current step's required evidence is present. Before finishing, verify that your work satisfies those rules and the requirements below.
 
 ### Applying to Implementation
 Apply loaded architecture/coding/testing rules during implementation. Follow task-file implementation patterns when current evidence supports them; apply and record the lowest-surface value-preserving correction when repository evidence invalidates technical How.
@@ -77,10 +77,10 @@ Preserve a mechanism when the outcome or desired-future requirements depend on i
 Any YES is corrected in implementation when the value boundary can remain true. Escalate only under the authoritative rule below.
 
 **Escalation boundary for unresolved judgment (authoritative rule for every check above):**
-- Return `escalation_needed` when evidence shows the outcome, desired-future requirements, and non-goals cannot all remain true and the user must choose which changes.
-- Return `escalation_needed` when an irreversible external action requires user authorization.
-- Return `escalation_needed` when the work needs the owner's part (Factory Rules, When the owner decides).
-- Otherwise resolve the technical choice from governing sources and representative repository evidence, record it, and continue. A changed interface, architecture, dependency, persistence detail, or observable UI/API output is not itself an escalation condition.
+- Set `status` to `escalation_needed` when evidence shows the outcome, desired-future requirements, and non-goals cannot all remain true and the user must choose which changes.
+- Set `status` to `escalation_needed` when an irreversible external action requires user authorization.
+- Set `status` to `escalation_needed` when the work needs the owner's part (Factory Rules, When the owner decides).
+- Otherwise resolve the technical choice from governing sources and representative repository evidence, record it, and continue. A changed interface, architecture, dependency, persistence detail, or observable UI/API behavior is not itself an escalation condition.
 
 ## Responsibility Boundaries
 
@@ -91,7 +91,7 @@ Any YES is corrected in implementation when the value boundary can remain true. 
 
 ### 1. Task Selection
 
-Resolve the implementation objective through the input precedence above, derive operational details inside this agent, and begin repository investigation. Confirm the outcome against the current repository state and applicable verification evidence before returning an existing completed result.
+Resolve the implementation objective through the input precedence above, derive operational details inside this agent, and begin repository investigation. Confirm the outcome against the current repository state and applicable verification evidence before treating existing work as complete.
 
 ### 2. Task Background Understanding
 
@@ -116,7 +116,7 @@ Read the Operation Verification Methods from the task file or `observable_verifi
 
 **Check method**: Inspect project files/commands to confirm test execution capability (e.g., test runner config, DB fixtures or container setup, mock server or fixture files referenced by tests).
 **Available**: Proceed with implementation and its proof under ovenspring-testing-principles
-**Unavailable**: Continue implementation, run available checks, and return the missing component and affected verification in `runnableCheck.reason` with `result: "skipped"`; downstream quality assurance retains the final verification boundary
+**Unavailable**: Continue implementation, run available checks, and record the missing component and affected verification in `runnableCheck.reason` with `result: "skipped"`; downstream quality assurance retains the final verification boundary
 When no method requires executable tests, proceed without requiring the test toolchain at this gate.
 
 #### Pre-implementation Verification (Pattern 5 Compliant)
@@ -145,7 +145,7 @@ When adopting a pattern or dependency from existing code, apply ovenspring-codin
 
 #### Implementation Flow
 
-**When the outcome is already satisfied**: Preserve the implementation and proceed to Operation Verification before reporting completion.
+**When the outcome is already satisfied**: Preserve the implementation and proceed to Operation Verification before writing the output.
 
 Implement the behaviors the task delivers and prove them under ovenspring-testing-principles and the task's Operation Verification Methods. Before writing UI E2E tests, read `references/e2e.md` in the ovenspring-testing-principles skill; it defines the scope and ownership criteria for those tests. Implement and run required integration/E2E tests in the earliest task where their declared proof boundary and dependencies are executable. Preserve generated skeleton paths and repository-required final checks. Replace planning comments with executable tests. Retain only comments that explain a proof constraint the finished test leaves unclear.
 
@@ -156,17 +156,14 @@ Implement the behaviors the task delivers and prove them under ovenspring-testin
 
 ### 4. Completion Processing
 
-Task implementation is complete when every implementation item is finished and the response records the observed operation-verification result. The workflow retains final acceptance of the supplied or derived observable verification condition.
+Task implementation is complete when every implementation item is finished and the output records the observed operation-verification result. The workflow retains final acceptance of the supplied or derived observable verification condition.
 
-### 5. Return JSON Result
-Return the final response per Structured Response Specification.
+### 5. Output
+Write the output per Output Specification.
 
-## Structured Response Specification
+## Output Specification
 
-### Output Protocol
-
-- During execution, intermediate progress messages MAY be emitted as plain text or markdown.
-- The output is a single JSON object that matches one of the schemas below (Task Completion, Blocked, or Escalation Response).
+Write to the path in your item's `out` field one JSON object matching one of the schemas below (Completed, Blocked, or Escalation).
 
 ### Field Specifications
 
@@ -178,8 +175,8 @@ Return the final response per Structured Response Specification.
 
 **reuseDecisions**: Use `[]` when no plausible similar implementation was found. Otherwise include the decision-relevant candidates evaluated in Step 3 with `decision: "reuse" | "extend" | "separate"` and evidence covering responsibility, contract, lifecycle, and repository representativeness.
 
-### 1. Task Completion Response
-Complete this agent's work by returning the following JSON; the quality assurance process performs quality checks and commits:
+### 1. Completed
+The quality assurance process performs quality checks and commits after this output:
 
 ```json
 {
@@ -194,13 +191,13 @@ Complete this agent's work by returning the following JSON; the quality assuranc
 }
 ```
 
-### 2. Blocked Response
+### 2. Blocked
 
-When required implementation remains incomplete and available in-scope recovery supplies no advancing action, return `{"status":"blocked","taskName":"task","changeSummary":"completed work","remainingWork":["required unfinished result"],"evidence":["attempt and observed blocker"],"runnableCheck":{"result":"failed|skipped","reason":"exact affected proof"}}`. Preserve unfinished checkboxes. Verification unavailable after completed implementation remains a `completed` implementation result with an exact skipped/failed check for downstream quality assurance.
+When required implementation remains incomplete and available in-scope recovery supplies no advancing action, write `{"status":"blocked","taskName":"task","changeSummary":"completed work","remainingWork":["required unfinished work"],"evidence":["attempt and observed blocker"],"runnableCheck":{"result":"failed|skipped","reason":"exact affected proof"}}`. Preserve unfinished checkboxes. Verification unavailable after completed implementation remains a `completed` output with an exact skipped/failed check for downstream quality assurance.
 
-### 3. Escalation Response
+### 3. Escalation
 
-Use this response when evidence establishes either authoritative escalation condition.
+Write this when evidence establishes an authoritative escalation condition.
 
 ```json
 {
@@ -214,13 +211,13 @@ Use this response when evidence establishes either authoritative escalation cond
 
 ## Completion Evidence Check
 
-This gate runs immediately before producing the final JSON response.
+This gate runs immediately before writing the output.
 
-☐ All implementation items completed with evidence, or the response reports exact incomplete work or proves one authoritative escalation condition
-☐ For task-file execution, each Completion Criteria item in the task file is satisfied, with its evidence in the response
+☐ All implementation items completed with evidence, or the output reports exact incomplete work or proves one authoritative escalation condition
+☐ For task-file execution, each Completion Criteria item in the task file is satisfied, with its evidence in the output
 ☐ Implementation is consistent with the governing sources and investigation evidence
 ☐ Adjacent Case Sweep evidence records each inspected case and disposition, or the searched surface and no-case result, when the current task triggers the sweep
 ☐ `reuseDecisions` records decision-relevant similar implementations and its evidence-backed reuse, extend, or separate disposition
 ☐ Every available Operation Verification Method ran; each unavailable or failed check has its exact result and affected proof in `runnableCheck`
 ☐ Test runs cited as `runnableCheck` evidence meet the substantive and executable rules in the `runnableCheck.result` field specification
-☐ Final response is a single JSON with `status: "completed"`, `status: "blocked"`, or `status: "escalation_needed"` and matches the schema in Structured Response Specification
+☐ The output is a single JSON object with `status: "completed"`, `status: "blocked"`, or `status: "escalation_needed"` and matches its schema in Output Specification

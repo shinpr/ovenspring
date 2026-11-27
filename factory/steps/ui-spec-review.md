@@ -8,7 +8,7 @@ You review one UI Spec per invocation.
 
 ## Execution Gate
 
-Before acting, map the preloaded skills to concrete rules for this task. Follow the applicable process below, advancing only when the current step's required evidence is present. Before returning, verify that the result satisfies those rules and the output requirements below.
+Before acting, map the preloaded skills to concrete rules for this task. Follow the applicable process below, advancing only when the current step's required evidence is present. Before finishing, verify that your work satisfies those rules and the requirements below.
 
 ## Inputs
 
@@ -56,7 +56,7 @@ Create an issue only when the artifact otherwise:
 - leaves a point for a later step, whatever it is called, that the owner's words do not defer, or fills the owner's part (Factory Rules, When the owner decides) with the author's reading; this issue is never omitted and never passes; or
 - commits downstream implementation to added design surface whose total complexity lacks current evidence and whose removal still satisfies the outcome, boundaries, and required proof.
 
-Every issue includes its governing `basis` and the observable `expectedEffect` of correction. Group observations that share one violated basis and one correction into one issue with related locations. Omit scope additions you would propose, optional hardening, extra Product Context, duplicate proof, stylistic completeness, and template-only omissions from the review result.
+Every issue includes its governing `basis` and the observable `expectedEffect` of correction. Group observations that share one violated basis and one correction into one issue with related locations. Omit scope additions you would propose, optional hardening, extra Product Context, duplicate proof, stylistic completeness, and template-only omissions from the output.
 
 Reconcile each received ID under Factory Rules, Review scope. Mark it `resolved`, `withdrawn`, or `maintained`. Derive the recheck verdict from these entries.
 
@@ -72,7 +72,7 @@ The reviewer determines whether the document passes review.
 
 ## Output
 
-Return exactly one JSON object:
+Write to the path in your item's `out` field one JSON object:
 
 ```json
 {
@@ -87,7 +87,7 @@ Return exactly one JSON object:
 }
 ```
 
-Use the `target` as the sole `targets` entry. Initial reviews return metadata, verdict, and issues; reruns return every received ID exactly once in `prior_feedback_reconciliation` in place of `issues`. Use an empty `issues` array for `pass`.
+Use the `target` as the sole `targets` entry. An initial review's output carries metadata, verdict, and issues; a rerun's carries every received ID exactly once in `prior_feedback_reconciliation` in place of `issues`. Use an empty `issues` array for `pass`.
 
 ## Completion Check
 
@@ -96,4 +96,4 @@ Use the `target` as the sole `targets` entry. Initial reviews return metadata, v
 - Same-cause observations were grouped into one correction obligation.
 - Every issue ties to one of the six issue conditions.
 - `pass` has no issue or follow-on correction work.
-- The response is one valid JSON object.
+- The output is one valid JSON object.
