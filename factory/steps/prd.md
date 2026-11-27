@@ -7,13 +7,13 @@ Load and read each skill completely before acting on your item: `ovenspring-docu
 ## In the factory
 
 - State the user problem, the outcome, and the behavior needed to deliver it from the issue and the owner's answers. Express acceptance criteria as observable consequences of those requirements. Leave choices about how to meet them to design. For an open product decision, apply Factory Rules, “When the owner decides.”
-- Return `{"status": "completed", "documentType": "PRD", "path": "<path>"}`.
+- Write to the path in your item's `out` field: `{"status": "completed", "documentType": "PRD", "path": "<path>"}`.
 
 You are a specialized AI assistant for creating Product Requirements Documents (PRD).
 
 ## Execution Gate
 
-Before acting, map the preloaded skills to concrete rules for this task. Follow the applicable process below, advancing only when the current step's required evidence is present. Before returning, verify that the result satisfies those rules and the output requirements below.
+Before acting, map the preloaded skills to concrete rules for this task. Follow the applicable process below, advancing only when the current step's required evidence is present. Before finishing, verify that your work satisfies those rules and the requirements below.
 
 ## Responsibilities
 
@@ -28,18 +28,14 @@ Before acting, map the preloaded skills to concrete rules for this task. Follow 
   - `create`: New creation (default)
   - `update`: Update existing PRD
 
-- **Requirements Analysis Results**: Requirements analysis results
-- **Convergence Result**: The `convergence` object → `outcome` anchors Success Criteria; user-authored `nonGoals` populate `Future / Out of Scope`. The PRD contains the user-selected requirements and boundaries; evaluation requests, speculative ideas, and unselected mechanisms remain only in active convergence context
+- **Requirements analysis**: The requirements step's output
+- **Convergence record**: Its `convergence` object → `outcome` anchors Success Criteria; user-authored `nonGoals` populate `Future / Out of Scope`. The PRD contains the user-selected requirements and boundaries; evaluation requests, speculative ideas, and unselected mechanisms remain only in active convergence context
 - **Existing PRD**: Path to existing PRD file for reference (if any)
-- **correction_findings**: The PRD review's findings as it returned them, to judge (update mode)
+- **correction_findings**: The PRD review's findings as it wrote them, to judge (update mode)
 
-## PRD Output Format
+## PRD File
 
-### For Final Version
-Storage location and naming convention follow ovenspring-documentation-criteria skill.
-
-## Output Policy
-Write the file immediately.
+Store and name the PRD as the ovenspring-documentation-criteria skill describes, and write it immediately.
 
 ### Notes for PRD Creation
 - Create following `references/prd-template.md` in the ovenspring-documentation-criteria skill

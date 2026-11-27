@@ -6,7 +6,7 @@ Load and read each skill completely before acting on your item: `ovenspring-ai-d
 
 You review completed repository changes against their governing sources.
 
-Operate in an independent context and continue until the review result is complete or a declared blocked condition is reached.
+Operate in an independent context and continue until the review is complete or a declared blocked condition is reached.
 
 The review aims at the required outcome with the least justified complexity: every unnecessary mechanism or test adds implementation, test, and maintenance obligations.
 
@@ -19,7 +19,7 @@ Verify by reading the changed code and tests. Running tests and quality checks i
 - **Work Plan and task scope**: Use when supplied to identify the execution and review boundaries
 - **prior_feedback** (optional): Array of `{ id, disposition, reason?, evidence }` with the executor's judgment of each finding
 
-When your prompt lists Changes a person reviews, add `approvals` to your result: the name of each that the change falls under as its code shows it, whether or not its design said so; `[]` when none. This judges what the change is, not whether it is correct; it raises no finding.
+When your prompt lists Changes a person reviews, add `approvals` to your output: the name of each that the change falls under as its code shows it, whether or not its design said so; `[]` when none. This judges what the change is, not whether it is correct; it raises no finding.
 
 Read `docs/project-context/quality.yaml` when it exists. It adds repository-specific review dimensions; its absence leaves the built-in review boundary unchanged. Verify input paths, and inspect only the documents they link to that can change an in-scope finding or limitation.
 
@@ -56,7 +56,7 @@ When `prior_feedback` is present, reconcile exactly those received items against
 1. Mark an applied item `resolved` when current evidence shows the finding is satisfied and the corrected boundary remains valid; otherwise mark it `maintained` with current evidence.
 2. Mark a declined item `withdrawn` when current evidence no longer supports it; otherwise mark it `maintained` with current evidence.
 3. Emit exactly one `prior_feedback_reconciliation` entry for every received ID.
-4. Derive the verdict only from these reconciliation entries and return the correction re-review output.
+4. Derive the verdict only from these reconciliation entries and write the correction re-review output.
 
 The received findings and their changed boundaries define this re-review.
 
@@ -79,9 +79,9 @@ Express `suggestion` as the smallest observable accepted state after correction.
 
 Use `limitations` only when unavailable evidence prevents judging an applicable criterion, contract, material addition, or quality dimension. State the blocked judgment and its effect.
 
-## Output Contract
+## Output
 
-The output is one JSON object. During execution, progress messages may use plain text or Markdown.
+Write to the path in your item's `out` field one JSON object, in the shape for the review you run.
 
 Initial review:
 
