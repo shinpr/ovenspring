@@ -8,7 +8,7 @@ You review one Design Doc per invocation.
 
 ## Execution Gate
 
-Before acting, map the preloaded skills to concrete rules for this task. Follow the applicable process below, advancing only when the current step's required evidence is present. Before returning, verify that the result satisfies those rules and the output requirements below.
+Before acting, map the preloaded skills to concrete rules for this task. Follow the applicable process below, advancing only when the current step's required evidence is present. Before finishing, verify that your work satisfies those rules and the requirements below.
 
 ## Inputs
 
@@ -41,14 +41,14 @@ Verify current external facts from authoritative sources only when an ADR select
 
 ### Design Doc
 
-- Total complexity covers every activated user decision, setting, mode, concept, output, persistent state, and implementation path, together with its UX, runtime, testing, documentation, and maintenance cost; compare only dimensions that differ between valid options.
+- Total complexity covers every activated user decision, setting, mode, concept, user-facing artifact, persistent state, and implementation path, together with its UX, runtime, testing, documentation, and maintenance cost; compare only dimensions that differ between valid options.
 - Each requirement maps to an adopted end-to-end flow or concrete verification evidence; exclusions are not implemented indirectly.
 - The Design Doc remains the complete implementation design and carries the flow, contracts, impact, and verification design; ADRs constrain selected technical questions.
 - Every premise that can change the Selected Design is resolved by current evidence before the owner passes the design. Risks contain only residual implementation uncertainty whose possible outcomes leave the Selected Design valid, with an executable in-scope verification or guard when needed.
 - Every supplied code/UI focus area has one evidence-preserving Fact Disposition row. This check protects existing behavior; it does not require disposition rows for unrelated discovered symbols.
 - The Selected Design delivers the outcome. Each added design surface resolves a current requirement, verified constraint, observed problem, the owner's decision, or evidence-backed material risk; lower-surface insufficiency and subtraction evidence show why the added complexity is necessary.
 - Applicable responsibility, integration points, interfaces, data/error contracts, state/persistence transitions, exact serialized field propagation, compatibility, data representation, security, and test boundaries supply the details required for implementation.
-- Behavior replacement or transformation has a representative output-comparison method covering applicable pipeline steps.
+- Behavior replacement or transformation has a representative comparison of identical-input behavior covering applicable pipeline steps.
 - Applicable standards and repository checks retain source evidence and adoption decisions.
 - Acceptance criteria and verification use the smallest representative boundary that proves the outcome, preserved behavior, and material failure boundaries. The early verification point is executable.
 - Each AC states observable behavior, and performance and exact-visual ACs carry the sourced requirement and reproducible proof required by the Acceptance Criteria section of `references/design-template.md` in the ovenspring-documentation-criteria skill.
@@ -65,7 +65,7 @@ Create an issue only when the artifact otherwise:
 - leaves a point for a later step, whatever it is called, that the owner's words do not defer, or fills the owner's part (Factory Rules, When the owner decides) with the author's reading; this issue is never omitted and never passes; or
 - commits downstream implementation to added design surface whose total complexity lacks current evidence and whose removal still satisfies the outcome, boundaries, and required proof.
 
-Every issue includes its governing `basis` and the observable `expectedEffect` of correction. Group observations that share one violated basis and one correction into one issue with related locations. Omit scope additions you would propose, optional hardening, extra Product Context, duplicate proof, stylistic completeness, and template-only omissions from the review result.
+Every issue includes its governing `basis` and the observable `expectedEffect` of correction. Group observations that share one violated basis and one correction into one issue with related locations. Omit scope additions you would propose, optional hardening, extra Product Context, duplicate proof, stylistic completeness, and template-only omissions from the output.
 
 For an unresolved decision-changing premise, state the exact premise, design effect, and observable evidence needed; set `requiredEvidence` to that exact observable fact. Use `null` for other issues. The owning designer chooses the correction route under its update-mode evidence gate.
 
@@ -83,7 +83,7 @@ The reviewer determines whether the document passes review.
 
 ## Output
 
-The output is exactly one JSON object:
+Write to the path in your item's `out` field one JSON object:
 
 ```json
 {

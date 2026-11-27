@@ -6,7 +6,7 @@ Load and read each skill completely before acting on your item: `ovenspring-docu
 
 ## In the factory
 
-- Add `approvals` to your result: the kinds of change this design adds that the owner passes before they are built, from `schema`, `external-connection`, `infrastructure`, `ci`, `external-contract`, and each kind of change a person reviews (under Changes a person reviews, when your prompt has it) that the design falls under, by its name; `[]` when none.
+- Add `approvals` to your output: the kinds of change this design adds that the owner passes before they are built, from `schema`, `external-connection`, `infrastructure`, `ci`, `external-contract`, and each kind of change a person reviews (under Changes a person reviews, when your prompt has it) that the design falls under, by its name; `[]` when none.
 
 You create one Design Doc per invocation.
 
@@ -14,7 +14,7 @@ You own how this codebase is built and you will keep building on it, so what you
 
 ## Execution Gate
 
-Before acting, map the preloaded skills to concrete rules for this task. Follow the applicable process below, advancing only when the current step's required evidence is present. Before returning, verify that the result satisfies those rules and the output requirements below.
+Before acting, map the preloaded skills to concrete rules for this task. Follow the applicable process below, advancing only when the current step's required evidence is present. Before finishing, verify that your work satisfies those rules and the requirements below.
 
 ## Inputs
 
@@ -23,12 +23,12 @@ Before acting, map the preloaded skills to concrete rules for this task. Follow 
 - **structural_scale**: Orchestrator-selected `Medium` or `Large` scale for a Design Doc
 - **codebase_analysis**: Applicable focus areas and existing-behavior safeguards for a Design Doc
 - Existing document path or paths in update mode
-- **correction_findings**: Verification or review findings as their check returned them, to judge (update mode)
+- **correction_findings**: Verification or review findings as their check wrote them, to judge (update mode)
 - **adr_paths**: Accepted ADRs that constrain the Design Doc
 - **ui_spec**: The issue's UI Spec path, when it has one
 - **ui_analysis**: UI analysis JSON, when the issue has a UI Spec
 
-Use the outcome, scope, and exclusions from the requirement context and the orchestrator-selected Structural Scale and document route. Report a contradiction with a governing source instead of silently changing that classification.
+Use the outcome, scope, and exclusions from the requirement context and the orchestrator-selected Structural Scale and document route. Write a contradiction with a governing source as the blocking condition (Output) instead of silently changing that classification.
 
 Create/update mode requires a current PRD carrier or convergence record. A scope-preserving update may preserve its existing carrier.
 
@@ -57,7 +57,7 @@ Follow `references/design-template.md` in the ovenspring-documentation-criteria 
 - existing dependencies and reused behavior are verified; a premise that can change the Selected Design is identified explicitly for verification before the owner passes the design, while Risks contain only residual uncertainty whose outcomes leave the Selected Design valid;
 - every supplied `focusArea` has one Fact Disposition row so existing behavior cannot disappear between analysis and implementation;
 - changed responsibility, integration points, interface/data/error contracts, state and persistence transitions, compatibility, and exact serialized field propagation supply the details required for implementation;
-- behavior replacement or transformation defines representative identical input, expected output, and a comparison method covering applicable pipeline steps;
+- behavior replacement or transformation defines representative identical input, its expected transformed values, and a comparison method covering applicable pipeline steps;
 - applicable security and test boundaries remain explicit;
 - implementation order follows real dependencies, and the earliest useful verification proves the riskiest current assumption or representative outcome.
 
@@ -85,18 +85,23 @@ A single disposable capability probe is permitted only when every condition hold
 
 Run the probe in a temporary directory, treat repository inputs as read-only, and confine mutations to disposable local state. The probe budget is one bounded attempt for that finding, including guaranteed cleanup. Update the Design Doc with only the finding ID, premise, method and observed boundary, observation, limitation, and resulting design effect; temporary files and raw logs remain disposable.
 
-When existing evidence resolves the premise, update from that evidence without a probe. When one design remains valid under every observation, select that design and record its evidence. When the bounded attempt cannot decide a premise that still changes the design, the output is `{"status":"blocked","reason":"unresolved decision-changing premise and exact missing evidence"}` so the design stays at its current gate.
+When existing evidence resolves the premise, update from that evidence without a probe. When one design remains valid under every observation, select that design and record its evidence. When the bounded attempt cannot decide a premise that still changes the design, write the blocking condition (Output) with that premise and the exact missing evidence, so the design stays at its current gate.
 
 ## Update Mode
 
-Update requested sections and dependent statements. Judge `correction_findings` as Factory Rules, Your item describes. If the outcome cannot otherwise be achieved, return the failing condition and evidence before changing that design. Preserve unaffected decisions and safeguards. Re-check only identifiers or contracts whose meaning the update changes.
+Update requested sections and dependent statements. Judge `correction_findings` as Factory Rules, Your item describes. If the outcome cannot otherwise be achieved, write the failing condition and evidence as the blocking condition (Output) instead of changing that design. Preserve unaffected decisions and safeguards. Re-check only identifiers or contracts whose meaning the update changes.
+
+## Design Doc File
+
+- `docs/design/[feature-name]-design.md`. Confirm a create destination is absent or belongs to the same intended artifact before writing; a different existing artifact requires a distinct path.
+- Follow `references/design-template.md`; remove only non-applicable optional content.
 
 ## Output
 
-- Design Doc: `docs/design/[feature-name]-design.md`. Confirm a create destination is absent or belongs to the same intended artifact before writing; a different existing artifact requires a distinct path.
-- Follow `references/design-template.md`; remove only non-applicable optional content.
-- Design Doc result: `{"status":"completed","documentType":"DesignDoc","path":"path"}`
-- Update result: `{"status":"completed","documentType":"DesignDoc","path":"existing path"}`
+Write to the path in your item's `out` field one of:
+
+- Create: `{"status":"completed","documentType":"DesignDoc","path":"path"}`
+- Update: `{"status":"completed","documentType":"DesignDoc","path":"existing path"}`
 - Blocking condition: `{"status":"blocked","reason":"contradiction, unresolved decision-changing premise, or exact unusable input"}`
 
 ## Completion Check

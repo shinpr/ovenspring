@@ -11,7 +11,7 @@ Load and read each skill completely before acting on your item: `ovenspring-ai-d
 - The issue as written (the snapshot your item names) is the user's wording: it supplies requirement-analyzer's `requirements` and `context`, and it is the wording the orchestrator retains. The owner's answers your item names are hearing answers.
 - In the preparation message, lead with the scope from the convergence skill’s Scope Confirmation, then ask what the owner must decide and name any preparation the issue and initial repository check reveal. Put decision evidence in the details. Scope alone needs no reply. For an owner decision first found during work, set `decision` to `ask` with the question in `question`.
 - When the evidence shows the code already delivers the outcome, set `decision` to `close` and give that evidence in `evidence`; the factory comments it on the issue and closes it. Otherwise `decision` is `proceed`.
-- Write to the path in your item's `out` field one JSON object: requirement-analyzer's result (`scopeEvidence`, `costEvidence`), the `convergence` record (the requirement-convergence skill's fields: `outcome`, `requirements`, `nonGoals`, `cost`, each with its readiness; `outcome` itself is the outcome's text, a string, and `nonGoals` an array of the exclusions' texts, each with its readiness in a field beside it), `structuralScale` (`small`, `medium`, `large`, or `unresolved` while the Small Evidence Gate below is unresolved), `decision`, `question` or `evidence` when the decision needs it, and `prdUpdate`: for a Small or Medium change that alters behavior an existing PRD in the repository states (Scale Determination below), that PRD's path, so it is updated and passed by the owner before the work goes on; omit it otherwise.
+- Write to the path in your item's `out` field one JSON object: requirement-analyzer's evidence (`scopeEvidence`, `costEvidence`), the `convergence` record (the requirement-convergence skill's fields: `outcome`, `requirements`, `nonGoals`, `cost`, each with its readiness; `outcome` itself is the outcome's text, a string, and `nonGoals` an array of the exclusions' texts, each with its readiness in a field beside it), `structuralScale` (`small`, `medium`, `large`, or `unresolved` while the Small Evidence Gate below is unresolved), `decision`, `question` or `evidence` when the decision needs it, and `prdUpdate`: for a Small or Medium change that alters behavior an existing PRD in the repository states (Scale Determination below), that PRD's path, so it is updated and passed by the owner before the work goes on; omit it otherwise.
 
 ## requirement-analyzer
 
@@ -19,14 +19,14 @@ You collect repository evidence for requirement confirmation and workflow routin
 
 ## Execution Gate
 
-Before acting, map the preloaded skills to concrete rules for this task. Follow the applicable process below, advancing only when the current step's required evidence is present. Before returning, verify that the result satisfies those rules and the output requirements below.
+Before acting, map the preloaded skills to concrete rules for this task. Follow the applicable process below, advancing only when the current step's required evidence is present. Before finishing, verify that your work satisfies those rules and the requirements below.
 
 ## Inputs
 
 - **requirements**: The shortest verbatim user wording of the problem or the desired user-visible or operational outcome, or an orchestrator working summary when no such wording exists
 - **context**: Optional — the shortest user reason needed to interpret the outcome, an essential environmental constraint, recent changes, related artifacts, or hearing answers
 
-The outcome and its reason select the responsibility to investigate; an environmental constraint affects feasibility or cost. The remaining requirement detail stays with the orchestrator for comparison after this result returns.
+The outcome and its reason select the responsibility to investigate; an environmental constraint affects feasibility or cost. The remaining requirement detail stays with the orchestrator for comparison in its judgment below.
 
 ## Process
 
@@ -86,7 +86,7 @@ Build and judge the `convergence` record with the ovenspring-requirement-converg
 
 ### Small Evidence Gate
 
-Classify Small when `scopeEvidence.executionRoute.status` is `evident`, that route remains inside one responsibility, and every `costEvidence.unknowns` item is proven invariant to boundaries, persistence/shared contracts, and potentially durable choices. Positive route evidence identifies the supported route; an empty alternatives list supplies supporting context. When this evidence leaves the gate unresolved, set `structuralScale` to `unresolved`: the codebase analysis runs next and the scope check assigns the scale from its result.
+Classify Small when `scopeEvidence.executionRoute.status` is `evident`, that route remains inside one responsibility, and every `costEvidence.unknowns` item is proven invariant to boundaries, persistence/shared contracts, and potentially durable choices. Positive route evidence identifies the supported route; an empty alternatives list supplies supporting context. When this evidence leaves the gate unresolved, set `structuralScale` to `unresolved`: the codebase analysis runs next and the scope check assigns the scale from its output.
 
 ### Scale Determination
 

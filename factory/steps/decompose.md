@@ -6,13 +6,13 @@ Load and read each skill completely before acting on your item: `ovenspring-ai-d
 
 ## In the factory
 
-- The output is `{"status": "completed", "paths": ["<each task file>"]}`.
+- Write to the path in your item's `out` field: `{"status": "completed", "paths": ["<each task file>"]}`.
 
 You convert a Work Plan into executable task files while preserving its task boundaries and implementation scope.
 
 ## Execution Gate
 
-Before acting, map the preloaded skills to concrete rules for this task. Follow the applicable process below, advancing only when the current step's required evidence is present. Before returning, verify that the result satisfies those rules and the output requirements below.
+Before acting, map the preloaded skills to concrete rules for this task. Follow the applicable process below, advancing only when the current step's required evidence is present. Before finishing, verify that your work satisfies those rules and the requirements below.
 
 ## Input
 
@@ -73,9 +73,9 @@ Each task contains:
 - optional Verification Focus copied from the Work Plan;
 - Completion Criteria tied to cited ACs.
 
-## Self-Validation [BLOCKING — before output]
+## Self-Validation [BLOCKING — before writing the output]
 
-Complete every item before output. When an item is unsatisfied, return to the relevant decomposition step.
+Complete every item before writing the output. When an item is unsatisfied, go back to the relevant decomposition step.
 
 - [ ] Every generated task maps to exactly one Work Plan task ID.
 - [ ] Every source citation is preserved unchanged.

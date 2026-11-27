@@ -14,18 +14,18 @@ You own how this codebase is built and you will keep building on it, so what you
 
 ## Execution Gate
 
-Before acting, map the preloaded skills to concrete rules for this task. Follow the applicable process below, advancing only when the current step's required evidence is present. Before returning, verify that the result satisfies those rules and the output requirements below.
+Before acting, map the preloaded skills to concrete rules for this task. Follow the applicable process below, advancing only when the current step's required evidence is present. Before finishing, verify that your work satisfies those rules and the requirements below.
 
 ## Inputs
 
 - **Operation Mode**: `create` (default) or `update`
 - **requirement_context**: Exact PRD path, or the orchestrator's unchanged convergence record only when there is no PRD
-- **codebase_analysis**: The codebase analysis result; its `decisionMaterials.candidateDecisionPoints` are the `decision_materials` below
+- **codebase_analysis**: The codebase analysis output; its `decisionMaterials.candidateDecisionPoints` are the `decision_materials` below
 - **decision_points**: Orchestrator-selected decision points for an ADR batch, copied unchanged
 - Existing document path or paths in update mode
-- **correction_findings**: Verification or review findings as their check returned them, to judge (update mode)
+- **correction_findings**: Verification or review findings as their check wrote them, to judge (update mode)
 
-Use the outcome, scope, and exclusions from the requirement context and the orchestrator-selected Structural Scale and document route. Report a contradiction with a governing source instead of silently changing that classification.
+Use the outcome, scope, and exclusions from the requirement context and the orchestrator-selected Structural Scale and document route. Write a contradiction with a governing source as the blocking condition (Output) instead of silently changing that classification.
 
 Create/update mode requires a current PRD carrier or convergence record. A scope-preserving update may preserve its existing carrier.
 
@@ -39,9 +39,9 @@ Inspect only gaps that can change reuse, option validity, a selected decision, a
 
 ## ADR Batch — Create Mode
 
-Create one ADR per supplied decision point and finish the complete batch before returning. Follow `references/adr-template.md` in the ovenspring-documentation-criteria skill. If evidence no longer supports the scope check's Choice or Durability filter result, return the contradiction.
+Create one ADR per supplied decision point and finish the complete batch before writing the output. Follow `references/adr-template.md` in the ovenspring-documentation-criteria skill. If evidence no longer supports the scope check's Choice or Durability filter result, write the contradiction as the blocking condition (Output).
 
-Before the first ADR write, Glob `docs/adr/ADR-[0-9][0-9][0-9][0-9]-*.md`, parse valid numeric prefixes, and assign contiguous numbers from `max + 1` in the supplied `decision_points` order. Use `0001` when no numbered ADR exists. Make every assigned path unique, confirm it is still absent immediately before its write, and stop with a blocking collision instead of overwriting. Use the assigned path order in the result.
+Before the first ADR write, Glob `docs/adr/ADR-[0-9][0-9][0-9][0-9]-*.md`, parse valid numeric prefixes, and assign contiguous numbers from `max + 1` in the supplied `decision_points` order. Use `0001` when no numbered ADR exists. Make every assigned path unique, confirm it is still absent immediately before its write, and stop with a blocking collision instead of overwriting. Use the assigned path order in the output.
 
 For each ADR:
 
@@ -53,14 +53,19 @@ For each ADR:
 
 ## Update Mode
 
-Update requested sections and dependent statements. Judge `correction_findings` as Factory Rules, Your item describes. If the outcome cannot otherwise be achieved, return the failing condition and evidence before changing that design. Preserve unaffected decisions and safeguards. Re-check only identifiers or contracts whose meaning the update changes. An update operates on one existing ADR.
+Update requested sections and dependent statements. Judge `correction_findings` as Factory Rules, Your item describes. If the outcome cannot otherwise be achieved, write the failing condition and evidence as the blocking condition (Output) instead of changing that design. Preserve unaffected decisions and safeguards. Re-check only identifiers or contracts whose meaning the update changes. An update operates on one existing ADR.
 
-## Output
+## ADR Files
 
 - ADR batch: contiguous `docs/adr/ADR-[4-digit number]-[title].md` paths allocated by the create-mode rule above
 - Follow `references/adr-template.md`; remove only non-applicable optional content.
-- ADR batch result: `{"status":"completed","documentType":"ADRBatch","paths":["path"]}`
-- Update result: `{"status":"completed","documentType":"ADR","path":"existing path"}`
+
+## Output
+
+Write to the path in your item's `out` field one of:
+
+- ADR batch: `{"status":"completed","documentType":"ADRBatch","paths":["path"]}`
+- Update: `{"status":"completed","documentType":"ADR","path":"existing path"}`
 - Blocking condition: `{"status":"blocked","reason":"contradiction or exact unusable input"}`
 
 ## Completion Check

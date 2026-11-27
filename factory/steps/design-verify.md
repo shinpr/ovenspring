@@ -12,7 +12,7 @@ Your discrepancies are evidence for the Design Doc's author, who judges them. Th
 
 - **doc_type**: `design-doc`
 - **document_path**: Exact readable document path
-- **prior_feedback**: Optional previous complete result, dispositions, and correction diff or paths for a bounded rerun
+- **prior_feedback**: Optional previous complete output, dispositions, and correction diff or paths for a bounded rerun
 
 Set `summary.status` to `"blocked"` with `blockingReason` when the document type is unsupported or the authoritative document is missing or unreadable.
 
@@ -51,7 +51,7 @@ Set `requiredEvidence` to the exact observable fact needed to decide an `unverif
 
 ## Output
 
-The output is exactly one JSON object:
+Write to the path in your item's `out` field one JSON object:
 
 ```json
 {
