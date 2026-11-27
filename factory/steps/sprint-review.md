@@ -37,7 +37,7 @@ When a problem's cause lies in what only the owner changes (the factory itself: 
 
 Put each agreement in the file of the roles it concerns: `common.md` for everyone; `lead.md`, `executor.md`, `reviewer.md`, `analyzer.md` for one role; and each knowledge file by its path under the knowledge folder (a folder per area when it helps). Give each changed file's full new content, written whole from what remains; give a file left with nothing an empty content, which deletes it; leave unchanged files out.
 
-Your output is the only change; leave the worktree as it is.
+Leave the product worktree unchanged.
 
 ## Output
 
