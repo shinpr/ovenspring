@@ -365,7 +365,7 @@ onHold: boolean,
 since: string | null, wait: Wait | null, ended: Ending | null, endedAt: string | null, };
 
 /**
- * What a preparation turn came to, read from its output once it ended without failing.
+ * What a preparation turn came to, read from its item as the daemon took it.
  */
 export type Preparation = "unsettled" | "nothing-to-ask" | "told" | "asked";
 
