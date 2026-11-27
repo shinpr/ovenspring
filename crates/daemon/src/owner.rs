@@ -70,6 +70,16 @@ pub struct DecisionRecord {
     /// For a question: the step that asked it.
     #[serde(default)]
     pub asked_by: Option<Step>,
+    /// For a sprint proposal: what the plan it posts proposes, fixed when the decision is made.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub proposal: Option<Proposal>,
+}
+
+/// A sprint proposal's summary: how many issues the plan proposes and its purpose, masked.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Proposal {
+    pub issues: usize,
+    pub purpose: String,
 }
 
 /// An owner's approval of a decision, kept for the audit trail and the gate.
@@ -84,6 +94,24 @@ pub struct ApprovalRecord {
     pub at: String,
     /// The approved message.
     pub permalink: Option<String>,
+}
+
+/// The `decision` line of a decision Slack accepted: its identity, the sprint of a decision about
+/// no issue, and a sprint proposal's summary.
+fn posted_line(d: &DecisionRecord) -> serde_json::Value {
+    let mut line = serde_json::Map::new();
+    line.insert("event".into(), json!("decision"));
+    line.insert("id".into(), json!(d.id));
+    line.insert("kind".into(), json!(d.kind));
+    line.insert("issue".into(), json!(d.issue));
+    if let Some(sprint) = d.sprint.as_deref().filter(|s| !s.is_empty()) {
+        line.insert("sprint".into(), json!(sprint));
+    }
+    line.insert("posted".into(), json!(true));
+    if let Some(proposal) = &d.proposal {
+        line.insert("proposal".into(), json!(proposal));
+    }
+    serde_json::Value::Object(line)
 }
 
 pub(crate) fn decision_path(id: &str) -> String {
@@ -139,13 +167,13 @@ impl Daemon {
             answer: None,
             procedure: None,
             asked_by: None,
+            proposal: None,
         })
     }
 
     /// Records a new decision and sends it; a send that fails is retried by `deliver_decisions`.
     pub(crate) fn decide(&self, d: DecisionRecord) -> Result<(), DaemonError> {
         self.save_decision(&d)?;
-        self.event(&json!({"event": "decision", "id": d.id, "kind": d.kind, "issue": d.issue}))?;
         self.send_decision(d)
     }
 
@@ -167,6 +195,9 @@ impl Daemon {
                 d.status = DecisionStatus::Pending;
                 d.message = Some(m.clone());
                 self.save_decision(&d)?;
+                // The follow-ups run even when this line cannot be appended; its error is
+                // returned after them.
+                let posted = self.event(&posted_line(&d));
                 if !details.is_empty()
                     && let Err(e) = self.services.channel.reply(&m, details)
                 {
@@ -184,7 +215,7 @@ impl Daemon {
                 if let Err(e) = attached {
                     self.event(&json!({"event": "channel-error", "decision": d.id, "error": e}))?;
                 }
-                Ok(())
+                posted
             }
             Err(e) => {
                 self.event(&json!({"event": "channel-error", "decision": d.id, "error": e.0}))
@@ -438,6 +469,7 @@ impl Daemon {
             issue: Some(key.into()),
             text: format!("{key}: {}\n\n{message}", record.title),
             preview: false,
+            marker: None,
         };
         if let Err(e) = self.services.channel.post_notice(&notice) {
             self.event(&json!({"event": "channel-error", "issue": key, "error": e.0}))?;
@@ -480,6 +512,7 @@ impl Daemon {
                 record.pr_url.as_deref().unwrap_or_default()
             ),
             preview: self.config.app.start.is_some(),
+            marker: None,
         };
         if let Err(e) = self.services.channel.post_notice(&notice) {
             self.event(&json!({"event": "channel-error", "issue": key, "error": e.0}))?;
@@ -906,7 +939,7 @@ impl Daemon {
                 } else {
                     args
                 };
-                self.pause(reason)?;
+                self.pause(reason, Some(user))?;
                 "Paused. Agents already at work finish their step; nothing new starts until you mention me with `!resume`.".to_owned()
             }
             "resume" => {
@@ -1000,6 +1033,7 @@ impl Daemon {
             issue: None,
             text: format!("Still waiting for you:\n{}", lines.join("\n")),
             preview: false,
+            marker: None,
         };
         if let Err(e) = self.services.channel.post_notice(&notice) {
             self.event(&json!({"event": "channel-error", "error": e.0}))?;
@@ -1020,11 +1054,9 @@ impl Daemon {
         let notice = Notice {
             kind: NoticeKind::Paused,
             issue: None,
-            text: format!(
-                "Oven Spring paused because {}.\nAgents already at work finish their step; nothing new starts. To start again, mention me with `!resume`.",
-                reason.trim()
-            ),
+            text: pause_text(&reason),
             preview: false,
+            marker: None,
         };
         match self.services.channel.post_notice(&notice) {
             Ok(_) => {
@@ -1034,6 +1066,14 @@ impl Daemon {
             Err(e) => self.event(&json!({"event": "channel-error", "error": e.0})),
         }
     }
+}
+
+/// M-08: why the factory paused, and how to start it again.
+pub(crate) fn pause_text(reason: &str) -> String {
+    format!(
+        "Oven Spring paused because {}.\nAgents already at work finish their step; nothing new starts. To start again, mention me with `!resume`.",
+        reason.trim()
+    )
 }
 
 /// A `!command` as the daemon handles it.

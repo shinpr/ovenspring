@@ -2,6 +2,7 @@
 // built from the settings as saved with this row's change.
 
 import { Fragment, useState } from 'react'
+import { Link } from 'react-router'
 import type {
   Approval,
   Config,
@@ -347,12 +348,60 @@ function OwnersRow({ settings, save }: SectionProps) {
   )
 }
 
+function ErrorNoticesRow({ settings, save }: SectionProps) {
+  const saved = settings.config.notices.errors
+  const [errors, setErrors] = useState(saved)
+  return (
+    <SettingRow
+      name="Error notices"
+      applies="Applies at once."
+      what="A message in Slack when an error starts and when it clears."
+      summary={
+        saved ? (
+          <b>On</b>
+        ) : (
+          <>
+            <b>Off</b>. Errors still show on <Link to="/events">Events</Link>.
+          </>
+        )
+      }
+      onOpen={() => setErrors(saved)}
+      onSave={() => save('notices', { errors })}
+    >
+      {() => (
+        <RadioGroup
+          legend="Error notices"
+          value={errors ? 'on' : 'off'}
+          options={[
+            {
+              value: 'on',
+              label: (
+                <>
+                  <b>On</b> (default)
+                </>
+              ),
+              hint: 'One message when an error starts and one when it clears, however often it repeats in between.',
+            },
+            {
+              value: 'off',
+              label: <b>Off</b>,
+              hint: 'No messages about errors. The Events page still shows every error.',
+            },
+          ]}
+          onChange={(value) => setErrors(value === 'on')}
+        />
+      )}
+    </SettingRow>
+  )
+}
+
 export function Connections(props: SectionProps) {
   return (
     <>
       <GitHubRow {...props} />
       <TrackerRow {...props} />
       <SlackRow {...props} />
+      <ErrorNoticesRow {...props} />
       <OwnersRow {...props} />
     </>
   )

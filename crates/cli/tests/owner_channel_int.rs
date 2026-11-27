@@ -27,6 +27,7 @@ use ovenspring_integrations::github::CommentKind;
 use ovenspring_integrations::github::Permission;
 use ovenspring_integrations::tracker::TrackerIssue;
 use serde_json::{Map, Value, json};
+use support::dashboard::Dashboard;
 use support::fake_github::{FakeGitHub, Planned};
 use support::recording::RecordingTracker;
 use support::scripts::{always_passing, implement_run, requiring_test, stage, straight};
@@ -52,7 +53,7 @@ fn slack_services(
     Services {
         github: Some(gh),
         channel: slack,
-        tracker: Some(tracker),
+        tracker: Some(support::linear(tracker)),
         secrets: Vec::new(),
     }
 }
@@ -264,6 +265,77 @@ fn merge_approval_counts_only_from_an_owner_for_the_sha_shown_and_is_rerequested
     assert_eq!(merges(&gh), [format!("merge {pr} {sha_b}")]);
 }
 
+/// A credential the daemon and the dashboard hold, planted in the proposal's purpose.
+const HELD: &str = "pk-held-7f3a9c2e41";
+
+/// The plan proposes ACME-123, ACME-124 and ACME-125 toward `purpose`; each issue's requirements
+/// run hangs, so the sprint holds still once approved.
+fn three_issue_proposal(env: &Env, purpose: &str) -> (Arc<FakeGitHub>, Arc<RecordingTracker>) {
+    let keys = ["ACME-123", "ACME-124", "ACME-125"];
+    env.script_agents(&json!({
+        "sprint-plan": [{"output": {"purpose": purpose, "key_results": ["Saved addresses fill in"],
+                         "issues": keys.map(|k| json!({"key": k, "depends_on": []})),
+                         "message": format!("Sprint: {purpose}")}}],
+        "requirements": [{"hang": true}]
+    }));
+    let tracker = Arc::new(RecordingTracker::default());
+    *tracker.issues.lock().unwrap() = keys
+        .map(|key| TrackerIssue {
+            key: key.into(),
+            title: format!("Saved addresses, {key}"),
+            body: "Fill in the saved address.".into(),
+            url: format!("https://linear.app/acme/issue/{key}"),
+            state: "Todo".into(),
+            ..TrackerIssue::default()
+        })
+        .to_vec();
+    (Arc::new(always_passing(env, requiring_test())), tracker)
+}
+
+/// The `decision` lines Events lists as posted.
+fn posted_decisions(dash: &Dashboard) -> Vec<Value> {
+    dash.get("/api/v1/events?from=0").json()["lines"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|l| l["kind"] == "decision" && l["fields"]["posted"] == true)
+        .cloned()
+        .collect()
+}
+
+/// One posted line for decision `id`, a pass after its post: the current sprint as its subject, the
+/// plan's three issues, and the purpose masked there, in the saved decision and in the log.
+fn assert_events_read_the_proposal_once(env: &Env, d: &Daemon, dash: &Dashboard, id: &str) {
+    let sprint = d.sprint().unwrap().unwrap().id;
+    let masked = "Returning customers check out without retyping their address ([masked])";
+    let lines = posted_decisions(dash);
+    assert_eq!(
+        lines.len(),
+        1,
+        "one post, still one a pass later: {lines:?}"
+    );
+    assert_eq!(
+        lines[0]["fields"],
+        json!({"id": id, "kind": "sprint", "issue": null, "sprint": sprint, "posted": true,
+               "proposal": {"issues": 3, "purpose": masked}})
+    );
+    assert_eq!(lines[0]["sprint"]["id"], json!(sprint));
+    assert_eq!(
+        d.decisions().unwrap()[0]
+            .proposal
+            .as_ref()
+            .map(|p| p.purpose.as_str()),
+        Some(masked)
+    );
+    assert!(
+        env.events()
+            .iter()
+            .filter(|e| e["event"] == "decision")
+            .all(|e| !e.to_string().contains(HELD)),
+        "the log's decision lines hold no credential"
+    );
+}
+
 // AC: docs/design/owner-interface-design.md § Decisions and approvals: "A decision is written
 //     `unsent`, with its content, before anything is posted. ... Posting fails -> it stays `unsent`
 //     and is retried on every loop until delivered. ... An action or reply resolves a decision by the
@@ -275,34 +347,34 @@ fn merge_approval_counts_only_from_an_owner_for_the_sha_shown_and_is_rerequested
 // Behavior: a sprint proposal decision is requested while the stub fails `chat.postMessage` -> the
 //     daemon instance is dropped -> the stub accepts posts again and a new instance starts on the same
 //     state directory -> the proposal is posted once -> U0123456789 presses Approve once.
+//     Events (docs/design/events-and-error-notices-design.md § Acceptance Criteria > Events page;
+//     PRD AC-076, AC-047): "When Slack accepts a sprint proposal through the decision delivery
+//     path, the system shall show which sprint it concerned, how many issues it proposed and its
+//     purpose. While the decision is unsent, the system shall show no successful proposal post for
+//     it." The plan proposes three issues and its purpose holds a credential the daemon holds:
+//     GET /api/v1/events on the real server lists no posted `decision` line while Unsent, then
+//     exactly one, still one after more passes, with the sprint as its subject, the count and the
+//     purpose masked in the saved decision, the log and the response.
 // @lane: integration
-// @dependency: Slack channel, decisions and approvals store, daemon
+// @dependency: Slack channel, decisions and approvals store, daemon, dashboard server
 #[test]
 fn unsent_decision_is_delivered_after_restart_and_resolved_by_one_answer() {
     let env = Env::new();
     env.configure(CONFIG);
     env.add_branch("develop");
-    let purpose = "Returning customers check out without retyping their address";
-    env.script_agents(&json!({
-        "sprint-plan": [{"output": {"purpose": purpose, "key_results": ["Saved addresses fill in"],
-                         "issues": [{"key": "ACME-123", "depends_on": []}], "message": format!("Sprint: {purpose}")}}],
-        "requirements": [{"hang": true}]
-    }));
-    let gh = Arc::new(always_passing(&env, requiring_test()));
-    let tracker = Arc::new(RecordingTracker::default());
-    *tracker.issues.lock().unwrap() = vec![TrackerIssue {
-        key: "ACME-123".into(),
-        title: "Saved addresses".into(),
-        body: "Fill in the saved address.".into(),
-        url: "https://linear.app/acme/issue/ACME-123".into(),
-        state: "Todo".into(),
-        ..TrackerIssue::default()
-    }];
+    let purpose = format!("Returning customers check out without retyping their address ({HELD})");
+    let (gh, tracker) = three_issue_proposal(&env, &purpose);
+    let holding = |services: Services| Services {
+        secrets: vec![HELD.to_owned()],
+        ..services
+    };
+    let dash = Dashboard::start(&env);
+    dash.hold(HELD);
     let stub = SlackStub::default();
     stub.fail("chat.postMessage", true);
     let mut d = daemon(
         &env,
-        slack_services(gh.clone(), stub.channel(), tracker.clone()),
+        holding(slack_services(gh.clone(), stub.channel(), tracker.clone())),
     );
     d.set_goal("Make checkout reliable for returning customers")
         .unwrap();
@@ -320,12 +392,17 @@ fn unsent_decision_is_delivered_after_restart_and_resolved_by_one_answer() {
     ticks(&mut d, 3);
     let unsent = d.decisions().unwrap().remove(0);
     assert_eq!(unsent.status, DecisionStatus::Unsent);
-    assert!(unsent.text.contains(purpose));
+    assert!(unsent.text.contains(&purpose));
+    assert_eq!(
+        posted_decisions(&dash),
+        Vec::<Value>::new(),
+        "nothing posted while Unsent"
+    );
     drop(d);
 
     stub.fail("chat.postMessage", false);
     let slack = stub.channel();
-    let mut d = daemon(&env, slack_services(gh, slack.clone(), tracker));
+    let mut d = daemon(&env, holding(slack_services(gh, slack.clone(), tracker)));
     d.recover().unwrap();
     run_until(
         &mut d,
@@ -333,6 +410,8 @@ fn unsent_decision_is_delivered_after_restart_and_resolved_by_one_answer() {
         |_| {},
         |d| d.decisions().unwrap()[0].status == DecisionStatus::Pending,
     );
+    ticks(&mut d, 2);
+    assert_events_read_the_proposal_once(&env, &d, &dash, &unsent.id);
     let posted: Vec<Value> = stub
         .posted()
         .into_iter()
@@ -424,6 +503,17 @@ fn commands_from_owners_through_a_mention_take_effect_and_nothing_else_does() {
     );
     ticks(&mut d, 2);
     assert!(halt.exists(), "owner !pause");
+    let paused: Vec<Value> = env
+        .events()
+        .into_iter()
+        .filter(|e| e["event"] == "paused")
+        .collect();
+    assert_eq!(paused.len(), 1);
+    assert_eq!(
+        (&paused[0]["reason"], &paused[0]["user"]),
+        (&json!("the release is today"), &json!(OWNER)),
+        "the paused line names the owner who sent it and their words"
+    );
     d.begin_issue("ACME-123", "Export", vec![]).unwrap();
     ticks(&mut d, 3);
     assert_eq!(env.records(), [] as [Value; 0], "no launch while paused");
@@ -636,6 +726,49 @@ fn hold_keeps_the_merge_for_the_sprint_review() {
     ));
 }
 
+/// What each `closed-on-tracker` event of ACME-125 records of the close.
+fn closed_on_tracker(env: &Env) -> Vec<Value> {
+    env.events()
+        .into_iter()
+        .filter(|e| e["event"] == "closed-on-tracker" && e["issue"] == "ACME-125")
+        .map(|e| json!({"state": e["state"], "tracker": e["tracker"]}))
+        .collect()
+}
+
+// AC: UI Spec Vocabulary "Events", closed on the tracker: "Canceled on <Tracker>." names the
+//     tracker the event records. The daemon reloads its configuration at the start of a pass and
+//     rebuilds its tracker client only before the next one.
+// Behavior: ACME-125's merge is held -> the configuration switches the tracker to GitHub Issues
+//     and the owner cancels ACME-125 -> the pass that reloads the configuration takes the cancel
+//     through the client still connected to Linear.
+// @lane: integration
+// @dependency: dashboard cancel request, daemon (`reload_config`, `take_cancels`), RecordingTracker
+#[test]
+fn a_cancel_taken_as_the_tracker_setting_changes_names_the_tracker_that_closed_it() {
+    let env = Env::new();
+    let tracker = Arc::new(RecordingTracker::default());
+    let (mut d, _, _, _) = held_merge_told(&env, "", Map::new(), tracker.clone());
+    let config = env.repo.join(".ovenspring/config.toml");
+    let text = std::fs::read_to_string(&config).unwrap();
+    std::fs::write(
+        &config,
+        text.replacen("kind = \"linear\"", "kind = \"github\"", 1),
+    )
+    .unwrap();
+
+    ovenspring_daemon::records::request_cancel(d.store(), "ACME-125", "Not needed.").unwrap();
+    d.tick().unwrap();
+
+    assert_eq!(
+        d.config().tracker.kind,
+        ovenspring_core::config::TrackerKind::Github
+    );
+    assert_eq!(
+        closed_on_tracker(&env),
+        [json!({"state": "canceled", "tracker": "linear"})]
+    );
+}
+
 fn tracker_said(tracker: &RecordingTracker, key: &str) -> Vec<String> {
     tracker
         .calls()
@@ -682,7 +815,12 @@ fn a_cancel_from_the_dashboard_ends_a_held_issue_and_settles_its_merge_request()
             "comment: Canceled by the owner: The index moves to the billing service.",
             "state: Canceled"
         ]
-    ); // The issue page says the owner canceled it, in their words.
+    );
+    assert_eq!(
+        closed_on_tracker(&env),
+        [json!({"state": "canceled", "tracker": "linear"})]
+    );
+    // The issue page says the owner canceled it, in their words.
     let detail = ovenspring_daemon::history::issue_detail(d.store(), "ACME-125")
         .unwrap()
         .unwrap();
@@ -1054,7 +1192,7 @@ fn one_owner_event_that_fails_does_not_drop_the_others_taken_in_with_it() {
         Services {
             github: Some(Arc::new(always_passing(&env, requiring_test()))),
             channel: channel.clone(),
-            tracker: Some(Arc::new(RecordingTracker::default())),
+            tracker: Some(support::linear(Arc::new(RecordingTracker::default()))),
             secrets: Vec::new(),
         },
     );

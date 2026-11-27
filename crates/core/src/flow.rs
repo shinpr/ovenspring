@@ -528,6 +528,11 @@ pub enum Action {
     ReportStopped,
     /// Ask the owner to approve the lead's recovery procedure.
     RequestRecovery,
+    /// Record that review round `number` completed: its findings go to correction, or it
+    /// converged.
+    RecordReviewRound {
+        number: u32,
+    },
 }
 
 /// The limits that change the flow; `None` means no limit (the default).
@@ -1399,17 +1404,20 @@ fn round_progress(s: &mut IssueState) -> Vec<Action> {
     if let Some(step) = s.round.stuck.take() {
         return step_failed(s, step);
     }
+    let ended = Action::RecordReviewRound {
+        number: s.round.number.max(1),
+    };
     if !s.round.findings.is_empty() {
-        return run(s, Step::ReviewResponse);
+        return [vec![ended], run(s, Step::ReviewResponse)].concat();
     }
     if !s.round.maintained.is_empty() {
         s.round.kept += 1;
         if s.round.kept >= 2 {
             return step_failed(s, Step::CodeReview);
         }
-        return run(s, Step::ReviewResponse);
+        return [vec![ended], run(s, Step::ReviewResponse)].concat();
     }
-    round_converged(s)
+    [vec![ended], round_converged(s)].concat()
 }
 
 fn round_converged(s: &mut IssueState) -> Vec<Action> {
@@ -1752,6 +1760,7 @@ mod tests {
                     None => f.step.to_string(),
                 },
                 Action::Commit { after } => format!("commit after {after}"),
+                Action::RecordReviewRound { number } => format!("round {number} ended"),
                 Action::StopApp
                 | Action::Push
                 | Action::AskOwner
@@ -1967,7 +1976,10 @@ mod tests {
                 (implemented(false), vec!["quality"]),
                 (quality("pass"), ROUND.to_vec()),
                 (reviewed("code-review/1", code_pass()), vec![]),
-                (reviewed("security-review", security_pass()), vec!["Push"]),
+                (
+                    reviewed("security-review", security_pass()),
+                    vec!["round 1 ended", "Push"],
+                ),
             ],
             Limits::default(),
         );
@@ -2122,7 +2134,7 @@ mod tests {
             &reviewed("code-review/5", code_pass()),
             Limits::default(),
         );
-        assert_eq!(names(&actions), ["Push"]);
+        assert_eq!(names(&actions), ["round 1 ended", "Push"]);
     }
 
     #[test]
@@ -2238,7 +2250,7 @@ mod tests {
                 (reviewed("code-review/1", code_findings()), vec![]),
                 (
                     reviewed("security-review", security_pass()),
-                    vec!["review-response"],
+                    vec!["round 1 ended", "review-response"],
                 ),
                 (
                     answered(&json!([apply("F001", Some("code-review/1"))])),
@@ -2257,7 +2269,10 @@ mod tests {
                     ),
                     vec![],
                 ),
-                (done("rerun-check", json!({"rerun": []})), vec!["Push"]),
+                (
+                    done("rerun-check", json!({"rerun": []})),
+                    vec!["round 2 ended", "Push"],
+                ),
             ],
             Limits::default(),
         );
@@ -2273,7 +2288,7 @@ mod tests {
                 (reviewed("security-review", security_findings()), vec![]),
                 (
                     reviewed("code-review/1", code_findings()),
-                    vec!["review-response"],
+                    vec!["round 1 ended", "review-response"],
                 ),
                 (
                     answered(&json!([
@@ -2300,7 +2315,7 @@ mod tests {
                 (reviewed("security-review", security_findings()), vec![]),
                 (
                     reviewed("code-review/1", code_findings()),
-                    vec!["review-response"],
+                    vec!["round 1 ended", "review-response"],
                 ),
                 (
                     answered(&json!([
@@ -2372,7 +2387,10 @@ mod tests {
                     ),
                     vec!["security-review"],
                 ),
-                (reviewed("security-review", security_pass()), vec!["Push"]),
+                (
+                    reviewed("security-review", security_pass()),
+                    vec!["round 1 ended", "Push"],
+                ),
             ],
             Limits::default(),
         );
@@ -2503,7 +2521,7 @@ mod tests {
                 (reviewed("code-review/1", code_findings()), vec![]),
                 (
                     reviewed("security-review", security_pass()),
-                    vec!["review-response"],
+                    vec!["round 1 ended", "review-response"],
                 ),
                 (
                     answered(&json!([apply("F001", Some("code-review/1"))])),
@@ -2942,7 +2960,7 @@ mod tests {
                 (reviewed("code-review/1", code_findings()), vec![]),
                 (
                     reviewed("security-review", security_pass()),
-                    vec!["review-response"],
+                    vec!["round 1 ended", "review-response"],
                 ),
                 (
                     done(
@@ -2985,7 +3003,7 @@ mod tests {
             vec![
                 (quality("pass"), ROUND.to_vec()),
                 (reviewed("security-review", security_pass()), vec![]),
-                (kept(), vec!["review-response"]),
+                (kept(), vec!["round 1 ended", "review-response"]),
                 (corrected(), vec!["quality"]),
                 (
                     quality("pass"),

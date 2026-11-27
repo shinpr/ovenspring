@@ -15,7 +15,7 @@
 )]
 
 use std::fs::{self, OpenOptions};
-use std::io::Write;
+use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 
 use ovenspring_core::item::{Item, Status};
@@ -398,19 +398,40 @@ impl Store {
         self.append_line("launches.jsonl", line)
     }
 
-    /// Appends `value` as one JSON line to `<state>/<file>`, creating the file when missing.
+    /// Appends `value` as one JSON line to `<state>/<file>`, creating the file when missing. The
+    /// line always starts a line of its own, so `Ok` means it reads back as a whole line.
     pub fn append_line(&self, file: &str, value: &serde_json::Value) -> Result<(), StoreError> {
         let path = self.root.join(file);
         let mut f = OpenOptions::new()
             .create(true)
+            .read(true)
             .append(true)
             .open(&path)
             .map_err(StoreError::io(&path))?;
-        let mut line = serde_json::to_string(value)
+        let json = serde_json::to_string(value)
             .map_err(|e| StoreError::Io(path.display().to_string(), std::io::Error::other(e)))?;
+        // A write cut short leaves a last line with no newline; ending it first keeps that part
+        // one unparsed line of its own instead of joining it to this one.
+        let mut line = if ends_unterminated(&mut f).map_err(StoreError::io(&path))? {
+            String::from("\n")
+        } else {
+            String::new()
+        };
+        line.push_str(&json);
         line.push('\n');
         f.write_all(line.as_bytes()).map_err(StoreError::io(&path))
     }
+}
+
+/// Whether `f` holds something and its last byte is not a newline.
+fn ends_unterminated(f: &mut fs::File) -> std::io::Result<bool> {
+    if f.metadata()?.len() == 0 {
+        return Ok(false);
+    }
+    f.seek(SeekFrom::End(-1))?;
+    let mut last = [0u8; 1];
+    f.read_exact(&mut last)?;
+    Ok(last != *b"\n")
 }
 
 pub fn item_name(path: &Path) -> String {

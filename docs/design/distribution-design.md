@@ -214,6 +214,9 @@ team = "ACME"                      # linear team key; for github, the repository
 channel = "C0123456789"
 owners = ["U0123456789"]           # the factory responds only to them and counts only their approvals
 
+[notices]                          # optional; absent means on
+errors = true                      # one Slack message when an error starts and one when it clears (events-and-error-notices design)
+
 [app]                              # how an issue's worktree runs the product; settled in setup
 setup = "pnpm install --frozen-lockfile"
 start = "pnpm dev --port $PORT"
@@ -303,7 +306,7 @@ The dashboard tells the owner which version the repository runs and when there i
 Contract: .ovenspring/config.toml
 Input:
   Type: TOML as above
-  Validation: unknown keys and values rejected; repo.base_branch non-empty; tracker.team required for linear; slack ids match Slack id shape and slack.owners non-empty; held names are the held categories, factory-configuration is refused (always held), each held entry has a path; person_reviews names are not held categories and each has a description; roles.*.skills exist in the folder the role's CLI reads; agreements.path and knowledge.path are relative folders inside the repository; app.start and nothing_to_run not both; limits.issues_at_once at least 1
+  Validation: unknown keys and values rejected; repo.base_branch non-empty; tracker.team required for linear; slack ids match Slack id shape and slack.owners non-empty; held names are the held categories, factory-configuration is refused (always held), each held entry has a path; person_reviews names are not held categories and each has a description; roles.*.skills exist in the folder the role's CLI reads; agreements.path and knowledge.path are relative folders inside the repository; app.start and nothing_to_run not both; limits.issues_at_once at least 1; notices.errors a boolean, true when `[notices]` or the key is absent (its behavior: `docs/design/events-and-error-notices-design.md`)
 Output:
   Type: typed Config
   On Error: the dashboard shows the key and the reason; the factory starts no work

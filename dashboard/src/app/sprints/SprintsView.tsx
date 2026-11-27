@@ -43,7 +43,7 @@ function RoleCost({ role, runs }: { role: Role; runs: readonly LaunchRow[] }) {
 function Ended({ sprint, onDownload }: { sprint: EndedSprint; onDownload: Props['onDownload'] }) {
   const met = sprint.keyResults.filter((k) => k.met).length
   return (
-    <details className={styles['ended']}>
+    <details className={styles['ended']} id={`sprint-${sprint.id}`}>
       <summary>
         <span className={styles['range']}>{days(sprint.startedAt, sprint.endedAt)}</span>
         <span>{written(sprint.purpose)}</span>
@@ -127,7 +127,11 @@ export function SprintsView({ current, runs, ended, onDownload }: Props) {
     <>
       <h1 className={appStyles['title']}>Sprints</h1>
       {current !== null && (
-        <section className={styles['group']} aria-labelledby="this-sprint">
+        <section
+          className={styles['group']}
+          aria-labelledby="this-sprint"
+          id={`sprint-${current.id}`}
+        >
           <h2 className={styles['heading']} id="this-sprint">
             This sprint
           </h2>

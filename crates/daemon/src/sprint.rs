@@ -21,7 +21,7 @@ use ovenspring_store::{Store, StoreError, item_name};
 use serde_json::json;
 
 use crate::issues::IssueRecord;
-use crate::owner::{DecisionRecord, DecisionStatus};
+use crate::owner::{DecisionRecord, DecisionStatus, Proposal};
 use crate::pulls::{Gated, OwnerApprovals, Subject};
 use crate::worktree::git;
 use crate::{Daemon, DaemonError, records};
@@ -330,6 +330,7 @@ impl Daemon {
             issue: None,
             text: format!("Goal: {}\n\n{}", self.goal()?, plan.message),
             preview: false,
+            marker: None,
         };
         match self.services.channel.post_notice(&notice) {
             Ok(message) => crate::records::set_told_waiting(
@@ -380,8 +381,20 @@ impl Daemon {
             | DecisionKind::Recovery
             | DecisionKind::Stopped => "Sprint proposal".to_owned(),
         };
+        // What a proposal proposes, fixed with the decision so a later delivery tells the same.
+        let proposal = match (kind, &state.plan) {
+            (DecisionKind::Sprint, Some(plan)) => {
+                let secrets: Vec<&str> = self.services.secrets.iter().map(String::as_str).collect();
+                Some(Proposal {
+                    issues: plan.issues.len(),
+                    purpose: crate::download::mask(&plan.purpose, &secrets),
+                })
+            }
+            _ => None,
+        };
         self.decide(DecisionRecord {
             text,
+            proposal,
             ..self.new_decision(kind, None, title)?
         })
     }
@@ -634,7 +647,7 @@ impl Daemon {
                 if stopped {
                     self.resume_sprint()?;
                 }
-                self.delete_branch(&state.id, &branch)?;
+                self.delete_branch(("sprint", &state.id), &branch)?;
                 return self.sprint_fact(&SprintFact::AgreementsMerged);
             }
             PullState::Closed if !stopped => {
@@ -673,7 +686,7 @@ impl Daemon {
         };
         match self.gate(&subject)? {
             Some(Gated::Merged) => {
-                self.delete_branch(&state.id, &branch)?;
+                self.delete_branch(("sprint", &state.id), &branch)?;
                 self.sprint_fact(&SprintFact::AgreementsMerged)
             }
             Some(Gated::Waiting(Wait::Return(Return::Push))) => {

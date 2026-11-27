@@ -11,7 +11,7 @@ use std::time::Duration;
 use anyhow::{Context, Result, bail};
 use ovenspring_agents::backend;
 use ovenspring_core::config::{CONFIG_FILE, Config, TrackerKind};
-use ovenspring_daemon::{Daemon, Parts, Paths, Services, Timing};
+use ovenspring_daemon::{ConnectedTracker, Daemon, Parts, Paths, Services, Timing};
 use ovenspring_integrations::channel::slack::Slack;
 use ovenspring_integrations::channel::{Channel, Unconnected};
 use ovenspring_integrations::github::{GitHub, GitHubApi};
@@ -349,15 +349,17 @@ fn tracker_client(
     config: &Config,
     held: &Credentials,
     github: Option<Arc<GitHubApi<Ureq>>>,
-) -> Option<Arc<dyn Tracker>> {
-    match config.tracker.kind {
+) -> Option<ConnectedTracker> {
+    let kind = config.tracker.kind;
+    let client: Arc<dyn Tracker> = match kind {
         TrackerKind::Linear => {
             let token = held.linear.api_key.clone()?;
             let team = config.tracker.team.clone()?;
-            Some(Arc::new(Linear::new(Ureq::new(), token, team)))
+            Arc::new(Linear::new(Ureq::new(), token, team))
         }
-        TrackerKind::Github => github.map(|g| g as Arc<dyn Tracker>),
-    }
+        TrackerKind::Github => github?,
+    };
+    Some(ConnectedTracker { kind, client })
 }
 
 /// Slack with the stored tokens; without them, decisions wait, recorded as unsent, and the

@@ -5,7 +5,6 @@
 
 use std::time::Instant;
 
-use ovenspring_core::config::TrackerKind;
 use ovenspring_store::Store;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -59,10 +58,7 @@ impl Daemon {
                 setting: Some("general".into()),
             });
         }
-        let tracker = match self.config.tracker.kind {
-            TrackerKind::Linear => "Linear",
-            TrackerKind::Github => "GitHub Issues",
-        };
+        let tracker = self.config.tracker.kind.name();
         if self.services.tracker.is_none() {
             missing.push(Missing {
                 what: format!("{tracker} is not connected."),

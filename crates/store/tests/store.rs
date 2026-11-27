@@ -225,3 +225,23 @@ fn a_new_item_name_is_one_no_item_on_the_board_or_in_the_archive_has() {
         "20261121-120401-sprint-plan"
     );
 }
+
+// Behavior: a JSON Lines file ends in part of a line with no newline, as an interrupted write
+//     leaves it, then a line is appended -> the part stays a line of its own and the appended
+//     line is a whole line after it.
+#[test]
+fn an_appended_line_starts_its_own_line_after_a_part_left_with_no_newline() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::open(dir.path().join("state")).unwrap();
+    let path = store.root().join("events.jsonl");
+    std::fs::write(&path, "{\"event\":\"first\"}\n{\"event\":\"cu").unwrap();
+
+    store
+        .append_line("events.jsonl", &serde_json::json!({"event": "after"}))
+        .unwrap();
+
+    assert_eq!(
+        std::fs::read_to_string(&path).unwrap(),
+        "{\"event\":\"first\"}\n{\"event\":\"cu\n{\"event\":\"after\"}\n"
+    );
+}

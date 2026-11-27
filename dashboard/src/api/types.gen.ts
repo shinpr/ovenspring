@@ -77,7 +77,7 @@ held: { [key in Approval]?: HeldCategory },
  * Kinds of change a person reviews before they merge, by the owner's name for each, described
  * in the owner's words; the design and the code review judge which a change falls under.
  */
-person_reviews: { [key in string]: string }, agents: AgentsConfig, roles: Roles, tracker: TrackerConfig, slack: SlackConfig, app: AppConfig, guard: GuardConfig, review: ReviewConfig, limits: Limits, agreements: AgreementsConfig, knowledge: KnowledgeConfig, };
+person_reviews: { [key in string]: string }, agents: AgentsConfig, roles: Roles, tracker: TrackerConfig, slack: SlackConfig, app: AppConfig, guard: GuardConfig, review: ReviewConfig, limits: Limits, agreements: AgreementsConfig, knowledge: KnowledgeConfig, notices: NoticesConfig, };
 
 export type Credential = "slack-bot-token" | "slack-app-token" | "linear-api-key" | "github-token";
 
@@ -100,6 +100,99 @@ merged: Array<string>, dropped: Array<string>, held: Array<string>, launches: nu
 uncosted: number, };
 
 export type Ending = "merged" | "closed" | "dropped" | "canceled" | "held";
+
+/**
+ * An error, as its lines name it.
+ */
+export type ErrorKey = "github-unreachable" | "tracker-unreachable" | "tracker-refused" | "cli-claude" | "cli-codex" | "cli-opencode" | "filter";
+
+/**
+ * An error going on.
+ */
+export type ErrorNow = { key: ErrorKey, since: string, last: string, times: number, firstIssue: EventIssue | null, 
+/**
+ * The latest failure's.
+ */
+cause: string, tracker: TrackerKind | null, cli: Cli | null, 
+/**
+ * The filter command the latest failure ran.
+ */
+command: string | null, };
+
+/**
+ * What a line is to its error.
+ */
+export type EventError = { "role": "started", key: ErrorKey, cause: string, times: number, last: string, 
+/**
+ * The error has not cleared.
+ */
+open: boolean, told: NoticeState, } | { "role": "repeat", key: ErrorKey, cause: string, times: number, last: string, startedAt: string, } | { "role": "cleared", key: ErrorKey, startedAt: string, times: number, 
+/**
+ * It cleared because the owner removed what failed.
+ */
+removed: boolean, told: NoticeState, };
+
+export type EventIssue = { key: string, 
+/**
+ * The factory has a record of the issue.
+ */
+known: boolean, };
+
+/**
+ * One recorded line.
+ */
+export type EventLine = { 
+/**
+ * The line's place among the parsed lines of `events.jsonl`; it never changes.
+ */
+seq: number, at: string, 
+/**
+ * The line's `event`.
+ */
+kind: string, 
+/**
+ * The line's other fields.
+ */
+fields: { [key in string]: JsonValue }, issue: EventIssue | null, sprint: EventSprint | null, error: EventError | null, };
+
+export type EventSprint = { id: string, purpose: string | null, 
+/**
+ * The Sprints page lists it.
+ */
+listed: boolean, };
+
+/**
+ * The page's lines and what frames them.
+ */
+export type EventsPage = { 
+/**
+ * Newest first.
+ */
+lines: Array<EventLine>, 
+/**
+ * The `from` that also lists the next older matching lines; none when no older line matches.
+ */
+older: number | null, 
+/**
+ * Some line is recorded, whatever the filters keep.
+ */
+recorded: boolean, 
+/**
+ * `events.jsonl` exists and could not be read.
+ */
+unreadable: boolean, 
+/**
+ * Every error going on, oldest start first; the filters do not narrow it.
+ */
+errorsNow: Array<ErrorNow>, 
+/**
+ * Error notices are on.
+ */
+notices: boolean, 
+/**
+ * Every issue a line concerns, by key.
+ */
+issues: Array<IssueTitle>, };
 
 /**
  * One review finding and how it was answered.
@@ -204,6 +297,10 @@ uncosted: number, };
 
 export type IssueRow = { key: string, title: string, now: Position, };
 
+export type IssueTitle = { key: string, title: string | null, };
+
+export type JsonValue = number | string | boolean | Array<JsonValue> | { [key in string]: JsonValue } | null;
+
 export type KeyResult = { text: string, met: boolean, evidence: string, };
 
 /**
@@ -292,6 +389,20 @@ fix: string,
  * The settings section that fixes it, when a setting does.
  */
 setting?: string | null, };
+
+/**
+ * Whether the owner was told of a start or a clear.
+ */
+export type NoticeState = { "state": "told", at: string, } | { "state": "waiting" } | { "state": "off" };
+
+/**
+ * What the factory tells the owner in Slack without being asked.
+ */
+export type NoticesConfig = { 
+/**
+ * One message when an error starts and one when it clears.
+ */
+errors: boolean, };
 
 export type Overview = { goal: string, status: Status, sprint: SprintLine | null, 
 /**
@@ -514,7 +625,7 @@ githubAccount: GitHubAccount | null, };
 /**
  * The sections saved on their own.
  */
-export type SettingsSection = "general" | "agents" | "roles" | "tracker" | "slack" | "limits" | "app" | "guard" | "review";
+export type SettingsSection = "general" | "agents" | "roles" | "tracker" | "slack" | "limits" | "app" | "guard" | "review" | "notices";
 
 /**
  * One Connect block, checked on its own before anything is saved.

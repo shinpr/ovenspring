@@ -24,6 +24,7 @@ use ovenspring_integrations::github::{
     BranchRules, CheckState, CommentKind, Permission, ReviewState,
 };
 use serde_json::{Value, json};
+use support::dashboard::Dashboard;
 use support::fake_github::{FakeGitHub, Planned, PlannedReview, fails_first};
 use support::recording::RecordingTracker;
 use support::recording::{RecordingChannel, Sent};
@@ -319,6 +320,27 @@ fn assert_the_checked_head_merged_into_the_base(env: &Env, gh: &FakeGitHub) {
     assert!(git(&env.origin, &["show", "develop:src/export.ts"]).contains("empty state"));
 }
 
+// AC: "When the factory merges a pull request, the system shall show its number and recorded
+//     base." (docs/design/events-and-error-notices-design.md § Acceptance Criteria > Events page;
+//     PRD AC-076)
+/// Events, read from the real server, names the merge as it happened: pull request #1 (the only
+/// one this test opens) into the non-default base `develop`, the head the gate checked and the
+/// commit GitHub made, each taken from `origin`, not from the line.
+fn assert_events_read_the_merge(env: &Env) {
+    let head = git(&env.origin, &["rev-parse", "develop^2"]);
+    let merge_commit = git(&env.origin, &["rev-parse", "develop"]);
+    let merged = Dashboard::start(env).events_of("ACME-123", "merged");
+    assert_eq!(merged.len(), 1, "{merged:?}");
+    assert_eq!(
+        merged[0]["issue"],
+        json!({"key": "ACME-123", "known": true})
+    );
+    assert_eq!(
+        merged[0]["fields"],
+        json!({"issue": "ACME-123", "pr": 1, "base": "develop", "sha": head, "merge_commit": merge_commit})
+    );
+}
+
 /// Only trusted comments reach agents, and only they are answered.
 fn assert_only_trusted_comments_reach_agents(env: &Env, gh: &FakeGitHub) {
     let sources = env.state().join("sources");
@@ -471,12 +493,24 @@ fn one_issue_runs_from_requirements_to_the_merge_of_its_checked_sha() {
     );
     assert_findings_reach_the_executor_and_the_recheck(&env);
     assert_the_checked_head_merged_into_the_base(&env, &gh);
+    assert_events_read_the_merge(&env);
     assert_only_trusted_comments_reach_agents(&env, &gh);
     assert_each_launch_records_the_phase_it_ran_in(&env);
     assert!(
         tracker
             .calls()
             .contains(&("ACME-123".to_owned(), "state: Done".to_owned()))
+    );
+    // The event records which tracker marked it done, so Events can say so.
+    let closed: Vec<Value> = env
+        .events()
+        .into_iter()
+        .filter(|e| e["event"] == "closed-on-tracker")
+        .map(|e| json!({"issue": e["issue"], "state": e["state"], "tracker": e["tracker"]}))
+        .collect();
+    assert_eq!(
+        closed,
+        [json!({"issue": "ACME-123", "state": "done", "tracker": "linear"})]
     );
     // The writer's comment and the configured bot's are findings of the issue, each with how it
     // was answered.
@@ -505,6 +539,127 @@ fn one_issue_runs_from_requirements_to_the_merge_of_its_checked_sha() {
         gh.calls().iter().any(|c| c.starts_with("set_pull_body ")),
         "{:?}",
         gh.calls()
+    );
+}
+
+// AC: "When the factory completes a post-implementation review round, the system shall show its
+//     number and the count of findings it hands to correction." (docs/design/
+//     events-and-error-notices-design.md § Acceptance Criteria > Events page; PRD AC-076). Design
+//     § Selected Design > Event details, Review round: the round ends once its reviews have all
+//     finished; `findings` counts the entries `review-response` receives, an ID two reviews both
+//     use counted for each.
+// Behavior: a medium issue's first round runs code-review/1 (F001, F002) and security-review
+//     (F001), the security review held running until the test releases it -> review-response
+//     applies all three -> both recheck cleanly -> the issue merges.
+// Observable result, read from the real server's GET /api/v1/events: no `review-round-ended` line
+//     while the security review runs; then `{round: 1, findings: 3}`; after the clean recheck one
+//     more, `{round: 2, findings: 0}`; the round's stage facts are still listed.
+// @lane: integration
+// @dependency: daemon flow, handoff, fake agents, FakeGitHub, store, dashboard server
+#[test]
+fn a_review_round_is_recorded_once_with_the_findings_it_hands_to_correction() {
+    let key = "ACME-130";
+    let env = Env::new();
+    env.configure("");
+    let mut script = designed(key, &[], &[("T1", "none")]);
+    let resolved = |ids: &[&str]| -> Value {
+        ids.iter()
+            .map(|id| json!({"id": id, "prior_disposition": "apply", "status": "resolved", "evidence": "src/export.ts"}))
+            .collect()
+    };
+    script.insert(
+        format!("code-review@{key}"),
+        json!([
+            {"output": {"verdict": "needs-improvement", "findings": [
+                {"id": "F001", "location": "src/export.ts:1", "description": "The last page is lost."},
+                {"id": "F002", "location": "src/export.ts:2", "description": "The header is missing."}]},
+             "verdict": "findings"},
+            {"output": {"verdict": "pass", "findings": [], "prior_feedback_reconciliation": resolved(&["F001", "F002"])},
+             "verdict": "pass"}
+        ]),
+    );
+    script.insert(
+        format!("security-review@{key}"),
+        json!([
+            {"wait": true, "output": {"status": "needs_revision", "findings": [
+                {"id": "F001", "location": "src/export.ts:3", "description": "The file name is not escaped."}]},
+             "verdict": "findings"},
+            {"output": {"status": "pass", "findings": [], "prior_feedback_reconciliation": resolved(&["F001"])},
+             "verdict": "pass"}
+        ]),
+    );
+    script.insert(
+        format!("review-response@{key}"),
+        json!([{"change": {"path": "src/export.ts", "content": "fixed\n"},
+                "output": {"status": "completed", "taskName": "round", "changeSummary": "Fix the export", "requiresTestReview": false,
+                           "dispositions": [
+                               {"id": "F001", "review": "code-review/1", "disposition": "apply", "reason": "AC 1 exports every page"},
+                               {"id": "F002", "review": "code-review/1", "disposition": "apply", "reason": "AC 1 names the columns"},
+                               {"id": "F001", "review": "security-review", "disposition": "apply", "reason": "AC 2 names the file"}]}}]),
+    );
+    env.script_agents(&Value::Object(script));
+    env.tracker_issue(key, "Export orders", "Export every order.");
+    let mut d = daemon(
+        &env,
+        services(
+            Arc::new(always_passing(&env, requiring_test())),
+            Arc::new(RecordingChannel::default()),
+            Arc::new(RecordingTracker::default()),
+        ),
+    );
+    let dash = Dashboard::start(&env);
+    let ended = || -> Vec<Value> {
+        dash.events_of(key, "review-round-ended")
+            .into_iter()
+            .rev()
+            .map(|l| l["fields"].clone())
+            .collect()
+    };
+
+    d.begin_issue(key, "Export orders", vec![]).unwrap();
+    let held = env
+        .fake_bin
+        .parent()
+        .unwrap()
+        .join(format!("pids-{key}-security-review.json"));
+    run_until(
+        &mut d,
+        60,
+        |_| {},
+        |d| {
+            held.exists()
+                && d.issue(key).unwrap().unwrap().flow.round.findings
+                    == [ovenspring_core::output::Review::CodeReview { unit: 1 }].into()
+        },
+    );
+    assert_eq!(ended(), Vec::<Value>::new(), "no end while a review runs");
+
+    std::fs::write(
+        env.fake_bin
+            .parent()
+            .unwrap()
+            .join(format!("release-{key}-security-review")),
+        "",
+    )
+    .unwrap();
+    run_until(&mut d, 60, |_| {}, |d| stage(d, key) == Stage::Merged);
+
+    assert_eq!(
+        ended(),
+        [
+            json!({"issue": key, "round": 1, "findings": 3}),
+            json!({"issue": key, "round": 2, "findings": 0}),
+        ]
+    );
+    // The fact that moved the round to its correction is still listed beside its end.
+    let stage_json = |s: Stage| serde_json::to_value(s).unwrap();
+    let facts = dash.events_of(key, "fact");
+    assert!(
+        facts
+            .iter()
+            .any(|f| f["fields"]["from"] == stage_json(Stage::Reviewing)
+                && f["fields"]["to"] == stage_json(Stage::running(Step::ReviewResponse))),
+        "{facts:?}"
     );
 }
 
@@ -876,6 +1031,9 @@ fn assert_reviews_rerequested_after_pushes_and_no_merge(env: &Env, gh: &FakeGitH
 //     approved -> ACME-124 merges while ACME-123 waits -> the executor applies acme-dev's comment,
 //     the daemon pushes, FakeGitHub dismisses acme-lead's approval -> the daemon requests reviews
 //     from both -> both approve the new head -> ACME-123 merges with that head.
+//     Events (GET /api/v1/events) holds no `merged` line for ACME-123 while it waits and one after
+//     its merge; "A refused or deferred merge produces no success line" (events-and-error-notices
+//     design § Test Boundaries).
 // @lane: integration
 // @dependency: daemon, flow, gate, launcher, fake agent, FakeGitHub
 #[test]
@@ -906,6 +1064,10 @@ fn missing_required_approval_holds_only_that_issue_and_push_rerequests_reviewers
 
     let pr = d.issue("ACME-123").unwrap().unwrap().flow.pr.unwrap();
     assert_reviews_rerequested_after_pushes_and_no_merge(&env, &gh, pr);
+    // A held merge is no merge in Events: only the merged issue has its line.
+    let dash = Dashboard::start(&env);
+    assert_eq!(dash.events_of("ACME-123", "merged"), Vec::<Value>::new());
+    assert_eq!(dash.events_of("ACME-124", "merged").len(), 1);
 
     let head = git(&env.origin, &["rev-parse", "ovenspring/ACME-123"]);
     gh.review(pr, "acme-dev", ReviewState::Approved);
@@ -917,6 +1079,12 @@ fn missing_required_approval_holds_only_that_issue_and_push_rerequests_reviewers
         |d| stage(d, "ACME-123") == Stage::Merged,
     );
     assert!(gh.calls().contains(&format!("merge {pr} {head}")));
+    let merged = dash.events_of("ACME-123", "merged");
+    assert_eq!(merged.len(), 1, "{merged:?}");
+    assert_eq!(
+        (&merged[0]["fields"]["pr"], &merged[0]["fields"]["sha"]),
+        (&json!(pr), &json!(head))
+    );
 }
 
 // AC: "When checks pass, the system shall wait until each review bot whose review it can observe

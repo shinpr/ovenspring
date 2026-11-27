@@ -12,6 +12,7 @@ import type {
   SetupStep,
   VersionState,
 } from '../src/api/types.gen.ts'
+import { EVENTS, type EventsFixture, eventsPage } from '../src/fixtures/events.ts'
 import { ended, inReview, running, runs } from '../src/fixtures/issue.ts'
 import { NOW, working } from '../src/fixtures/overview.ts'
 import { settings, skills } from '../src/fixtures/settings.ts'
@@ -32,6 +33,12 @@ export interface Fixtures {
   configError: string | null
   /** The version running, and a newer one to move to. */
   version: VersionState
+  /** Every recorded line, read again at each request, so a test can add lines as it runs. */
+  events: EventsFixture
+  /** How long an answer waits, by path with its query, or by path alone, in milliseconds. */
+  delay: Record<string, number>
+  /** The browser's clock, fixed. */
+  now: Date
 }
 
 export interface Sent {
@@ -41,9 +48,17 @@ export interface Sent {
   body: unknown
 }
 
+/** Waits as long as `delay` holds the request back, by its path with its query or by its path. */
+async function delayed(delay: Fixtures['delay'], path: string, search: string): Promise<void> {
+  const wait = delay[`${path}${search}`] ?? delay[path] ?? 0
+  if (wait > 0) {
+    await new Promise((resolve) => setTimeout(resolve, wait))
+  }
+}
+
 /**
- * Answers `/api/v1/**` from fixtures and records every request the app sends. A saved goal is
- * served back from then on, as the server would.
+ * Answers `/api/v1/**` from fixtures and records every request the app sends. A saved goal and a
+ * saved Error notices choice are served back from then on, as the server would.
  */
 export async function serve(page: Page, given: Partial<Fixtures> = {}): Promise<Sent[]> {
   const f: Fixtures = {
@@ -56,6 +71,9 @@ export async function serve(page: Page, given: Partial<Fixtures> = {}): Promise<
     step: 'done',
     configError: null,
     version: { running: '0.1.0', update: null },
+    events: EVENTS.open,
+    delay: {},
+    now: NOW,
     ...given,
   }
   let goal = f.overview?.goal ?? ''
@@ -83,6 +101,22 @@ export async function serve(page: Page, given: Partial<Fixtures> = {}): Promise<
     '/settings': () => f.settings,
     '/skills': () => skills,
     '/version': () => f.version,
+    '/events': (query) => eventsPage(f.events, query),
+  }
+  /**
+   * A settings save: refused as `refuse` says, else the settings, with a saved Error notices
+   * choice kept so the settings answered from then on carry it.
+   */
+  const saveSettings = (path: string, body: unknown): Parameters<Route['fulfill']>[0] => {
+    const refused = f.refuse[path.replace('/settings/', '')]
+    if (refused !== undefined) {
+      return { status: 400, json: { errors: refused } }
+    }
+    if (path === '/settings/notices' && typeof body === 'object' && body !== null) {
+      const errors = 'errors' in body && body.errors === true
+      f.settings = { ...f.settings, config: { ...f.settings.config, notices: { errors } } }
+    }
+    return { json: f.settings }
   }
   const write = async (route: Route, path: string, body: unknown): Promise<void> => {
     const next = NEXT[path]
@@ -98,18 +132,16 @@ export async function serve(page: Page, given: Partial<Fixtures> = {}): Promise<
       await route.fulfill({ json: { goal } })
       return
     }
-    const refused = f.refuse[path.replace('/settings/', '')]
-    await route.fulfill(
-      refused === undefined ? { json: f.settings } : { status: 400, json: { errors: refused } }
-    )
+    await route.fulfill(saveSettings(path, body))
   }
-  await page.clock.setFixedTime(NOW)
+  await page.clock.setFixedTime(f.now)
   await page.route('**/api/v1/**', async (route: Route) => {
     const request = route.request()
     const url = new URL(request.url())
     const path = url.pathname.replace('/api/v1', '')
     const body: unknown = request.postDataJSON()
     sent.push({ method: request.method(), path: `${path}${url.search}`, body })
+    await delayed(f.delay, path, url.search)
     if (request.method() === 'PUT') {
       await write(route, path, body)
     } else if (path === '/overview') {

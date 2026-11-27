@@ -143,6 +143,84 @@ fn the_download_masks_every_held_credential_and_token_pattern() {
     assert!(issue.body.contains("ACME-123"));
 }
 
+// AC: "A newly recorded scoped line, such as `filter-failed` with `command`, `output` and `failure`,
+//     is exported whole with its added fields" (docs/design/events-and-error-notices-design.md
+//     § Change Impact Map, § Output Comparison).
+// Behavior: an issue's events include a `filter-failed` start whose command and output hold a held
+//     credential -> `GET /api/v1/export?scope=issue:ACME-123` -> the record is exported whole,
+//     masked, between the issue's earlier and later lines.
+// @lane: integration
+// @dependency: dashboard server, download builder, masking, store, credentials file
+#[test]
+fn an_issues_download_holds_its_filter_failure_whole_and_masked() {
+    let env = Env::new();
+    let held = Credentials {
+        linear: credentials::Linear {
+            api_key: Some("plainHeld4c2e9f17".into()),
+        },
+        ..Credentials::default()
+    };
+    let credentials_file = env.dir.path().join("config/credentials.toml");
+    credentials::write(&credentials_file, &held).unwrap();
+    let store = Store::open(env.state()).unwrap();
+    store
+        .write_record(
+            "issues/ACME-123.json",
+            &IssueRecord::new("ACME-123", "ACME-123", vec![]),
+        )
+        .unwrap();
+    for line in [
+        json!({"event": "fact", "issue": "ACME-123", "at": "2026-11-21T12:01:00Z"}),
+        json!({"event": "filter-failed", "issue": "ACME-123", "at": "2026-11-21T12:02:00Z",
+               "error": "exited with status 1", "command": "check --key plainHeld4c2e9f17",
+               "output": "denied for plainHeld4c2e9f17",
+               "failure": {"key": "filter", "since": "2026-11-21T12:02:00Z",
+                           "cause": "exited with status 1 (denied for plainHeld4c2e9f17)",
+                           "start": true, "notice": "waiting"}}),
+        json!({"event": "fact", "issue": "ACME-123", "at": "2026-11-21T12:03:00Z"}),
+        json!({"event": "filter-failed", "issue": "ACME-124", "at": "2026-11-21T12:04:00Z",
+               "error": "exited with status 1", "failure": {"key": "filter",
+               "since": "2026-11-21T12:02:00Z", "cause": "exited with status 1"}}),
+    ] {
+        store.append_event(&line).unwrap();
+    }
+    let server = ovenspring_server::start(
+        Context {
+            repo: env.repo.clone(),
+            store: Store::open(env.state()).unwrap(),
+            credentials: credentials_file,
+            checks: Arc::new(NoChecks),
+            home: env.dir.path().join("home"),
+            codex_home: env.dir.path().join("home/.codex"),
+            version: support::no_new_version(),
+        },
+        0,
+    )
+    .unwrap();
+
+    let issue = request(server.addr, "GET /api/v1/export?scope=issue:ACME-123", None);
+
+    assert_eq!(issue.status, 200);
+    let lines: Vec<Value> = issue
+        .body
+        .lines()
+        .map(|l| serde_json::from_str(l).unwrap())
+        .collect();
+    assert_eq!(
+        lines,
+        [
+            json!({"type": "event", "event": "fact", "issue": "ACME-123", "at": "2026-11-21T12:01:00Z"}),
+            json!({"type": "event", "event": "filter-failed", "issue": "ACME-123",
+                   "at": "2026-11-21T12:02:00Z", "error": "exited with status 1",
+                   "command": "check --key [masked]", "output": "denied for [masked]",
+                   "failure": {"key": "filter", "since": "2026-11-21T12:02:00Z",
+                               "cause": "exited with status 1 (denied for [masked])",
+                               "start": true, "notice": "waiting"}}),
+            json!({"type": "event", "event": "fact", "issue": "ACME-123", "at": "2026-11-21T12:03:00Z"}),
+        ]
+    );
+}
+
 struct NoChecks;
 
 impl ovenspring_server::SetupChecks for NoChecks {
@@ -204,6 +282,7 @@ fn write_records(store: &Store, secret: &str) {
             }),
             procedure: None,
             asked_by: None,
+            proposal: None,
         };
         store
             .write_isolated(&format!("decisions/{}.json", decision.id), &decision)

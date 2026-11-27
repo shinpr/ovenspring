@@ -1,5 +1,6 @@
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router'
 import { ActivityPage } from './activity/ActivityPage.tsx'
+import { EventsPage } from './events/EventsPage.tsx'
 import { Failed } from './Failed.tsx'
 import { GoalPage } from './goal/GoalPage.tsx'
 import { IssuePage } from './issue/IssuePage.tsx'
@@ -22,6 +23,7 @@ export function App() {
             <Route path="issues/:key" element={<IssuePage />} />
             <Route path="issues/:key/prototype" element={<PrototypePage />} />
             <Route path="activity" element={<ActivityPage />} />
+            <Route path="events" element={<EventsPage />} />
             <Route path="sprints" element={<SprintsPage />} />
             <Route path="settings" element={<Navigate to="/settings/connections" replace />} />
             <Route path="settings/:section" element={<SettingsPage />} />

@@ -22,14 +22,18 @@ impl TypeVisitor for Declarations {
             return;
         }
         if T::output_path().is_some() {
-            // One file holds every type, so two Rust types of one name would collide in it.
+            // One file holds every type, so two Rust types of one name would collide in it. A
+            // type declared through another (`serde_json::Value` as ts-rs's `JsonValue`) is
+            // reached twice with the same declaration, which is no collision.
             let name = T::ident(&self.config);
             let docs = T::docs().unwrap_or_default();
             let declared = format!("{docs}export {}", T::decl(&self.config));
-            assert!(
-                self.out.insert(name.clone(), declared).is_none(),
-                "two API types are named {name}; rename one"
-            );
+            if let Some(earlier) = self.out.insert(name.clone(), declared.clone()) {
+                assert!(
+                    earlier == declared,
+                    "two API types are named {name}; rename one"
+                );
+            }
         }
         T::visit_dependencies(self);
         T::visit_generics(self);
@@ -59,6 +63,7 @@ fn roots(d: &mut Declarations) {
     d.visit::<LaunchRow>();
     d.visit::<LaunchDetail>();
     d.visit::<EndedSprint>();
+    d.visit::<ovenspring_daemon::events::EventsPage>();
     d.visit::<crate::settings::Settings>();
     d.visit::<crate::settings::Skills>();
     d.visit::<crate::settings::SettingsSection>();

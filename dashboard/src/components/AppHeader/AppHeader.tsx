@@ -8,11 +8,12 @@ import { controlClass } from '../Field/Field.tsx'
 import { Wordmark } from '../Wordmark/Wordmark.tsx'
 import styles from './AppHeader.module.css'
 
-export type Area = 'now' | 'activity' | 'sprints' | 'settings'
+export type Area = 'now' | 'activity' | 'events' | 'sprints' | 'settings'
 
 const LINKS: ReadonlyArray<{ area: Area; href: string; label: string }> = [
   { area: 'now', href: '/', label: 'Now' },
   { area: 'activity', href: '/activity', label: 'Activity' },
+  { area: 'events', href: '/events', label: 'Events' },
   { area: 'sprints', href: '/sprints', label: 'Sprints' },
   { area: 'settings', href: '/settings', label: 'Settings' },
 ]

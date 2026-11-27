@@ -52,6 +52,21 @@ pub enum NoticeKind {
     Preparation,
     /// What still waits on the owner, told again while it waits.
     Reminder,
+    /// An error has started.
+    ErrorStarted,
+    /// An error has cleared.
+    ErrorCleared,
+}
+
+/// What makes a notice one message however often it is posted: a post first looks for the
+/// message carrying `id` and posts only when there is none.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NoticeMarker {
+    /// Names what the notice tells, not the attempt to post it.
+    pub id: String,
+    /// When what the notice tells was recorded, in Unix seconds. The message is never older, so
+    /// the search reads back only to shortly before it.
+    pub recorded: i64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -61,6 +76,8 @@ pub struct Notice {
     pub text: String,
     /// A ready-to-merge notice offers Preview when the product has commands to start it.
     pub preview: bool,
+    /// Set when posting the notice again must not post a second message.
+    pub marker: Option<NoticeMarker>,
 }
 
 /// A button on a decision's message.

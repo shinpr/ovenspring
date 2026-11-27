@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { duration, seconds, when } from './time.ts'
+import { clockOn, dayHeading, duration, seconds, when } from './time.ts'
 
 describe('duration', () => {
   const now = new Date('2026-11-21T12:00:00Z')
@@ -25,5 +25,23 @@ describe('when', () => {
   it('gives the time alone today and adds the date on an earlier day', () => {
     expect(when('2026-11-21T06:00:00Z', now)).toMatch(/^\d{2}:\d{2}$/)
     expect(when('2026-11-19T06:00:00Z', now)).toMatch(/^Nov 1[89], \d{2}:\d{2}$/)
+  })
+})
+
+describe('dayHeading', () => {
+  // Noon UTC stays on the same local day from UTC-11 to UTC+11.
+  const now = new Date('2026-11-27T12:00:00Z')
+  it('names today and yesterday, then the date, with the year when it is another', () => {
+    expect(dayHeading('2026-11-27T12:00:00Z', now)).toBe('Today, Nov 27')
+    expect(dayHeading('2026-11-26T12:00:00Z', now)).toBe('Yesterday, Nov 26')
+    expect(dayHeading('2026-11-25T12:00:00Z', now)).toBe('Nov 25')
+    expect(dayHeading('2025-12-30T12:00:00Z', now)).toBe('Dec 30, 2025')
+  })
+})
+
+describe('clockOn', () => {
+  it('gives the clock on the same day and the date and clock on another', () => {
+    expect(clockOn('2026-11-27T12:10:00Z', '2026-11-27T11:00:00Z')).toMatch(/^\d{2}:10$/)
+    expect(clockOn('2026-11-25T12:10:00Z', '2026-11-27T11:00:00Z')).toMatch(/^Nov 25, \d{2}:10$/)
   })
 })

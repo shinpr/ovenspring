@@ -481,7 +481,7 @@ fn no_filter_poll_preserves_tracker_snapshots_and_publication_event() {
         ovenspring_daemon::Services {
             github: None,
             channel: Arc::new(RecordingChannel::default()),
-            tracker: Some(tracker),
+            tracker: Some(support::linear(tracker)),
             secrets: Vec::new(),
         },
     );
@@ -600,7 +600,7 @@ fn services(
     ovenspring_daemon::Services {
         github: None,
         channel,
-        tracker: Some(tracker),
+        tracker: Some(support::linear(tracker)),
         secrets,
     }
 }

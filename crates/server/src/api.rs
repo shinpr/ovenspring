@@ -10,6 +10,7 @@ use axum::routing::{get, post, put};
 use axum::{Json, Router};
 use ovenspring_core::config::Config;
 use ovenspring_daemon::download::{self, Scope};
+use ovenspring_daemon::events::{self, EventsQuery};
 use ovenspring_daemon::{DaemonError, history, overview, records};
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
@@ -32,6 +33,7 @@ pub(crate) fn routes() -> Router<Arc<Shared>> {
         .route("/launches", get(get_launches))
         .route("/launches/{id}", get(get_launch))
         .route("/launches/{id}/log", get(get_launch_log))
+        .route("/events", get(get_events))
         .route("/export", get(get_export))
         .route("/settings", get(get_settings))
         .route("/settings/{section}", put(put_settings))
@@ -253,6 +255,68 @@ async fn get_launch_log(State(shared): State<Arc<Shared>>, Path(id): Path<String
         )
             .into_response(),
         Ok(None) => no_launch(),
+        Err(e) => internal(&e),
+    }
+}
+
+#[derive(Deserialize)]
+struct EventsParams {
+    show: Option<String>,
+    issue: Option<String>,
+    from: Option<String>,
+}
+
+impl EventsParams {
+    /// The query the page asked for, or why each parameter it cannot be is refused.
+    fn query(self) -> Result<EventsQuery, BTreeMap<String, String>> {
+        let mut errors = BTreeMap::new();
+        let show = match self.show.as_deref().map(str::parse).transpose() {
+            Ok(show) => show.unwrap_or_default(),
+            Err(why) => {
+                errors.insert("show".to_owned(), why);
+                events::Show::All
+            }
+        };
+        let from = self
+            .from
+            .as_deref()
+            .map(str::parse::<u64>)
+            .transpose()
+            .unwrap_or_else(|_| {
+                errors.insert(
+                    "from".to_owned(),
+                    "Give the number of the oldest line to list.".to_owned(),
+                );
+                None
+            });
+        if !errors.is_empty() {
+            return Err(errors);
+        }
+        Ok(EventsQuery {
+            show,
+            issue: self.issue,
+            from,
+        })
+    }
+}
+
+/// The Events page's lines, every string masked with the held credentials.
+async fn get_events(
+    State(shared): State<Arc<Shared>>,
+    Query(params): Query<EventsParams>,
+) -> Response {
+    let query = match params.query() {
+        Ok(query) => query,
+        Err(errors) => return refuse(StatusCode::BAD_REQUEST, errors),
+    };
+    let held = match ovenspring_store::credentials::read(&shared.context.credentials) {
+        Ok(held) => held,
+        Err(e) => return internal(&e),
+    };
+    // Notices are on unless the settings in force say otherwise, as the daemon reads them.
+    let notices = Config::read(&shared.context.repo).map_or(true, |c| c.notices.errors);
+    match events::page(&shared.context.store, &query, notices, &held.values()) {
+        Ok(page) => Json(page).into_response(),
         Err(e) => internal(&e),
     }
 }

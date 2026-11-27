@@ -199,3 +199,24 @@ export const SavedKey: Story = {
     })
   },
 }
+
+/**
+ * Golden state 15: Connections with the Error notices row open; the saved choice has the focus and
+ * the arrow keys move it.
+ */
+export const ErrorNotices: Story = {
+  args: { section: 'connections' },
+  play: async ({ canvasElement, args }) => {
+    const canvas = within(canvasElement)
+    await expect(
+      canvas.getByText('A message in Slack when an error starts and when it clears.')
+    ).toBeVisible()
+    await userEvent.click(canvas.getByRole('button', { name: 'Change Error notices' }))
+    const group = canvas.getByRole('group', { name: 'Error notices' })
+    await expect(within(group).getByRole('radio', { name: 'On (default)' })).toHaveFocus()
+    await userEvent.keyboard('{ArrowDown}')
+    await expect(within(group).getByRole('radio', { name: 'Off' })).toBeChecked()
+    await userEvent.click(canvas.getByRole('button', { name: 'Save' }))
+    await expect(args.save).toHaveBeenCalledWith('notices', { errors: false })
+  },
+}

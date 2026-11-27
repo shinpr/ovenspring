@@ -91,6 +91,7 @@ fn finds_the_pull_request_of_a_branch_and_reads_its_state() {
     assert_eq!(pull.number, 7);
     assert_eq!(pull.state, PullState::Merged);
     assert_eq!(pull.head_sha, "1111111111111111111111111111111111111111");
+    assert_eq!(pull.base.as_deref(), Some("main"), "the merge line's base");
     assert_eq!(gh.pull_for_branch("ovenspring/ACME-2").unwrap(), None);
 }
 
@@ -527,6 +528,7 @@ fn a_moved_head_or_an_unmergeable_pull_request_is_a_refusal_and_an_outage_is_tra
         client(&t).merge(7, "1111111"),
         Err(HttpError::Transient {
             why: Unanswered::ServerError,
+            status: Some(502),
             ..
         })
     ));
@@ -543,6 +545,7 @@ fn a_rate_limit_is_transient_and_a_bad_token_is_not() {
         client(&t).viewer(),
         Err(HttpError::Transient {
             why: Unanswered::RateLimited,
+            status: None,
             ..
         })
     ));

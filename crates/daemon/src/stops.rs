@@ -8,9 +8,9 @@ use serde_json::{Map, Value, json};
 
 use ovenspring_core::flow::{Fact, Stage};
 use ovenspring_core::sprint::SprintFact;
-use ovenspring_integrations::http::{HttpError, Unanswered};
+use ovenspring_integrations::http::Unanswered;
 
-use crate::records::{self, Service};
+use crate::errors::{ErrorKey, Failure, Via, out_of_reach, unanswered_cause};
 use crate::worktree::git;
 use crate::{Daemon, DaemonError};
 
@@ -85,20 +85,31 @@ impl Daemon {
             Err(e) => e,
         };
         let (owner, _) = &id;
-        let (field, value) = match owner {
-            Owner::Issue(key) => ("issue", json!(key)),
-            Owner::Sprint => ("sprint", json!(true)),
-            Owner::Pass => ("pass", json!(true)),
+        let subject = match owner {
+            Owner::Issue(key) => Some(("issue", json!(key))),
+            Owner::Sprint => self.sprint()?.map(|s| ("sprint", json!(s.id))),
+            Owner::Pass => Some(("pass", json!(true))),
         };
         let mut event = Map::from_iter([
             ("operation".to_owned(), json!(operation)),
             ("error".to_owned(), json!(e.to_string())),
-            (field.to_owned(), value),
         ]);
-        if let Some(why) = self.unreachable(&e) {
-            records::reached(&self.store, Service::Github, Err(why))?;
+        if let Some((field, value)) = subject {
+            event.insert(field.to_owned(), value);
+        }
+        if let Some((why, cause, via)) = self.unreachable(&e) {
             event.insert("event".into(), json!("service-unreachable"));
-            return self.event(&Value::Object(event)).map(|()| None);
+            event.insert("why".into(), json!(why));
+            self.failed(
+                ErrorKey::GithubUnreachable,
+                Failure {
+                    event: Value::Object(event),
+                    cause,
+                    via: Some(via),
+                    reason: None,
+                },
+            )?;
+            return Ok(None);
         }
         event.insert("event".into(), json!("operation-failed"));
         let stopped_on_it = match owner {
@@ -131,31 +142,41 @@ impl Daemon {
                 error: e.to_string(),
             })?,
             // A pause reason completes "paused because …".
-            Owner::Pass => self.pause(&format!(
-                "{operation} failed twice in a row: {}",
-                e.to_string().trim_end_matches('.')
-            ))?,
+            Owner::Pass => self.pause(
+                &format!(
+                    "{operation} failed twice in a row: {}",
+                    e.to_string().trim_end_matches('.')
+                ),
+                None,
+            )?,
         }
         Ok(None)
     }
 
     /// A failure that is the service's or the network's, not the factory's: no connection, a
-    /// timeout, 429 or 5xx from an API, or a git command when `origin` cannot be reached.
-    fn unreachable(&self, e: &DaemonError) -> Option<Unanswered> {
+    /// timeout, 429 or 5xx from an API, or a git command when `origin` cannot be reached; with
+    /// its cause and the way to GitHub that failed.
+    fn unreachable(&self, e: &DaemonError) -> Option<(Unanswered, String, Via)> {
         match e {
-            DaemonError::GitHub(HttpError::Transient { why, .. }) => Some(*why),
-            DaemonError::Git(_) => git(
-                &self.paths.repo,
-                &["ls-remote", "-q", "--exit-code", "origin", "HEAD"],
-            )
-            .is_err()
-            .then_some(Unanswered::NoConnection),
-            DaemonError::GitHub(_)
-            | DaemonError::Store(_)
+            DaemonError::GitHub(e) => out_of_reach(e).map(|(why, cause)| (why, cause, Via::Api)),
+            DaemonError::Git(_) => (!self.origin_answers()).then(|| {
+                let why = Unanswered::NoConnection;
+                (why, unanswered_cause(why, None), Via::Git)
+            }),
+            DaemonError::Store(_)
             | DaemonError::Launch(_)
             | DaemonError::NoRecord(_)
             | DaemonError::Invalid(_) => None,
         }
+    }
+
+    /// Whether the repository's `origin` answers git.
+    pub(crate) fn origin_answers(&self) -> bool {
+        git(
+            &self.paths.repo,
+            &["ls-remote", "-q", "--exit-code", "origin", "HEAD"],
+        )
+        .is_ok()
     }
 
     /// Stops the issue on `operation`: its open work ends, the record names what failed, and the

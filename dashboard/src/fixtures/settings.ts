@@ -10,6 +10,7 @@ export const settings: Settings = {
     person_reviews: { payments: 'How customers are charged or refunded' },
     agreements: { path: '.ovenspring/agreements' },
     knowledge: { path: '.ovenspring/knowledge' },
+    notices: { errors: true },
     agents: { permissions: 'auto', mcp: ['context7'] },
     roles: {
       lead: { cli: 'claude', model: 'claude-opus-5-5', effort: 'high' },

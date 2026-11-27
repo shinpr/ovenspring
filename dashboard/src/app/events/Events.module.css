@@ -1,0 +1,182 @@
+/* The page as the binding events prototype lays it out: S-08. */
+
+.intro {
+  margin: var(--space-1) 0 0;
+  color: var(--color-text-muted);
+}
+
+.group {
+  margin-top: var(--space-6);
+}
+
+.heading {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-section-title);
+  font-weight: 600;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+}
+
+.list {
+  margin: var(--space-5) 0 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--color-line);
+}
+
+.list > * + * {
+  border-top: 1px solid var(--color-line);
+}
+
+.empty {
+  margin: 0;
+  padding: var(--space-3) var(--space-2);
+  color: var(--color-text-muted);
+  border-bottom: 1px solid var(--color-line);
+}
+
+.muted {
+  color: var(--color-text-muted);
+}
+
+/* Errors now */
+
+.note {
+  margin: 0;
+  padding: 0 var(--space-2);
+  font-size: var(--text-small);
+}
+
+.item {
+  padding: var(--space-3) var(--space-2);
+}
+
+.item > p {
+  margin: 0;
+}
+
+.item > p + p {
+  margin-top: var(--space-1);
+  font-size: var(--text-small);
+}
+
+.word {
+  font-weight: 600;
+}
+
+.fail {
+  color: var(--color-fail);
+}
+
+.ok {
+  color: var(--color-ok);
+}
+
+/* What the factory did */
+
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px var(--space-4);
+  align-items: center;
+  font-size: var(--text-small);
+}
+
+.filters label {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.select {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  padding: 5px 8px;
+  border: 1px solid var(--color-field-border);
+  border-radius: var(--radius-control);
+  background-color: var(--color-raised);
+  color: var(--color-text);
+  font: inherit;
+}
+
+.days {
+  margin-top: var(--space-5);
+}
+
+.days > section + section {
+  margin-top: var(--space-5);
+}
+
+.day {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-lead);
+  font-weight: 600;
+  line-height: 1.3;
+  letter-spacing: -0.01em;
+}
+
+.day + .list {
+  margin-top: 0;
+}
+
+/* One line: clock · subject · sentence; below 620px the subject sits above the sentence. */
+.line {
+  display: grid;
+  grid-template-columns: 52px 84px minmax(0, 1fr);
+  gap: 2px var(--space-3);
+  padding: var(--space-2);
+  border-bottom: 1px solid var(--color-line);
+  font-size: var(--text-small);
+  align-items: baseline;
+}
+
+.line q {
+  quotes: "\201C" "\201D";
+}
+
+.clock,
+.subject {
+  font-family: var(--font-mono);
+  font-size: var(--text-mono);
+  color: var(--color-text-muted);
+}
+
+.subject a {
+  color: inherit;
+}
+
+/* A sprint S-03 does not list is named in full, in the sentence's face, inside its column. */
+.sprintName {
+  font-family: var(--font-sans);
+  font-size: var(--text-small);
+  overflow-wrap: anywhere;
+}
+
+.after {
+  display: block;
+  margin-top: 2px;
+  color: var(--color-text-muted);
+}
+
+@media (max-width: 620px) {
+  .line {
+    grid-template-columns: 52px minmax(0, 1fr);
+  }
+
+  .subject,
+  .sentence {
+    grid-column: 2;
+  }
+}
+
+.more {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 14px;
+  padding: 0 var(--space-2);
+  align-items: center;
+}

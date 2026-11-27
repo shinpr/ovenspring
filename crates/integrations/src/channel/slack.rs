@@ -18,12 +18,18 @@ use serde_json::{Value, json};
 
 use super::{
     Button, Channel, ChannelError, ChannelEvent, DecisionKind, DecisionRequest, MessageRef, Notice,
-    NoticeKind,
+    NoticeKind, NoticeMarker,
 };
 use crate::http::{HttpError, Method, Request, Transport, check};
 
 pub const API: &str = "https://slack.com/api";
 const METADATA_TYPE: &str = "ovenspring_decision";
+const NOTICE_METADATA_TYPE: &str = "ovenspring_notice";
+/// How far before a marked notice's record its message is looked for: an assumed bound on how far
+/// this computer's clock and Slack's can differ.
+const CLOCK_MARGIN_SECONDS: i64 = 3600;
+/// The most messages one history page returns, as Slack allows.
+const HISTORY_PAGE_LIMIT: &str = "200";
 /// Slack's limit for the text of all `markdown` blocks in one message.
 const MARKDOWN_MAX: usize = 12_000;
 
@@ -689,6 +695,43 @@ impl<T: Transport> Slack<T> {
         Ok(id)
     }
 
+    /// The channel's message carrying `marker`, searched from shortly before its record on, every
+    /// history page read: Slack may answer a short page that still has a next one.
+    fn marked_message(&self, marker: &NoticeMarker) -> Result<Option<MessageRef>, ChannelError> {
+        let oldest = format!("{}.000000", marker.recorded - CLOCK_MARGIN_SECONDS);
+        let mut cursor: Option<String> = None;
+        loop {
+            let mut query = vec![
+                ("channel", self.channel.as_str()),
+                ("oldest", oldest.as_str()),
+                ("limit", HISTORY_PAGE_LIMIT),
+                ("include_all_metadata", "true"),
+            ];
+            if let Some(c) = cursor.as_deref() {
+                query.push(("cursor", c));
+            }
+            let page = self.call("conversations.history", &query, None)?;
+            let found = page
+                .get("messages")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .find(|m| metadata_id(m, NOTICE_METADATA_TYPE) == Some(marker.id.as_str()))
+                .and_then(|m| str_at(m, "ts"));
+            if let Some(ts) = found {
+                return Ok(Some(self.at(ts.to_owned())));
+            }
+            cursor = page
+                .pointer("/response_metadata/next_cursor")
+                .and_then(Value::as_str)
+                .filter(|c| !c.is_empty())
+                .map(str::to_owned);
+            if cursor.is_none() {
+                return Ok(None);
+            }
+        }
+    }
+
     fn at(&self, ts: String) -> MessageRef {
         MessageRef {
             channel: self.channel.clone(),
@@ -778,12 +821,14 @@ impl<T: Transport> Slack<T> {
 }
 
 fn decision_id(message: &Value) -> Option<String> {
+    metadata_id(message, METADATA_TYPE).map(str::to_owned)
+}
+
+/// The id a message's metadata carries when the metadata is of `event_type`.
+fn metadata_id<'a>(message: &'a Value, event_type: &str) -> Option<&'a str> {
     let meta = message.get("metadata")?;
-    (str_at(meta, "event_type")? == METADATA_TYPE).then(|| {
-        meta.pointer("/event_payload/id")
-            .and_then(Value::as_str)
-            .map(str::to_owned)
-    })?
+    (str_at(meta, "event_type")? == event_type)
+        .then(|| meta.pointer("/event_payload/id").and_then(Value::as_str))?
 }
 
 fn encode(s: &str) -> String {
@@ -826,9 +871,22 @@ impl<T: Transport> Channel for Slack<T> {
         Ok(m)
     }
 
+    /// A marked notice is posted only when the channel has no message carrying its marker yet,
+    /// so a retry after Slack accepted it, its answer lost, finds that message instead.
     fn post_notice(&self, n: &Notice) -> Result<MessageRef, ChannelError> {
-        let m = self
-            .post(&json!({"channel": self.channel, "text": n.text, "blocks": notice_blocks(n)}))?;
+        let mut body = json!({"channel": self.channel, "text": n.text, "blocks": notice_blocks(n)});
+        if let Some(marker) = &n.marker {
+            if let Some(found) = self.marked_message(marker)? {
+                return Ok(found);
+            }
+            if let Some(fields) = body.as_object_mut() {
+                fields.insert(
+                    "metadata".into(),
+                    json!({"event_type": NOTICE_METADATA_TYPE, "event_payload": {"id": marker.id}}),
+                );
+            }
+        }
+        let m = self.post(&body)?;
         self.reply_rest(&m, &n.text)?;
         Ok(m)
     }

@@ -719,3 +719,65 @@ fn changed_files(record: &IssueRecord, worktree: &Path, diff_base: &str) -> Vec<
     .map(String::from)
     .collect()
 }
+
+#[cfg(test)]
+mod tests {
+    use ovenspring_core::flow::Origin;
+    use ovenspring_core::output::Review;
+    use serde_json::json;
+
+    use super::handed;
+    use crate::issues::IssueRecord;
+
+    /// A round's findings as `review-response` receives them: one entry per finding of each
+    /// review, an ID two reviews both use counted for each, and an applied finding a re-review
+    /// maintained handed again as still open.
+    #[test]
+    fn a_round_hands_each_reviews_findings_and_each_maintained_applied_finding() {
+        let dir = tempfile::tempdir().unwrap();
+        let output = dir.path().join("security-review.json");
+        std::fs::write(
+            &output,
+            json!({"status": "pass", "findings": [], "prior_feedback_reconciliation": [
+                {"id": "F009", "prior_disposition": "apply", "status": "maintained", "evidence": "still open"},
+                {"id": "F010", "prior_disposition": "apply", "status": "resolved", "evidence": "fixed"},
+                {"id": "F011", "prior_disposition": "decline", "status": "maintained", "evidence": "e"}
+            ]})
+            .to_string(),
+        )
+        .unwrap();
+        let mut record = IssueRecord::new("ACME-1", "Export orders", vec![]);
+        record.flow.origin = Some(Origin::Round);
+        record.flow.round.findings = [
+            Review::CodeReview { unit: 1 },
+            Review::CodeReview { unit: 2 },
+        ]
+        .into();
+        record.flow.round.maintained = [Review::SecurityReview].into();
+        record.findings.insert(
+            "code-review/1".into(),
+            vec![json!({"id": "F001"}), json!({"id": "F002"})],
+        );
+        record
+            .findings
+            .insert("code-review/2".into(), vec![json!({"id": "F001"})]);
+        record
+            .outputs
+            .insert("security-review".into(), output.display().to_string());
+
+        let handed: Vec<(String, String)> = handed(&record)
+            .into_iter()
+            .map(|(key, f)| (key, f["id"].as_str().unwrap().to_owned()))
+            .collect();
+        assert_eq!(
+            handed,
+            [
+                ("code-review/1", "F001"),
+                ("code-review/1", "F002"),
+                ("code-review/2", "F001"),
+                ("security-review", "F009"),
+            ]
+            .map(|(k, id)| (k.to_owned(), id.to_owned()))
+        );
+    }
+}

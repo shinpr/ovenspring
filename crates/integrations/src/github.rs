@@ -55,6 +55,8 @@ pub struct Pull {
     pub state: PullState,
     /// `None` while GitHub is still computing it.
     pub mergeable: Option<bool>,
+    /// The branch it targets (`base.ref`), when GitHub names it.
+    pub base: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -591,6 +593,14 @@ struct RawPull {
     #[serde(default)]
     mergeable: Option<bool>,
     head: RawBranchRef,
+    #[serde(default)]
+    base: Option<RawBaseRef>,
+}
+
+#[derive(Deserialize)]
+struct RawBaseRef {
+    #[serde(rename = "ref")]
+    name: String,
 }
 
 impl RawPull {
@@ -606,6 +616,7 @@ impl RawPull {
             head_sha: self.head.sha,
             state,
             mergeable: self.mergeable,
+            base: self.base.map(|b| b.name).filter(|b| !b.is_empty()),
         }
     }
 }

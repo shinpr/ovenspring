@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import type { LaunchRow } from '../api/types.gen.ts'
-import { runSentence } from './vocabulary.ts'
+import type { ErrorNow, EventLine, LaunchRow } from '../api/types.gen.ts'
+import { errorName, eventSentence, plain, runSentence } from './vocabulary.ts'
 
 const none: LaunchRow['detail'] = {
   round: null,
@@ -157,5 +157,202 @@ describe('runSentence', () => {
     ],
   ])('%s', (_, given, expected) => {
     expect(runSentence(given)).toEqual(expected)
+  })
+})
+
+const line = (kind: string, fields: EventLine['fields'] = {}): EventLine => ({
+  seq: 0,
+  at: '2026-11-27T08:55:00Z',
+  kind,
+  fields,
+  issue: null,
+  sprint: null,
+  error: null,
+})
+
+describe('eventSentence', () => {
+  it.each([
+    ['a kind with no sentence of its own, as its code', line('replay-reset'), 'Replay reset.'],
+    [
+      'an issue marked done, naming the tracker',
+      line('closed-on-tracker', { issue: 'ACME-141', state: 'done', tracker: 'linear' }),
+      'Marked done on Linear.',
+    ],
+    [
+      'an issue canceled on the tracker',
+      line('closed-on-tracker', { issue: 'ACME-141', state: 'canceled', tracker: 'github' }),
+      'Canceled on GitHub Issues.',
+    ],
+    [
+      'GitHub Issues answering again, apart from GitHub',
+      line('error-cleared', {
+        tracker: 'github',
+        count: 2,
+        failure: { key: 'tracker-unreachable', since: '2026-11-27T04:00:00Z' },
+      }),
+      'GitHub Issues answers again.',
+    ],
+    [
+      'GitHub answering again',
+      line('error-cleared', {
+        count: 2,
+        failure: { key: 'github-unreachable', since: '2026-11-27T04:00:00Z' },
+      }),
+      'GitHub answers again.',
+    ],
+    [
+      'a close that records neither state nor tracker',
+      line('closed-on-tracker', { issue: 'ACME-141' }),
+      'Closed on the tracker.',
+    ],
+    [
+      'error notices turned off',
+      line('config-reloaded', { changes: [{ setting: 'notices.errors', value: false }] }),
+      'Settings changed: Error notices are now off.',
+    ],
+    [
+      'a number setting, by its Settings label',
+      line('config-reloaded', { changes: [{ setting: 'limits.issues_at_once', value: 3 }] }),
+      'Settings changed: Issues at once is now 3.',
+    ],
+    [
+      'a text setting, which records no value',
+      line('config-reloaded', { changes: [{ setting: 'tracker.filter' }] }),
+      'Settings changed: The issue filter command was changed.',
+    ],
+    [
+      'a setting the dashboard has no label for, by its path',
+      line('config-reloaded', { changes: [{ setting: 'future.knob', value: true }] }),
+      'Settings changed: future.knob is now on.',
+    ],
+    [
+      'several changes in one reload',
+      line('config-reloaded', {
+        changes: [{ setting: 'notices.errors', value: true }, { setting: 'merge.by' }],
+      }),
+      'Settings changed: Error notices are now on. Who merges was changed.',
+    ],
+    [
+      'a merge with its pull request and base',
+      line('merged', { issue: 'ACME-141', pr: 86, base: 'main', sha: 'a', merge_commit: 'b' }),
+      'Merged pull request #86 into main.',
+    ],
+    [
+      'a merge whose read named no base',
+      line('merged', { issue: 'ACME-141', pr: 86, sha: 'a', merge_commit: 'b' }),
+      'Merged pull request #86.',
+    ],
+    [
+      'a merge recorded before the number was',
+      line('merged', { issue: 'ACME-141', sha: 'a', merge_commit: 'b' }),
+      'Merged its pull request.',
+    ],
+    [
+      "a sprint's merge recorded before the number was",
+      {
+        ...line('merged', { sprint: '20261127-0902', sha: 'a', merge_commit: 'b' }),
+        sprint: { id: '20261127-0902', purpose: null, listed: true },
+      },
+      "Merged the working agreements' pull request.",
+    ],
+    [
+      'a review round with findings',
+      line('review-round-ended', { issue: 'ACME-142', round: 1, findings: 3 }),
+      'Review round 1 ended with 3 findings.',
+    ],
+    [
+      'a review round with one finding',
+      line('review-round-ended', { issue: 'ACME-142', round: 2, findings: 1 }),
+      'Review round 2 ended with 1 finding.',
+    ],
+    [
+      'a review round with none',
+      line('review-round-ended', { issue: 'ACME-142', round: 3, findings: 0 }),
+      'Review round 3 ended with 0 findings.',
+    ],
+    [
+      'a step finishing, as an issue fact still reads',
+      line('fact', {
+        issue: 'ACME-142',
+        fact: 'Done',
+        from: { stage: 'running', step: 'code-review' },
+        to: { stage: 'reviewing' },
+      }),
+      'Code review finished.',
+    ],
+    [
+      'a sprint proposal Slack accepted, with its summary',
+      line('decision', {
+        id: 'sprint-20261127-0902-sprint-1',
+        kind: 'sprint',
+        issue: null,
+        sprint: '20261127-0902',
+        posted: true,
+        proposal: { issues: 1, purpose: 'Search works.' },
+      }),
+      'Proposed the sprint in Slack: 1 issue toward “Search works.”',
+    ],
+    [
+      'a posted sprint decision without a summary',
+      line('decision', { id: 'x', kind: 'sprint', issue: null, sprint: 'y', posted: true }),
+      'Proposed the sprint in Slack.',
+    ],
+    [
+      'another posted decision, by its kind',
+      line('decision', { id: 'x', kind: 'design', issue: 'ACME-144', posted: true }),
+      'Asked you in Slack to approve its design.',
+    ],
+    [
+      'a sprint proposal recorded before it was sent',
+      line('decision', { id: 'x', kind: 'sprint', issue: null }),
+      'Prepared a sprint proposal.',
+    ],
+    [
+      'another decision recorded before it was sent',
+      line('decision', { id: 'x', kind: 'design', issue: 'ACME-144' }),
+      'Prepared a decision for you.',
+    ],
+    [
+      "the owner's pause with their words",
+      line('paused', { reason: 'lunch', user: 'U0123456789' }),
+      'Paused. You sent !pause in Slack: “lunch”.',
+    ],
+    [
+      "the owner's pause without words",
+      line('paused', { reason: 'paused by the owner', user: 'U0123456789' }),
+      'Paused. You sent !pause in Slack.',
+    ],
+    [
+      "the factory's own pause, which names no owner",
+      line('paused', { reason: 'the agent on ACME-1 (requirements) stopped with an error: x' }),
+      'Paused: “the agent on ACME-1 (requirements) stopped with an error: x”.',
+    ],
+  ])('words %s', (_, given, expected) => {
+    expect(plain(eventSentence(given))).toBe(expected)
+  })
+})
+
+describe('errorName', () => {
+  const going = (key: ErrorNow['key']): ErrorNow => ({
+    key,
+    since: '2026-11-27T04:00:00Z',
+    last: '2026-11-27T04:05:00Z',
+    times: 2,
+    firstIssue: null,
+    cause: 'no answer',
+    tracker: 'github',
+    cli: null,
+    command: null,
+  })
+
+  it.each([
+    [
+      'GitHub Issues out of reach, by the tracker it is',
+      'tracker-unreachable',
+      "Can't reach GitHub Issues",
+    ],
+    ['GitHub out of reach', 'github-unreachable', "Can't reach GitHub"],
+  ] as const)('names %s', (_, key, expected) => {
+    expect(errorName(going(key))).toBe(expected)
   })
 })

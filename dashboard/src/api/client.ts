@@ -6,6 +6,7 @@ import type {
   ApiErrors,
   CancelRequest,
   EndedSprint,
+  EventsPage,
   GoalSaved,
   IssueDetail,
   LaunchDetail,
@@ -70,6 +71,9 @@ export const api = {
   sprints: (): Promise<EndedSprint[]> => call('GET', '/sprints'),
   launches: (filter: { sprint?: string; issue?: string }): Promise<LaunchRow[]> =>
     call('GET', `/launches${query(filter)}`),
+  /** The recorded events the filter keeps, from line `from` on, or the newest when it is unset. */
+  events: (filter: { show?: string; issue?: string; from?: string }): Promise<EventsPage> =>
+    call('GET', `/events${query(filter)}`),
   launch: (id: string): Promise<LaunchDetail> => call('GET', `/launches/${encodeURIComponent(id)}`),
   /** The launch's output as its CLI printed it. */
   logUrl: (id: string): string => `/api/v1/launches/${encodeURIComponent(id)}/log`,

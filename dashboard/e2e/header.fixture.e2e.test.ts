@@ -51,3 +51,24 @@ test('an installed version that is not running yet asks for a restart', async ({
   await expect(header.getByText(/in this repository's folder/)).toBeVisible()
   await expect(header.locator('code')).toHaveCount(0)
 })
+
+// AC: Design § Fact Disposition Table, AppHeader LINKS: "`Shell.tsx` `area()` maps `/events` to
+//     'events', which is what makes the Events link current". UI Spec AppHeader navigation
+//     "Now · Activity · Events · Sprints · Settings".
+// Behavior: the owner opens Events -> the header marks Events as the current page, and only it.
+// @dependency: dashboard app (Shell area(), AppHeader), fixture API
+test('on Events, the Events link is the current page', async ({ page }) => {
+  await serve(page)
+  await page.goto('/events')
+
+  const nav = page.getByRole('navigation', { name: 'Main' })
+  await expect(nav.getByRole('link')).toHaveText([
+    'Now',
+    'Activity',
+    'Events',
+    'Sprints',
+    'Settings',
+  ])
+  await expect(nav.getByRole('link', { name: 'Events' })).toHaveAttribute('aria-current', 'page')
+  await expect(nav.locator('[aria-current]')).toHaveCount(1)
+})

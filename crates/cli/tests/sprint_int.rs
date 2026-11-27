@@ -28,6 +28,7 @@ use ovenspring_integrations::channel::slack::Slack;
 use ovenspring_integrations::channel::{Button, Channel, ChannelEvent, DecisionKind};
 use ovenspring_integrations::tracker::TrackerIssue;
 use serde_json::{Map, Value, json};
+use support::dashboard::Dashboard;
 use support::fake_github::FakeGitHub;
 use support::recording::RecordingTracker;
 use support::recording::{RecordingChannel, Sent};
@@ -192,7 +193,7 @@ fn start(
         ovenspring_daemon::Services {
             github: Some(gh.clone()),
             channel,
-            tracker: Some(tracker.clone()),
+            tracker: Some(support::linear(tracker.clone())),
             secrets: Vec::new(),
         },
     );
@@ -426,6 +427,66 @@ fn assert_the_next_plan_reads_the_last_review(env: &Env, d: &Daemon, next: &str)
     );
 }
 
+// AC: "When Slack accepts a sprint proposal through the decision delivery path, the system shall
+//     show which sprint it concerned, how many issues it proposed and its purpose."
+//     (docs/design/events-and-error-notices-design.md § Acceptance Criteria > Events page; PRD
+//     AC-076)
+/// Each proposal Slack accepted on its first post is one posted `decision` line in the real
+/// server's Events, in order: the first sprint's four-issue plan, its three-issue replan after the
+/// owner's reply, and the next sprint's one-issue plan, each with the plan's purpose.
+fn assert_events_read_each_proposal_once(env: &Env, d: &Daemon, next: &str) {
+    let page = Dashboard::start(env).get("/api/v1/events?from=0").json();
+    let proposals: Vec<&Value> = page["lines"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .rev()
+        .filter(|l| l["kind"] == "decision" && l["fields"]["kind"] == "sprint")
+        .collect();
+    let proposed: Vec<(Value, Value, Value)> = proposals
+        .iter()
+        .map(|l| {
+            (
+                l["fields"]["posted"].clone(),
+                l["fields"]["proposal"].clone(),
+                l["sprint"]["id"].clone(),
+            )
+        })
+        .collect();
+    let first = proposals[0]["sprint"]["id"].clone();
+    assert_ne!(first, json!(next));
+    assert_eq!(
+        proposed,
+        [
+            (
+                json!(true),
+                json!({"issues": 4, "purpose": PURPOSE}),
+                first.clone()
+            ),
+            (json!(true), json!({"issues": 3, "purpose": PURPOSE}), first),
+            (
+                json!(true),
+                json!({"issues": 1, "purpose": PURPOSE}),
+                json!(next)
+            ),
+        ]
+    );
+    let mut ids: Vec<String> = d
+        .decisions()
+        .unwrap()
+        .into_iter()
+        .filter(|r| r.kind == DecisionKind::Sprint)
+        .map(|r| r.id)
+        .collect();
+    ids.sort();
+    let mut listed: Vec<String> = proposals
+        .iter()
+        .map(|l| l["fields"]["id"].as_str().unwrap().to_owned())
+        .collect();
+    listed.sort();
+    assert_eq!(listed, ids, "one line for each proposal posted");
+}
+
 #[test]
 fn whole_sprint_runs_from_proposal_to_the_start_of_the_next_sprint() {
     let env = Env::new();
@@ -493,6 +554,7 @@ fn whole_sprint_runs_from_proposal_to_the_start_of_the_next_sprint() {
         .contains("Run migrations in the e2e lane.")
     );
     let next = d.sprint().unwrap().unwrap();
+    assert_events_read_each_proposal_once(&env, &d, &next.id);
     assert_the_next_plan_reads_the_last_review(&env, &d, &next.id);
     assert_eq!(next.stage, SprintStage::Running);
     assert_eq!(next.plan.unwrap().issues[0].key, "ACME-126");
@@ -773,7 +835,7 @@ fn the_agreements_reply_asks_the_owner_to_approve_only_when_github_requires_it()
             ovenspring_daemon::Services {
                 github: Some(gh.clone()),
                 channel: channel.clone(),
-                tracker: Some(tracker),
+                tracker: Some(support::linear(tracker)),
                 secrets: Vec::new(),
             },
         );
@@ -966,7 +1028,7 @@ fn no_sprint_is_proposed_while_github_is_not_connected() {
         ovenspring_daemon::Services {
             github: None,
             channel: Arc::new(RecordingChannel::default()),
-            tracker: Some(tracker),
+            tracker: Some(support::linear(tracker)),
             secrets: Vec::new(),
         },
     );
@@ -1285,7 +1347,7 @@ fn agreements_failing_their_check() -> (
         ovenspring_daemon::Services {
             github: Some(gh.clone()),
             channel: channel.clone(),
-            tracker: Some(tracker),
+            tracker: Some(support::linear(tracker)),
             secrets: Vec::new(),
         },
     );

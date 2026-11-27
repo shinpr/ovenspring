@@ -2,15 +2,14 @@
 
 use std::collections::HashSet;
 use std::fs;
-use std::io::{BufRead as _, Write as _};
+use std::io::{BufRead as _, Read, Write as _};
 use std::os::unix::process::{CommandExt as _, ExitStatusExt as _};
 use std::path::Path;
-use std::process::{Child, ChildStdout, Command, ExitStatus, Stdio};
+use std::process::{Child, Command, ExitStatus, Stdio};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
 use ovenspring_core::sprint::SprintStage;
-use ovenspring_integrations::http::HttpError;
 use ovenspring_integrations::tracker::{TrackerComment, TrackerIssue};
 use ovenspring_store::StoreError;
 use serde::Serialize;
@@ -18,25 +17,82 @@ use serde_json::json;
 use sha2::{Digest as _, Sha256};
 
 use crate::app::stop_group;
-use crate::records::{self, Service};
+use crate::errors::{ErrorKey, Failure, cut, out_of_reach, refused_cause};
 use crate::{Daemon, DaemonError};
 
+/// How a run of the filter command ended, as the command said it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum Outcome {
     Admitted,
     Dropped(String),
-    Failed(String),
+    /// `output` is the first line the command wrote to stderr, empty when it wrote none.
+    Failed {
+        error: String,
+        output: String,
+    },
+}
+
+impl Outcome {
+    fn failed(error: impl Into<String>) -> Outcome {
+        Outcome::Failed {
+            error: error.into(),
+            output: String::new(),
+        }
+    }
+}
+
+/// A judgment as the daemon keeps it until it is published: every text the command or its
+/// setting supplied already masked with the credentials held during the run, so a credential
+/// replaced before the verdict is logged never reaches a line.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum Verdict {
+    Admitted,
+    Dropped(String),
+    Failed(FilterFailure),
+}
+
+/// What a failed judgment records, each text masked and cut.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct FilterFailure {
+    error: String,
+    /// Stderr's first line, empty when it printed none.
+    output: String,
+    command: String,
+}
+
+impl FilterFailure {
+    /// The failure of the filter's error that a failed judgment of `key` is.
+    fn of_issue(&self, key: &str) -> Failure {
+        let mut event = json!({"event": "filter-failed", "issue": key, "error": self.error,
+                               "command": self.command});
+        let cause = if self.output.is_empty() {
+            self.error.clone()
+        } else {
+            if let Some(event) = event.as_object_mut() {
+                event.insert("output".into(), json!(self.output));
+            }
+            format!("{} ({})", self.error, self.output)
+        };
+        Failure {
+            event,
+            cause,
+            via: None,
+            reason: None,
+        }
+    }
 }
 
 pub(crate) struct Judged {
     hash: [u8; 32],
-    outcome: Outcome,
+    verdict: Verdict,
     logged: bool,
 }
 
 pub(crate) struct FilterRun {
     key: String,
     hash: [u8; 32],
+    /// The command that runs; a changed setting voids the run.
+    command: String,
     pid: Option<u32>,
     void: bool,
     pub(crate) secrets: Vec<String>,
@@ -96,43 +152,47 @@ fn spawn_filter(command: &str, repo: &Path) -> std::io::Result<Child> {
         .current_dir(repo)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .stderr(Stdio::null())
+        .stderr(Stdio::piped())
         .process_group(0)
         .spawn()
 }
+
+/// The most of stderr's first line kept, in bytes: the failure's text is cut far shorter.
+const STDERR_LINE_MAX: u64 = 4 * 1024;
 
 /// Runs the command's child without blocking the daemon's polling thread.
 fn judge(mut child: Child, input: Vec<u8>, limit: Duration) -> Outcome {
     let deadline = Instant::now() + limit;
     let pid = child.id();
-    let Some(mut stdin) = child.stdin.take() else {
+    let (Some(mut stdin), Some(stdout), Some(stderr)) =
+        (child.stdin.take(), child.stdout.take(), child.stderr.take())
+    else {
         stop_group(pid);
-        return Outcome::Failed("could not write filter input".into());
-    };
-    let Some(stdout) = child.stdout.take() else {
-        stop_group(pid);
-        return Outcome::Failed("could not read filter output".into());
+        return Outcome::failed("could not connect to the filter's input and output");
     };
     let writer = std::thread::spawn(move || {
         let _ = stdin.write_all(&input);
     });
-    let reader = std::thread::spawn(move || read_first_line(stdout));
+    let reader = std::thread::spawn(move || read_first_line(stdout, u64::MAX));
+    let errors = std::thread::spawn(move || read_first_line(stderr, STDERR_LINE_MAX));
     let status = loop {
         match child.try_wait() {
-            Ok(Some(status)) if reader.is_finished() => break status,
+            Ok(Some(status)) if reader.is_finished() && errors.is_finished() => break status,
             Ok(_) => {}
             Err(error) => {
                 stop_group(pid);
                 let _ = child.wait();
                 let _ = reader.join();
-                return Outcome::Failed(format!("could not wait for filter: {error}"));
+                let _ = errors.join();
+                return Outcome::failed(format!("could not wait for filter: {error}"));
             }
         }
         if Instant::now() >= deadline {
             stop_group(pid);
             let _ = child.wait();
             let _ = reader.join();
-            return Outcome::Failed(format!("ran longer than {} seconds", limit.as_secs_f64()));
+            let _ = errors.join();
+            return Outcome::failed(format!("ran longer than {} seconds", limit.as_secs_f64()));
         }
         std::thread::sleep(Duration::from_millis(10));
     };
@@ -144,39 +204,52 @@ fn judge(mut child: Child, input: Vec<u8>, limit: Duration) -> Outcome {
     let _ = writer.join();
     let first_line = match reader.join() {
         Ok(Ok(line)) => line,
-        Ok(Err(error)) => return Outcome::Failed(format!("could not read filter output: {error}")),
-        Err(_) => return Outcome::Failed("filter output reader stopped unexpectedly".into()),
+        Ok(Err(error)) => return Outcome::failed(format!("could not read filter output: {error}")),
+        Err(_) => return Outcome::failed("filter output reader stopped unexpectedly"),
     };
-    classify(status, first_line)
+    // What stderr said only explains a failure, so one that cannot be read leaves it unexplained.
+    let error_line = errors.join().ok().and_then(Result::ok).unwrap_or_default();
+    classify(status, first_line, error_line)
 }
 
-fn read_first_line(mut stdout: ChildStdout) -> std::io::Result<Vec<u8>> {
-    let mut stdout = std::io::BufReader::new(&mut stdout);
+/// The first line of `stream`, up to `limit` bytes, with the rest drained so the command never
+/// blocks on a full pipe.
+fn read_first_line(stream: impl Read, limit: u64) -> std::io::Result<Vec<u8>> {
+    let mut stream = std::io::BufReader::new(stream);
     let mut first_line = Vec::new();
-    stdout.read_until(b'\n', &mut first_line)?;
-    std::io::copy(&mut stdout, &mut std::io::sink())?;
+    (&mut stream)
+        .take(limit)
+        .read_until(b'\n', &mut first_line)?;
+    std::io::copy(&mut stream, &mut std::io::sink())?;
     Ok(first_line)
 }
 
-fn classify(status: ExitStatus, mut first_line: Vec<u8>) -> Outcome {
-    match status.code() {
-        Some(0) => Outcome::Admitted,
-        Some(2) => {
-            if first_line.last() == Some(&b'\n') {
-                first_line.pop();
-                if first_line.last() == Some(&b'\r') {
-                    first_line.pop();
-                }
-            }
-            Outcome::Dropped(String::from_utf8_lossy(&first_line).into_owned())
+/// A line's text without the line ending that closed it.
+fn line_text(mut line: Vec<u8>) -> String {
+    if line.last() == Some(&b'\n') {
+        line.pop();
+        if line.last() == Some(&b'\r') {
+            line.pop();
         }
-        Some(code) => Outcome::Failed(format!("exited with status {code}")),
-        None => Outcome::Failed(format!(
+    }
+    String::from_utf8_lossy(&line).into_owned()
+}
+
+fn classify(status: ExitStatus, first_line: Vec<u8>, error_line: Vec<u8>) -> Outcome {
+    let error = match status.code() {
+        Some(0) => return Outcome::Admitted,
+        Some(2) => return Outcome::Dropped(line_text(first_line)),
+        Some(code) => format!("exited with status {code}"),
+        None => format!(
             "ended by signal {}",
             status
                 .signal()
                 .map_or_else(|| "unknown".into(), |signal| signal.to_string())
-        )),
+        ),
+    };
+    Outcome::Failed {
+        error,
+        output: line_text(error_line),
     }
 }
 
@@ -203,7 +276,8 @@ impl Daemon {
         let Some(tracker) = self.services.tracker.clone() else {
             return Ok(());
         };
-        match tracker.open_issues() {
+        let kind = tracker.kind;
+        match tracker.client.open_issues() {
             Ok(mut issues) => {
                 // An issue someone else already started is theirs; the factory's own stay.
                 issues.retain(|issue| {
@@ -224,18 +298,40 @@ impl Daemon {
                 self.tracker_issues = tracker_issues;
                 self.tracker_read = true;
                 self.tracker_error = None;
-                records::reached(&self.store, Service::Tracker, Ok(()))?;
+                self.succeeded(ErrorKey::TrackerUnreachable, &json!({"tracker": kind}))?;
+                self.succeeded(ErrorKey::TrackerRefused, &json!({"tracker": kind}))?;
             }
             // Not answering is the service's or the network's: shown as out of reach, not as a
             // connection to fix.
-            Err(error @ HttpError::Transient { why, .. }) => {
-                records::reached(&self.store, Service::Tracker, Err(why))?;
-                self.event(&json!({"event": "service-unreachable", "operation": "reading the tracker", "error": error.to_string()}))?;
-            }
             Err(error) => {
-                self.tracker_error = Some(error.to_string());
-                records::reached(&self.store, Service::Tracker, Ok(()))?;
-                self.event(&json!({"event": "tracker-error", "error": error.to_string()}))?;
+                if let Some((why, cause)) = out_of_reach(&error) {
+                    self.failed(
+                        ErrorKey::TrackerUnreachable,
+                        Failure {
+                            event: json!({"event": "service-unreachable", "operation": "reading the tracker",
+                                          "error": error.to_string(), "why": why, "tracker": kind}),
+                            cause,
+                            via: None,
+                            reason: None,
+                        },
+                    )?;
+                } else {
+                    // A refusal is an answer. Now shows it while this connection is the one in
+                    // use; the error stays open until the tracker is read, whatever connection
+                    // reads it.
+                    self.tracker_error = Some(error.to_string());
+                    self.succeeded(ErrorKey::TrackerUnreachable, &json!({"tracker": kind}))?;
+                    self.failed(
+                        ErrorKey::TrackerRefused,
+                        Failure {
+                            event: json!({"event": "tracker-error", "error": error.to_string(),
+                                          "tracker": kind}),
+                            cause: refused_cause(&error),
+                            via: None,
+                            reason: None,
+                        },
+                    )?;
+                }
             }
         }
         self.intake_pass()
@@ -257,28 +353,31 @@ impl Daemon {
                     self.verdicts
                         .get(&issue.key)
                         .filter(|judged| judged.hash == *hash)
-                        .map(|judged| judged.outcome.clone())
+                        .map(|judged| judged.verdict.clone())
                 } else {
-                    Some(Outcome::Admitted)
+                    Some(Verdict::Admitted)
                 };
                 match verdict {
-                    Some(Outcome::Admitted) => {
+                    Some(Verdict::Admitted) => {
                         self.write_source(&format!("issues/{}.md", issue.key), &issue.render())?;
                     }
-                    Some(Outcome::Failed(error)) => {
+                    Some(Verdict::Failed(failure)) => {
                         self.write_source(&format!("issues/{}.md", issue.key), &issue.render())?;
-                        self.log_verdict(&issue.key, "filter-failed", &json!({"error": error}))?;
+                        if self.unlogged(&issue.key) {
+                            self.failed(ErrorKey::Filter, failure.of_issue(&issue.key))?;
+                            self.mark_logged(&issue.key);
+                        }
                     }
-                    Some(Outcome::Dropped(reason)) => {
+                    Some(Verdict::Dropped(reason)) => {
                         let path = self.store.source(&format!("issues/{}.md", issue.key));
                         if path.exists() {
                             fs::remove_file(&path).map_err(StoreError::io(&path))?;
                         }
-                        self.log_verdict(
-                            &issue.key,
-                            "filter-dropped",
-                            &json!({"url": issue.url, "reason": reason}),
-                        )?;
+                        if self.unlogged(&issue.key) {
+                            self.event(&json!({"event": "filter-dropped", "issue": issue.key,
+                                               "url": issue.url, "reason": reason}))?;
+                            self.mark_logged(&issue.key);
+                        }
                     }
                     None if self.provisional.contains(&issue.key) => {
                         self.write_source(&format!("issues/{}.md", issue.key), &issue.render())?;
@@ -318,29 +417,27 @@ impl Daemon {
         self.start_next_filter_run()
     }
 
-    fn log_verdict(
-        &mut self,
-        key: &str,
-        event: &str,
-        fields: &serde_json::Value,
-    ) -> Result<(), DaemonError> {
-        let Some(judged) = self.verdicts.get(key) else {
-            return Ok(());
-        };
-        if judged.logged {
-            return Ok(());
-        }
-        let mut body = json!({"event": event, "issue": key});
-        if let (Some(body), Some(fields)) = (body.as_object_mut(), fields.as_object()) {
-            body.extend(
-                fields
-                    .iter()
-                    .map(|(key, value)| (key.clone(), value.clone())),
-            );
-        }
-        self.event(&body)?;
+    /// Whether the verdict for `key` is still to be recorded: each judgment is logged once.
+    fn unlogged(&self, key: &str) -> bool {
+        self.verdicts.get(key).is_some_and(|judged| !judged.logged)
+    }
+
+    fn mark_logged(&mut self, key: &str) {
         if let Some(judged) = self.verdicts.get_mut(key) {
             judged.logged = true;
+        }
+    }
+
+    /// Ends the filter's error once a judgment shows the filter works, or once no filter is
+    /// configured. Runs every pass, so a clear whose line could not be appended is recorded by a
+    /// later pass even though the cached verdict never runs the command again.
+    pub(crate) fn clear_filter(&mut self) -> Result<(), DaemonError> {
+        if let Some(issue) = self.filter_worked.clone() {
+            self.succeeded(ErrorKey::Filter, &json!({"issue": issue}))?;
+            self.filter_worked = None;
+        }
+        if self.config.tracker.filter.is_none() {
+            self.succeeded(ErrorKey::Filter, &json!({"removed": true}))?;
         }
         Ok(())
     }
@@ -384,12 +481,13 @@ impl Daemon {
         let handle = match result {
             Ok(child) => std::thread::spawn(move || judge(child, input, timeout)),
             Err(error) => {
-                std::thread::spawn(move || Outcome::Failed(format!("could not start: {error}")))
+                std::thread::spawn(move || Outcome::failed(format!("could not start: {error}")))
             }
         };
         self.filter_run = Some(FilterRun {
             key: issue.key,
             hash,
+            command,
             pid,
             void: false,
             secrets: self.services.secrets.clone(),
@@ -420,21 +518,33 @@ impl Daemon {
             && let Some(outcome) = outcome
         {
             self.provisional.remove(&run.key);
-            let outcome = match outcome {
-                Outcome::Dropped(reason) => {
-                    let secrets: Vec<&str> = run.secrets.iter().map(String::as_str).collect();
-                    Outcome::Dropped(crate::download::mask(&reason, &secrets))
-                }
-                outcome @ (Outcome::Admitted | Outcome::Failed(_)) => outcome,
+            let secrets: Vec<&str> = run.secrets.iter().map(String::as_str).collect();
+            let mask = |text: &str| crate::download::mask(text, &secrets);
+            // A failure's texts are cut only after masking, so a cut never leaves part of a
+            // credential.
+            let verdict = match outcome {
+                Outcome::Admitted => Verdict::Admitted,
+                Outcome::Dropped(reason) => Verdict::Dropped(mask(&reason)),
+                Outcome::Failed { error, output } => Verdict::Failed(FilterFailure {
+                    error: cut(&mask(&error)),
+                    output: cut(&mask(&output)),
+                    command: cut(&mask(&run.command)),
+                }),
             };
+            // A fresh judgment that admits or drops shows the filter works; one reapplied from
+            // the cache is an earlier judgment and shows nothing.
+            if matches!(verdict, Verdict::Admitted | Verdict::Dropped(_)) {
+                self.filter_worked = Some(run.key.clone());
+            }
             self.verdicts.insert(
                 run.key,
                 Judged {
                     hash: run.hash,
-                    outcome,
+                    verdict,
                     logged: false,
                 },
             );
+            self.clear_filter()?;
         }
         self.intake_pass()
     }
@@ -509,16 +619,17 @@ mod tests {
         );
         assert_eq!(
             judge(child("exit 1", dir.path()), vec![], Duration::from_secs(1)),
-            Outcome::Failed("exited with status 1".into())
+            Outcome::failed("exited with status 1")
         );
-        assert_eq!(
+        assert!(matches!(
             judge(
                 child("__missing_filter_interpreter__", dir.path()),
                 vec![],
                 Duration::from_secs(1),
             ),
-            Outcome::Failed("exited with status 127".into())
-        );
+            Outcome::Failed { error, output }
+                if error == "exited with status 127" && output.contains("__missing_filter_interpreter__")
+        ));
         assert_eq!(
             judge(child("exit 2", dir.path()), vec![], Duration::from_secs(1)),
             Outcome::Dropped(String::new())
@@ -529,7 +640,38 @@ mod tests {
                 vec![],
                 Duration::from_secs(1)
             ),
-            Outcome::Failed("ended by signal 15".into())
+            Outcome::failed("ended by signal 15")
+        );
+    }
+
+    #[test]
+    fn intake_judge_keeps_the_first_stderr_line_of_a_failure_up_to_its_limit() {
+        let dir = tempfile::tempdir().unwrap();
+        assert_eq!(
+            judge(
+                child(
+                    "printf 'token expired\\r\\nsecond\\n' >&2; exit 1",
+                    dir.path()
+                ),
+                vec![],
+                Duration::from_secs(1),
+            ),
+            Outcome::Failed {
+                error: "exited with status 1".into(),
+                output: "token expired".into()
+            }
+        );
+        let long = "e".repeat(10_000);
+        assert_eq!(
+            judge(
+                child(&format!("printf '{long}\\n' >&2; exit 1"), dir.path()),
+                vec![],
+                Duration::from_secs(1),
+            ),
+            Outcome::Failed {
+                error: "exited with status 1".into(),
+                output: "e".repeat(4 * 1024)
+            }
         );
     }
 
@@ -573,11 +715,11 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let absent = dir.path().join("missing");
         let outcome = spawn_filter("exit 0", &absent).map_or_else(
-            |error| Outcome::Failed(format!("could not start: {error}")),
+            |error| Outcome::failed(format!("could not start: {error}")),
             |child| judge(child, vec![], Duration::from_secs(1)),
         );
         assert!(
-            matches!(outcome, Outcome::Failed(message) if message.starts_with("could not start: "))
+            matches!(outcome, Outcome::Failed { error, .. } if error.starts_with("could not start: "))
         );
     }
 
@@ -590,7 +732,7 @@ mod tests {
         let pid = process.id();
         assert_eq!(
             judge(process, vec![], Duration::from_secs(2)),
-            Outcome::Failed("ran longer than 2 seconds".into())
+            Outcome::failed("ran longer than 2 seconds")
         );
         let child_pid = fs::read_to_string(child_pid_file).unwrap();
         assert!(!process_exists(child_pid.trim()));
