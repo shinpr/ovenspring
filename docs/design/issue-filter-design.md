@@ -9,7 +9,7 @@ The owner names a command in `[tracker] filter`; the daemon runs it on each new 
 ### Prerequisite ADRs
 
 - `docs/adr/ADR-0005-file-board-and-state-outside-repository.md`: snapshots stay files under the state directory's `sources/issues/`; events stay JSON Lines in `events.jsonl`. The filter adds no persisted record.
-- `docs/adr/ADR-0007-daemon-owns-external-writes.md`: only the daemon reads the tracker; the filter runs in the daemon, and nothing about a drop or failure is written to Slack or the tracker.
+- `docs/adr/ADR-0007-daemon-owns-external-writes.md`: only the daemon reads the tracker; the filter runs in the daemon. Intake itself writes nothing to Slack or the tracker: a drop stays an event only, and a failure reaches Slack only as the error notices `docs/design/events-and-error-notices-design.md` owns, while they are on.
 - `docs/adr/ADR-0001-rust-single-binary.md`: the filter run is plain Rust process handling in the daemon crate; no new runtime.
 
 ### External Resources Used
@@ -198,7 +198,7 @@ No Ripple Effect:
   - The prompt and request text the code writes (request_text's wording is unchanged; its title now comes from the snapshot)
   - crates/core/src/sprint.rs (no new transition)
   - The dashboard (its open count follows snapshot files) and downloads (download::mask is reused, unchanged)
-  - Slack and tracker writes
+  - Slack and tracker writes by intake (a filter failure's Slack notices are the error notices' own, in the events-and-error-notices design)
 ```
 
 ### Interface Change Matrix
@@ -306,7 +306,7 @@ filter_run: Option<FilterRun>,          // FilterRun { key, hash, url, pid: Opti
 
 **Starting a run.** The daemon spawns `sh -c <filter>` (The filter run, step 1) on its own thread, so the run's process group is known (`pid`), and hands the child, or the spawn error, to a new thread that returns the `Outcome`; "could not start" thus comes back through the same handle as every other outcome. It stores `FilterRun { key, hash, url, pid, void: false, secrets, handle }`, `secrets` being a copy of `Services::secrets` as the run starts, to which `replace_services` adds each newly held set while the run is held (Credentials for masking).
 
-**Taking a run** (`take_filter_run`, each tick after the halt check). When `filter_run.handle` is finished, the daemon joins it and keeps the outcome only when the run was not voided, its key is a candidate in the latest read, and its hash equals that candidate's current hash. A kept outcome is stored as `verdicts[key] = Judged { hash, outcome, logged: false }` and the key leaves `provisional`; a `Dropped` reason is stored as `download::mask(reason, run.secrets)`, so every credential value the daemon held at any moment from the command's start until its result is taken (the current `Services::secrets` among them), and every token format the downloads mask, becomes `[masked]`, any other text staying as the command wrote it. The unmasked reason is dropped with the joined outcome and is never stored; a discarded one (a panicked thread included) changes nothing and its content is judged again if still current. Either way `filter_run` is cleared and the pass runs, which applies the verdict and starts the next run. A run is voided when the filter setting changes and when a tracker read no longer holds its key, so a command changed away and back, or an issue closed and reopened, while the run was under way, cannot pass off the earlier judgment as the current one (AC-073 requires both to be judged anew). Selection needs no flag: a result arriving while its key is selected is discarded by the candidacy check, and an issue a revised proposal leaves out is a candidate again (AC-074), whose unchanged content (same hash) under the same command is exactly what that run judged, so its verdict is the candidate's current one and applies as any other.
+**Taking a run** (`take_filter_run`, each tick after the halt check). When `filter_run.handle` is finished, the daemon joins it and keeps the outcome only when the run was not voided, its key is a candidate in the latest read, and its hash equals that candidate's current hash. A kept outcome is stored as `verdicts[key] = Judged { hash, outcome, logged: false }` and the key leaves `provisional`; a `Dropped` reason is stored as `download::mask(reason, run.secrets)`, and a `Failed` outcome's `error`, its `output` and the `[tracker] filter` command in force (a changed setting voids the run, so it is the command that ran) are stored masked the same way and then cut to 300 bytes at a character boundary, so every credential value the daemon held at any moment from the command's start until its result is taken (the current `Services::secrets` among them), and every token format the downloads mask, becomes `[masked]`, any other text staying as the command wrote it. The unmasked reason is dropped with the joined outcome and is never stored; a discarded one (a panicked thread included) changes nothing and its content is judged again if still current. Either way `filter_run` is cleared and the pass runs, which applies the verdict and starts the next run. A run is voided when the filter setting changes and when a tracker read no longer holds its key, so a command changed away and back, or an issue closed and reopened, while the run was under way, cannot pass off the earlier judgment as the current one (AC-073 requires both to be judged anew). Selection needs no flag: a result arriving while its key is selected is discarded by the candidacy check, and an issue a revised proposal leaves out is a candidate again (AC-074), whose unchanged content (same hash) under the same command is exactly what that run judged, so its verdict is the candidate's current one and applies as any other.
 
 **Forgetting.** After each successful read, `verdicts` and `provisional` keep only keys in the read.
 
@@ -317,13 +317,13 @@ filter_run: Option<FilterRun>,          // FilterRun { key, hash, url, pid: Opti
 **Daemon stop.** `stop_launches` calls `stop_filter`, which stops the process group of a run whose handle has not finished (`app::stop_group(pid)`). Dropping the `Daemon` calls `stop_filter` too, so a path that ends the daemon without `stop_launches` (an early error return, a test that ends or panics) leaves no command running. Nothing is queued to start after it, and the next start judges again.
 
 **The filter run**:
-1. `Command::new("sh").arg("-c").arg(command).current_dir(repo)`, stdin and stdout piped, stderr null, `process_group(0)`. A spawn error is `Failed("could not start: <error>")`.
+1. `Command::new("sh").arg("-c").arg(command).current_dir(repo)`, stdin, stdout and stderr piped, `process_group(0)`. A spawn error is `Failed("could not start: <error>")`. Every `Failed` also carries `output`: the first line of stderr, empty when there is none or the command never started.
 2. A thread writes the stdin JSON and closes stdin; a write error (the command exited or closed stdin) is ignored.
-3. A thread reads stdout to its end, keeping the bytes before the first `\n`, whether an `\n` was found, and discarding the rest.
+3. A thread reads stdout to its end, keeping the bytes before the first `\n`, whether an `\n` was found, and discarding the rest. Another thread does the same for stderr, keeping at most the first 4 KiB of its first line; it is used only when the outcome is `Failed`.
 4. The caller waits, polling `try_wait`, until the command has exited and stdout has closed, or until `Timing::filter_timeout` (60 s) after the start. At the limit it calls `stop_group(pid)`, reaps the child, and returns `Failed("ran longer than 60 seconds")`.
 5. Exit 0 → `Admitted`; exit 2 → `Dropped(reason)`, the kept bytes with one `\r` removed from their end only when an `\n` followed it (the rest of a `\r\n` terminator; stdout that ends in `\r` with no `\n` keeps it), decoded as UTF-8 with invalid bytes replaced (the event is JSON text), otherwise unchanged and possibly empty; other status → `Failed("exited with status N")`; signal → `Failed("ended by signal N")`.
 
-**Credentials for masking.** `Services` gains `secrets: Vec<String>`: `services_for` (`crates/cli/src/daemon_cmd.rs`) fills it with `held.values()` and, when no GitHub token is held, the signed-in `gh` token it used for the GitHub API. `Services` is rebuilt and handed over with `replace_services` whenever the credentials file changes (`connection_key`, `crates/cli/src/daemon_cmd.rs` reload loop), which can happen while a run is under way or while its verdict waits for the pass. The run therefore keeps a copy of the values held as it started, and `replace_services`, when `filter_run` is `Some`, appends the new `Services::secrets` to `filter_run.secrets` before installing them; so from the run's start until it is taken, `filter_run.secrets` holds every value the daemon held, the current ones included, and the reason is masked with that list alone (Taking a run). Only the masked reason is kept, so a replacement after the take, while the verdict waits for the pass, cannot expose it. No file is read and no error path is added at logging. A value written to the credentials file and replaced again before the reload loop reads the file is never held by the daemon and cannot be masked (Design Boundaries).
+**Credentials for masking.** `Services` gains `secrets: Vec<String>`: `services_for` (`crates/cli/src/daemon_cmd.rs`) fills it with `held.values()` and, when no GitHub token is held, the signed-in `gh` token it used for the GitHub API. `Services` is rebuilt and handed over with `replace_services` whenever the credentials file changes (`connection_key`, `crates/cli/src/daemon_cmd.rs` reload loop), which can happen while a run is under way or while its verdict waits for the pass. The run therefore keeps a copy of the values held as it started, and `replace_services`, when `filter_run` is `Some`, appends the new `Services::secrets` to `filter_run.secrets` before installing them; so from the run's start until it is taken, `filter_run.secrets` holds every value the daemon held, the current ones included, and the reason is masked with that list alone (Taking a run). Only the masked reason, error, output and command are kept, so a replacement after the take, while the verdict waits for the pass, cannot expose it. No file is read and no error path is added at logging. A value written to the credentials file and replaced again before the reload loop reads the file is never held by the daemon and cannot be masked (Design Boundaries).
 
 **Revisions to existing code.** `poll_tracker` and `forget_closed_sources` move from `issues.rs` to `intake.rs`, which owns all intake. `issues.rs` keeps issue records and steps. `begin_issue` and `start_sprint_issues` stop reading `open_issues`, which is left to intake.
 
@@ -389,7 +389,7 @@ Output:
   Exit 2: dropped; first line of stdout (without its \n or \r\n) is the reason, recorded as written except that credentials the factory holds at any moment while the command runs, until its result is taken, and values in common token formats become [masked]
   Anything else, cannot start, or not done within 60 s: failure, the issue goes on
 Invariants:
-  - Stderr is discarded
+  - Of stderr, only the first line of a failed command is recorded, in its failure event, masked like the reason and cut to 300 bytes; the rest is discarded. Exit codes, the reason from stdout and the 60-second limit keep their meanings (`docs/design/events-and-error-notices-design.md`, Filter output)
   - A command still running at 60 s, or when the daemon stops, is stopped with its whole process group
   - The reason is recorded in the factory's event log (events.jsonl), which the factory's agents read when they collect a sprint's facts; a credential in it is masked first, the drop still applies
 ```
@@ -398,7 +398,8 @@ Invariants:
 
 ```yaml
 filter-dropped: {"event": "filter-dropped", "issue": "<key>", "url": "<url>", "reason": "<first stdout line, credentials masked>"}
-filter-failed:  {"event": "filter-failed", "issue": "<key>", "error": "could not start: …" | "exited with status N" | "ended by signal N" | "ran longer than 60 seconds"}
+filter-failed:  {"event": "filter-failed", "issue": "<key>", "error": "could not start: …" | "exited with status N" | "ended by signal N" | "ran longer than 60 seconds", "command": "<[tracker] filter, masked>", "output": "<first stderr line, masked>", "failure": {…}}
+# `failure` and the start/repeat/clear of the filter error: `docs/design/events-and-error-notices-design.md` (Errors)
 ```
 
 Each is logged once per verdict, by the pass that applies it. The `issue` field puts them in that issue's download (`download.rs:147-149`).
@@ -441,14 +442,14 @@ System Invariants:
   - While Proposing, no snapshot is written or removed
   - At most one filter command runs at a time, and only for a candidate unjudged when it started
   - Each filter event corresponds to a verdict the publication pass applied
-  - No credential value in Services::secrets at any moment from a run's start until its result was taken appears in a filter event, or in a stored verdict
+  - No credential value in Services::secrets at any moment from a run's start until its result was taken appears in a filter event, or in a stored verdict (its reason, error, output or command)
 ```
 
 ### Error Handling
 
 | Error Category | Example | Detection | Recovery Strategy | User Impact |
 |---------------|---------|-----------|-------------------|-------------|
-| Owner's command | exit 1, cannot start, past 60 s | `judge` outcome | Issue goes on as without a filter; `filter-failed` event; not rerun until the content, the filter setting, or the daemon run changes | Silent here; shown by shinpr/ovenspring#9 |
+| Owner's command | exit 1, cannot start, past 60 s | `judge` outcome | Issue goes on as without a filter; `filter-failed` event; not rerun until the content, the filter setting, or the daemon run changes | A line on the Events page; while error notices are on, one Slack message when the filter starts failing and one when it works again (`docs/design/events-and-error-notices-design.md`) |
 | Tracker read | transient / other | existing `poll_tracker` arms | Logged as today; verdicts and the last successful read kept; the pass runs over that read, so a filter change waiting on this poll still applies | As today |
 | Snapshot write/remove | I/O error | `StoreError` | Propagated to `settle_part`, as today | As today |
 | Filter run thread | panics | `join` returns `Err` | Result discarded; the content is judged again by a later run | None |
@@ -486,7 +487,7 @@ No data migration. Existing `config.toml` files parse unchanged. On the first st
 
 - **Authentication & Authorization**: N/A — no new entry point. The command is set by the owner in Settings, or by whoever can edit `.ovenspring/config.toml`; a pull request changing it is held for the owner (AC-014).
 - **Input Validation**: tracker text reaches the owner's command only on stdin as JSON, never on its command line or in its environment, so issue text cannot change what `sh -c` runs. The verdict is the exit status alone.
-- **Sensitive Data Handling**: events hold the key, URL, the command's reason and the failure kind; no issue body or stderr is logged by the factory. The reason is the owner's command's own text, recorded as written (AC-072) except for credentials: when the run's result is taken it passes through `download::mask` with every credential the daemon held from the command's start until that moment, and only the masked text is kept until it is appended to `events.jsonl`, so a credential the command prints (the command runs with the daemon's environment and user) stays out of the raw log, as the PRD (Non-Functional Requirements, Security) and the core design's logging invariant require; the drop and its event still apply. `events.jsonl` is read by the facts step at sprint end (`factory/steps/facts.md`, Inputs), so the guide says so and its example wrapper gives a reason that names the rule rather than quoting the issue. A reason that quotes the issue is the owner's choice under the contract.
+- **Sensitive Data Handling**: events hold the key, URL, the command's reason and the failure kind; no issue body is logged by the factory, and of stderr only the first line of a failed command, masked with the run's credentials when the run is taken and cut to 300 bytes. The reason is the owner's command's own text, recorded as written (AC-072) except for credentials: when the run's result is taken it passes through `download::mask` with every credential the daemon held from the command's start until that moment, and only the masked text is kept until it is appended to `events.jsonl`, so a credential the command prints (the command runs with the daemon's environment and user) stays out of the raw log, as the PRD (Non-Functional Requirements, Security) and the core design's logging invariant require; the drop and its event still apply. `events.jsonl` is read by the facts step at sprint end (`factory/steps/facts.md`, Inputs), so the guide says so and its example wrapper gives a reason that names the rule rather than quoting the issue. A reason that quotes the issue is the owner's choice under the contract.
 
 ## Test Boundaries
 
