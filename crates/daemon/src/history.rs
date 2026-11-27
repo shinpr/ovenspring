@@ -8,7 +8,7 @@ use ovenspring_core::config::{Cli, Role};
 use ovenspring_core::flow::Stage;
 use ovenspring_core::item::{Item, Status};
 use ovenspring_core::output::{
-    CheckResult, Decision, Disposition, DocumentOutput, ExecutorOutput, KeyResult,
+    CheckResult, Decision, Disposition, DocumentOutput, ExecutorOutput, KeyResult, Reconciliation,
     ReferenceStrength, Scale, ScopeCheckOutput, StepOutput,
 };
 use ovenspring_core::phase::Phase;
@@ -661,6 +661,12 @@ fn judging(record: &IssueRecord) -> Option<usize> {
     Some(crate::handoff::handed(record).len())
 }
 
+/// The findings a check left open: what it raised and, on a re-review, the applied findings it
+/// maintained.
+fn left_open(raised: usize, recheck: &[Reconciliation]) -> usize {
+    raised + recheck.iter().filter(|r| r.maintains_applied()).count()
+}
+
 fn detail(item: Option<&Item>, record: Option<&IssueRecord>) -> RunDetail {
     let Some(item) = item else {
         return RunDetail::default();
@@ -670,11 +676,28 @@ fn detail(item: Option<&Item>, record: Option<&IssueRecord>) -> RunDetail {
         ..RunDetail::default()
     };
     match output_of(item) {
-        Some(StepOutput::DocumentReview(r)) => d.found = Some(r.issues.len()),
+        Some(StepOutput::DocumentReview(r)) => {
+            d.found = Some(left_open(r.issues.len(), &r.prior_feedback_reconciliation));
+        }
         Some(StepOutput::Verifier(v)) => d.found = Some(v.discrepancies.len()),
-        Some(StepOutput::TestReview(r)) => d.found = Some(r.quality_issues.len()),
-        Some(StepOutput::CodeReview(r)) => d.found = Some(r.findings.len()),
-        Some(StepOutput::SecurityReview(r)) => d.found = Some(r.findings.len()),
+        Some(StepOutput::TestReview(r)) => {
+            d.found = Some(left_open(
+                r.quality_issues.len(),
+                &r.prior_feedback_reconciliation,
+            ));
+        }
+        Some(StepOutput::CodeReview(r)) => {
+            d.found = Some(left_open(
+                r.findings.len(),
+                &r.prior_feedback_reconciliation,
+            ));
+        }
+        Some(StepOutput::SecurityReview(r)) => {
+            d.found = Some(left_open(
+                r.findings.len(),
+                &r.prior_feedback_reconciliation,
+            ));
+        }
         Some(StepOutput::AgreementsCheck(c)) => d.found = Some(c.findings.len()),
         Some(
             StepOutput::Executor(ExecutorOutput { dispositions, .. })
@@ -944,5 +967,79 @@ mod tests {
                 .collect::<Vec<_>>(),
             ["req-ACME-1"]
         );
+    }
+
+    fn rerun_count(step: Step, output: &Value) -> Option<usize> {
+        use ovenspring_core::item::{Front, Status};
+        let dir = tempfile::tempdir().unwrap();
+        let out = dir.path().join("out.json");
+        fs::write(&out, output.to_string()).unwrap();
+        let item = Item {
+            front: Front {
+                step,
+                to: step.role(),
+                status: Status::Done,
+                issue: Some("ACME-1".to_owned()),
+                sprint: None,
+                round: Some(2),
+                unit: None,
+                refs: vec![],
+                out: out.display().to_string(),
+                prepare: false,
+                resume: None,
+            },
+            body: String::new(),
+        };
+        detail(Some(&item), None).found
+    }
+
+    #[test]
+    fn a_rerun_counts_the_applied_findings_it_maintained() {
+        let prd = serde_json::json!({
+            "verdict": {"decision": "needs_revision"},
+            "prior_feedback_reconciliation": [
+                {"id": "I001", "prior_disposition": "apply", "status": "maintained"},
+                {"id": "I002", "prior_disposition": "apply", "status": "resolved"},
+                {"id": "I003", "prior_disposition": "decline", "status": "maintained"},
+            ],
+        });
+        assert_eq!(rerun_count(Step::PrdReview, &prd), Some(1));
+
+        let code = serde_json::json!({
+            "verdict": "needs-improvement",
+            "prior_feedback_reconciliation": [
+                {"id": "F1", "prior_disposition": "apply", "status": "maintained"},
+            ],
+        });
+        assert_eq!(rerun_count(Step::CodeReview, &code), Some(1));
+
+        let test = serde_json::json!({
+            "status": "needs_revision",
+            "prior_feedback_reconciliation": [
+                {"id": "T1", "prior_disposition": "apply", "status": "maintained"},
+            ],
+        });
+        assert_eq!(rerun_count(Step::TestReview, &test), Some(1));
+
+        let security = serde_json::json!({
+            "status": "blocked",
+            "findings": [{"id": "S002", "category": "confirmed_risk"}],
+            "prior_feedback_reconciliation": [
+                {"id": "S001", "prior_disposition": "apply", "status": "maintained"},
+            ],
+        });
+        assert_eq!(rerun_count(Step::SecurityReview, &security), Some(2));
+    }
+
+    #[test]
+    fn a_rerun_that_settled_everything_counts_no_findings() {
+        let prd = serde_json::json!({
+            "verdict": {"decision": "pass"},
+            "prior_feedback_reconciliation": [
+                {"id": "I001", "prior_disposition": "apply", "status": "resolved"},
+                {"id": "I002", "prior_disposition": "decline", "status": "withdrawn"},
+            ],
+        });
+        assert_eq!(rerun_count(Step::PrdReview, &prd), Some(0));
     }
 }

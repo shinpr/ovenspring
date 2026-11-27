@@ -231,6 +231,14 @@ pub struct Reconciliation {
     pub status: ReconciliationStatus,
 }
 
+impl Reconciliation {
+    /// An applied finding the re-review maintained: it stays open and sends the work back.
+    pub fn maintains_applied(&self) -> bool {
+        self.prior_disposition == Disposition::Apply
+            && self.status == ReconciliationStatus::Maintained
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum DocumentVerdict {
@@ -776,9 +784,7 @@ pub enum CheckResult {
 }
 
 fn reconciled(entries: &[Reconciliation]) -> CheckResult {
-    if entries.iter().any(|r| {
-        r.prior_disposition == Disposition::Apply && r.status == ReconciliationStatus::Maintained
-    }) {
+    if entries.iter().any(Reconciliation::maintains_applied) {
         CheckResult::MaintainedApply
     } else {
         CheckResult::Clear
