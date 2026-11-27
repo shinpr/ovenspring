@@ -549,20 +549,27 @@ pub enum Preparation {
     Asked,
 }
 
+/// What a preparation's item came to, as the daemon takes it (`take_prepared`): only from an item
+/// its agent set done with a readable output; anything else sends the step down its failure path.
+fn prepared(item: &Item) -> Option<Preparation> {
+    if item.front.status != Status::Done {
+        return None;
+    }
+    let p = PrepareOutput::parse(raw_of(item)?).ok()?;
+    Some(match (p.message, p.question) {
+        (_, true) => Preparation::Asked,
+        (Some(_), false) => Preparation::Told,
+        (None, false) => Preparation::NothingToAsk,
+    })
+}
+
 fn preparation(l: &Launch, result: RunResult, item: Option<&Item>) -> Option<Preparation> {
     if !l.prepare {
         return None;
     }
-    // The daemon takes a preparation's output only from an item its agent finished.
     let came = item
-        .filter(|i| result == RunResult::Done && i.front.status == Status::Done)
-        .and_then(raw_of)
-        .and_then(|v| PrepareOutput::parse(v).ok())
-        .map(|p| match (p.message, p.question) {
-            (_, true) => Preparation::Asked,
-            (Some(_), false) => Preparation::Told,
-            (None, false) => Preparation::NothingToAsk,
-        });
+        .filter(|_| result == RunResult::Done)
+        .and_then(prepared);
     Some(came.unwrap_or(Preparation::Unsettled))
 }
 
@@ -675,8 +682,13 @@ fn result_of(l: &Launch, all: &[Launch], item: Option<&Item>) -> RunResult {
             RunResult::Failed
         };
     }
-    // An agent that exited without finishing its item failed it, though its CLI reported none.
-    if !retried && item.is_some_and(|i| i.front.status == Status::Failed) {
+    // An agent that exited without finishing its item failed it, though its CLI reported none;
+    // a preparation the daemon could not take (blocked, or no readable output) failed its step.
+    if !retried
+        && item.is_some_and(|i| {
+            i.front.status == Status::Failed || (l.prepare && prepared(i).is_none())
+        })
+    {
         return RunResult::Failed;
     }
     // A check's launch shows what it found, read from its output.
@@ -1025,21 +1037,42 @@ mod tests {
     }
 
     #[test]
-    fn a_preparation_whose_agent_exited_without_finishing_reads_as_failed() {
+    fn a_preparation_the_daemon_could_not_take_reads_as_failed() {
+        // Failed: the daemon fails an item whose agent exited cleanly while it was still `doing`.
+        // Blocked, or done without a readable output: the daemon sends the step down its failure
+        // path (issues.rs take_prepared).
+        let asked = r#"{"message": "Which plan?", "question": true}"#;
+        for (status, output) in [
+            (Status::Failed, asked),
+            (Status::Blocked, asked),
+            (Status::Done, "{}"),
+        ] {
+            assert_eq!(
+                prepared_launch_row(status, output),
+                (RunResult::Failed, Some(Preparation::Unsettled)),
+                "{status:?} with {output}"
+            );
+        }
+        assert_eq!(
+            prepared_launch_row(Status::Done, asked),
+            (RunResult::Done, Some(Preparation::Asked))
+        );
+    }
+
+    fn prepared_launch_row(status: Status, output: &str) -> (RunResult, Option<Preparation>) {
         use crate::records::{LaunchEnd, LaunchStart, Usage};
         use ovenspring_core::config::Permissions;
-        use ovenspring_core::item::{Front, Status};
+        use ovenspring_core::item::Front;
         let dir = tempfile::tempdir().unwrap();
         let store = Store::open(dir.path().join("state")).unwrap();
         let out = store.output_path("req-ACME-1");
         fs::create_dir_all(out.parent().unwrap()).unwrap();
-        fs::write(&out, r#"{"message": "Which plan?", "question": true}"#).unwrap();
-        // The daemon fails an item whose agent exited cleanly while it was still `doing`.
+        fs::write(&out, output).unwrap();
         let item = Item {
             front: Front {
                 step: Step::Requirements,
                 to: Step::Requirements.role(),
-                status: Status::Failed,
+                status,
                 issue: Some("ACME-1".to_owned()),
                 sprint: None,
                 round: None,
@@ -1049,7 +1082,7 @@ mod tests {
                 prepare: true,
                 resume: None,
             },
-            body: "## Result\n\nfactory: the agent exited without finishing the item\n".to_owned(),
+            body: String::new(),
         };
         store.file_item("req-ACME-1", &item).unwrap();
         for line in [
@@ -1093,17 +1126,8 @@ mod tests {
         }
 
         let rows = launch_rows(&store, None, Some("ACME-1")).unwrap();
-
-        assert_eq!(
-            rows.iter()
-                .map(|r| (r.id.as_str(), r.result, r.preparation))
-                .collect::<Vec<_>>(),
-            [(
-                "req-ACME-1.1",
-                RunResult::Failed,
-                Some(Preparation::Unsettled)
-            )]
-        );
+        assert_eq!(rows.len(), 1);
+        (rows[0].result, rows[0].preparation)
     }
 
     #[test]
