@@ -549,14 +549,13 @@ pub enum Preparation {
     Asked,
 }
 
-fn preparation(l: &Launch, item: Option<&Item>) -> Option<Preparation> {
+fn preparation(l: &Launch, result: RunResult, item: Option<&Item>) -> Option<Preparation> {
     if !l.prepare {
         return None;
     }
-    if l.ended_at.is_none() || l.failure.is_some() {
-        return Some(Preparation::Unsettled);
-    }
+    // The daemon takes a preparation's output only from an item its agent finished.
     let came = item
+        .filter(|i| result == RunResult::Done && i.front.status == Status::Done)
         .and_then(raw_of)
         .and_then(|v| PrepareOutput::parse(v).ok())
         .map(|p| match (p.message, p.question) {
@@ -662,23 +661,27 @@ fn item_named(store: &Store, name: &str) -> Option<Item> {
     store.find_item(name).and_then(|p| store.read_item(&p).ok())
 }
 
-fn result_of(store: &Store, l: &Launch, all: &[Launch]) -> RunResult {
+fn result_of(l: &Launch, all: &[Launch], item: Option<&Item>) -> RunResult {
     if l.ended_at.is_none() {
         return RunResult::Running;
     }
+    let retried = all
+        .iter()
+        .any(|o| o.item == l.item && o.attempt > l.attempt);
     if l.failure.is_some() {
-        let retried = all
-            .iter()
-            .any(|o| o.item == l.item && o.attempt > l.attempt);
         return if retried {
             RunResult::Retried
         } else {
             RunResult::Failed
         };
     }
+    // An agent that exited without finishing its item failed it, though its CLI reported none.
+    if !retried && item.is_some_and(|i| i.front.status == Status::Failed) {
+        return RunResult::Failed;
+    }
     // A check's launch shows what it found, read from its output.
-    let found = item_named(store, &l.item).and_then(|i| {
-        let output = output_of(&i)?;
+    let found = item.and_then(|i| {
+        let output = output_of(i)?;
         if let StepOutput::AgreementsCheck(c) = &output {
             return Some(c.findings.is_empty());
         }
@@ -769,6 +772,7 @@ fn heading_of(path: &str) -> Option<String> {
 
 fn row(store: &Store, l: &Launch, all: &[Launch], record: Option<&IssueRecord>) -> LaunchRow {
     let item = item_named(store, &l.item);
+    let result = result_of(l, all, item.as_ref());
     LaunchRow {
         id: id_of(l),
         started_at: l.started_at.clone(),
@@ -778,9 +782,9 @@ fn row(store: &Store, l: &Launch, all: &[Launch], record: Option<&IssueRecord>) 
         step: l.step,
         phase: l.phase,
         cli: l.cli,
-        result: result_of(store, l, all),
+        result,
         cost_usd: l.cost_usd,
-        preparation: preparation(l, item.as_ref()),
+        preparation: preparation(l, result, item.as_ref()),
         detail: detail(item.as_ref(), record),
     }
 }
@@ -954,7 +958,7 @@ mod tests {
         use ovenspring_core::item::{Front, Status};
         let dir = tempfile::tempdir().unwrap();
         let store = Store::open(dir.path().join("state")).unwrap();
-        let launch = |prepare: bool, ended: bool, failure: Option<&str>| Launch {
+        let launch = |prepare: bool| Launch {
             item: "req-ACME-1".to_owned(),
             attempt: 1,
             step: Step::Requirements,
@@ -966,8 +970,8 @@ mod tests {
             model: None,
             effort: None,
             started_at: "2026-11-27T09:00:00Z".to_owned(),
-            ended_at: ended.then(|| "2026-11-27T09:05:00Z".to_owned()),
-            failure: failure.map(String::from),
+            ended_at: Some("2026-11-27T09:05:00Z".to_owned()),
+            failure: None,
             cost_usd: None,
             prepare,
         };
@@ -991,7 +995,7 @@ mod tests {
         fs::create_dir_all(out.parent().unwrap()).unwrap();
         let came_to = |output: &str| {
             fs::write(&out, output).unwrap();
-            preparation(&launch(true, true, None), Some(&item))
+            preparation(&launch(true), RunResult::Done, Some(&item))
         };
 
         assert_eq!(
@@ -1007,15 +1011,99 @@ mod tests {
             Some(Preparation::NothingToAsk)
         );
         assert_eq!(came_to("{}"), Some(Preparation::Unsettled));
+        fs::write(&out, r#"{"message": "Which plan?", "question": true}"#).unwrap();
+        for unsettled in [RunResult::Running, RunResult::Failed, RunResult::Retried] {
+            assert_eq!(
+                preparation(&launch(true), unsettled, Some(&item)),
+                Some(Preparation::Unsettled)
+            );
+        }
         assert_eq!(
-            preparation(&launch(true, false, None), Some(&item)),
-            Some(Preparation::Unsettled)
+            preparation(&launch(false), RunResult::Done, Some(&item)),
+            None
         );
+    }
+
+    #[test]
+    fn a_preparation_whose_agent_exited_without_finishing_reads_as_failed() {
+        use crate::records::{LaunchEnd, LaunchStart, Usage};
+        use ovenspring_core::config::Permissions;
+        use ovenspring_core::item::{Front, Status};
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::open(dir.path().join("state")).unwrap();
+        let out = store.output_path("req-ACME-1");
+        fs::create_dir_all(out.parent().unwrap()).unwrap();
+        fs::write(&out, r#"{"message": "Which plan?", "question": true}"#).unwrap();
+        // The daemon fails an item whose agent exited cleanly while it was still `doing`.
+        let item = Item {
+            front: Front {
+                step: Step::Requirements,
+                to: Step::Requirements.role(),
+                status: Status::Failed,
+                issue: Some("ACME-1".to_owned()),
+                sprint: None,
+                round: None,
+                unit: None,
+                refs: vec![],
+                out: out.display().to_string(),
+                prepare: true,
+                resume: None,
+            },
+            body: "## Result\n\nfactory: the agent exited without finishing the item\n".to_owned(),
+        };
+        store.file_item("req-ACME-1", &item).unwrap();
+        for line in [
+            LaunchLine::Start(LaunchStart {
+                at: "2026-11-27T09:00:00Z".to_owned(),
+                role: Role::Lead,
+                item: "req-ACME-1".to_owned(),
+                step: Step::Requirements,
+                phase: Some(Phase::Requirements),
+                issue: Some("ACME-1".to_owned()),
+                sprint: None,
+                cli: Cli::Claude,
+                model: None,
+                effort: None,
+                permissions: Permissions::Auto,
+                attempt: 1,
+                pid: 1,
+                log: "launches/req-ACME-1.1.log".to_owned(),
+                prepare: true,
+            }),
+            LaunchLine::End(LaunchEnd {
+                at: "2026-11-27T09:05:00Z".to_owned(),
+                item: "req-ACME-1".to_owned(),
+                ended: true,
+                code: Some(0),
+                attempt: 1,
+                failure: None,
+                error_kind: None,
+                session: None,
+                usage: Usage {
+                    input: 0,
+                    output: 0,
+                    cache_read: 0,
+                    cache_write: 0,
+                },
+                model: None,
+                cost_usd: None,
+            }),
+        ] {
+            records::append_launch(&store, &line).unwrap();
+        }
+
+        let rows = launch_rows(&store, None, Some("ACME-1")).unwrap();
+
         assert_eq!(
-            preparation(&launch(true, true, Some("fatal: x")), Some(&item)),
-            Some(Preparation::Unsettled)
+            rows.iter()
+                .map(|r| (r.id.as_str(), r.result, r.preparation))
+                .collect::<Vec<_>>(),
+            [(
+                "req-ACME-1.1",
+                RunResult::Failed,
+                Some(Preparation::Unsettled)
+            )]
         );
-        assert_eq!(preparation(&launch(false, true, None), Some(&item)), None);
     }
 
     #[test]
