@@ -40,11 +40,11 @@ Inspect a located responsibility further only when leaving it unchanged can affe
 
 Summarize relative cost from observed boundaries, reuse, persistence or contract changes, and verification support. Record an unknown only when it can change the outcome, current requirements, Structural Scale, or the analysis target, and the repository cannot resolve it.
 
-Return the evidence for orchestrator judgment.
+Hand the evidence on to the orchestrator's judgment below.
 
 ## Output
 
-Write exactly one JSON object to `out`:
+Your evidence becomes the `scopeEvidence` and `costEvidence` fields of the object written to `out` (In the factory):
 
 ```json
 {
@@ -76,7 +76,7 @@ Write exactly one JSON object to `out`:
 - `executionRoute.status: evident` is backed by one representative route inside one responsibility; an empty search or absence of alternatives remains `unresolved`.
 - Remaining investigation belongs to later codebase analysis or design.
 - Product requirements and exclusions remain assigned to the user; convergence readiness, Structural Scale, and implementation-scope decisions remain assigned to the orchestrator.
-- The output written to `out` is one valid JSON object.
+- The evidence fills the `scopeEvidence` and `costEvidence` fields in this shape.
 
 ## The orchestrator's judgment
 
