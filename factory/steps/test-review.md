@@ -67,7 +67,7 @@ For each test case:
 Use these checks to determine whether a material proof gap under the Findings Boundary exists:
 - The setup, action, and observable assertion are distinguishable enough to establish what the test proves
 - Substantive assertion: classify a test as substantive only when it executes at least one assertion that observes the AC's behavior. Classify always-true assertions (e.g., `expect(true).toBe(true)`, `expect(arr.length).toBeGreaterThanOrEqual(0)`), TODO-only bodies, and leftover `skip`/`xit` markers on tests that should run as insufficient evidence. Tests verifying intentional absence (e.g., `expect(queryAllBy*).toHaveLength(0)`) are substantive when the absence is the AC's expectation
-- State isolation and deterministic execution are sufficient for the selected proof to be reproducible
+- Could a correct implementation fail this test under any timing, random choice, or order of concurrent work that the test allows?
 
 ### 4. Claim Proof Adequacy
 
@@ -130,7 +130,6 @@ Use `reviewBasis: null` only when an input-gate failure blocks review before a b
 - [ ] Mock only external dependencies in integration tests
 - [ ] Arrange/Act/Assert organization is sufficient to keep the selected proof clear and valid
 - [ ] Each test executes independently of other tests
-- [ ] Deterministic execution (time, randomness, and the order of concurrent work controlled)
 - [ ] Test naming does not obscure or contradict the selected proof
 - [ ] Every issue has a stable ID
 - [ ] Every issue identifies one material proof gap and the smallest correction that restores the selected proof
