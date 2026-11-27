@@ -77,7 +77,7 @@ The reviewer determines whether the document passes review.
 
 ## Output
 
-Write exactly one JSON object to `out`:
+The output is exactly one JSON object:
 
 ```json
 {
@@ -92,7 +92,7 @@ Write exactly one JSON object to `out`:
 }
 ```
 
-Initial reviews return metadata, verdict, and issues; reruns return every received ID exactly once in `prior_feedback_reconciliation` in place of `issues`. Use an empty `issues` array for `pass`.
+An initial review's output carries metadata, verdict, and issues; a rerun's carries every received ID exactly once in `prior_feedback_reconciliation` in place of `issues`. Use an empty `issues` array for `pass`.
 
 ## Completion Check
 
@@ -102,4 +102,4 @@ Initial reviews return metadata, verdict, and issues; reruns return every receiv
 - Same-cause observations were grouped into one correction obligation.
 - Every issue ties to one of the six issue conditions.
 - `pass` has no issue or follow-on correction work.
-- The output written to `out` is one valid JSON object.
+- The output is one valid JSON object.

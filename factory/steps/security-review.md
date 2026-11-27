@@ -14,9 +14,9 @@ Before acting, map the preloaded skills to concrete rules for this task. Follow 
 
 ## Output Boundary
 
-The response is a must-fix exception list. Emit a finding only when current evidence shows that the change cannot pass without correction because the implementation violates an explicit governing requirement or repository rule, or a concrete material security failure exists in the actual reachable trust model. Evaluate that decision against actor reachability, deployed exposure, the project's runtime environment, framework protections, existing mitigations, and observable impact.
+The output is a must-fix exception list. Emit a finding only when current evidence shows that the change cannot pass without correction because the implementation violates an explicit governing requirement or repository rule, or a concrete material security failure exists in the actual reachable trust model. Evaluate that decision against actor reachability, deployed exposure, the project's runtime environment, framework protections, existing mitigations, and observable impact.
 
-Each finding contains one must-fix problem and its smallest sufficient correction. Optional hardening and defense-in-depth are absent from the response; when only those candidates exist, return `pass`. A candidate that only makes an already acceptable trust boundary more resilient is optional hardening.
+Each finding contains one must-fix problem and its smallest sufficient correction. Optional hardening and defense-in-depth are absent from the output; when only those candidates exist, the status is `pass`. A candidate that only makes an already acceptable trust boundary more resilient is optional hardening.
 
 ## Responsibilities
 
@@ -47,7 +47,7 @@ Key review areas:
 Limit reference traversal to links that can change an in-scope finding, action, or verification result.
 
 ### 1. Governing Document Security Requirements Extraction
-Confirm `governingDocuments` is non-empty and every path is readable. Return `status: "blocked"` with the missing or unreadable input in `summary` when this gate fails.
+Confirm `governingDocuments` is non-empty and every path is readable. Set `status` to `"blocked"` with the missing or unreadable input in `summary` when this gate fails.
 
 Read every governing document and extract security requirements (for multiple Design Docs, merge their considerations):
 - Authentication & Authorization requirements
@@ -64,8 +64,8 @@ When `prior_feedback` is present, complete the correction re-review here:
 2. Mark an applied item `resolved` only when current evidence shows that the implementation satisfies the finding without a correction-caused security regression in the changed boundary; otherwise mark that item `maintained` with current evidence.
 3. Mark a declined item `withdrawn` only when current evidence no longer supports it; otherwise mark that item `maintained` with current evidence.
 4. Emit exactly one `prior_feedback_reconciliation` entry for every received ID.
-5. Return any newly observed condition matching a Status Determination `blocked` trigger through that status, regardless of whether an applied correction caused it.
-6. Derive status only from the reconciliation entries unless step 5 returns `blocked`, apply the prior-feedback checklist item and committed-secrets blocked check, and write the final JSON to `out`.
+5. Report any newly observed condition matching a Status Determination `blocked` trigger through that status, regardless of whether an applied correction caused it.
+6. Derive status only from the reconciliation entries unless step 5 yields `blocked`, apply the prior-feedback checklist item and committed-secrets blocked check, and complete the output.
 
 ### 2. Conditional Irreversible-Operation Review
 
@@ -115,7 +115,7 @@ Each finding must include a `rationale` field whose content depends on the categ
 ### Output Protocol
 
 - During execution, intermediate progress messages MAY be emitted as plain text or markdown.
-- The output written to `out` is a single JSON object that matches the schema below.
+- The output is a single JSON object that matches the schema below.
 - For correction re-review, emit only `status`, `summary`, and `prior_feedback_reconciliation`; when a blocked trigger is observed, also emit its `findings`.
 
 ```json
@@ -140,8 +140,8 @@ When `prior_feedback` is present, also include `prior_feedback_reconciliation` w
 ## Status Determination
 
 ### blocked
-- Governing documents fail the Step 1 input gate → return the missing or unusable input so the orchestrator can supply it
-- A committed credential, API key, or token requires user-held revocation or rotation authority in addition to repository correction → return immediately with the finding details, because that revocation is an irreversible external action the workflow cannot perform
+- Governing documents fail the Step 1 input gate → report the missing or unusable input so the orchestrator can supply it
+- A committed credential, API key, or token requires user-held revocation or rotation authority in addition to repository correction → stop immediately and report the finding details, because that revocation is an irreversible external action the workflow cannot perform
 
 ### needs_revision
 - One or more findings require correction

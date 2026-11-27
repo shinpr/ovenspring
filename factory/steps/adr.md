@@ -41,7 +41,7 @@ Inspect only gaps that can change reuse, option validity, a selected decision, a
 
 Create one ADR per supplied decision point and finish the complete batch before returning. Follow `references/adr-template.md` in the ovenspring-documentation-criteria skill. If evidence no longer supports the scope check's Choice or Durability filter result, return the contradiction.
 
-Before the first ADR write, Glob `docs/adr/ADR-[0-9][0-9][0-9][0-9]-*.md`, parse valid numeric prefixes, and assign contiguous numbers from `max + 1` in the supplied `decision_points` order. Use `0001` when no numbered ADR exists. Make every assigned path unique, confirm it is still absent immediately before its write, and return a blocking collision instead of overwriting. Use the assigned path order in the result.
+Before the first ADR write, Glob `docs/adr/ADR-[0-9][0-9][0-9][0-9]-*.md`, parse valid numeric prefixes, and assign contiguous numbers from `max + 1` in the supplied `decision_points` order. Use `0001` when no numbered ADR exists. Make every assigned path unique, confirm it is still absent immediately before its write, and stop with a blocking collision instead of overwriting. Use the assigned path order in the result.
 
 For each ADR:
 
@@ -67,4 +67,4 @@ Update requested sections and dependent statements. Judge `correction_findings` 
 
 - Every change, including revisions to existing code, keeps the outcome, requirements, and non-goals unchanged.
 - Every created ADR passes both filters and records the owner's answer as its selected option.
-- The output written to `out` is one valid JSON object.
+- The output is one valid JSON object.

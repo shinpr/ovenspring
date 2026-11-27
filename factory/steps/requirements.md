@@ -44,7 +44,7 @@ Hand the evidence on to the orchestrator's judgment below.
 
 ## Output
 
-Your evidence becomes the `scopeEvidence` and `costEvidence` fields of the object written to `out` (In the factory):
+Your evidence becomes the `scopeEvidence` and `costEvidence` fields of the output (In the factory):
 
 ```json
 {

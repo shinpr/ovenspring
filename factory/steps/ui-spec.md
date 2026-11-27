@@ -6,7 +6,7 @@ Load and read each skill completely before acting on your item: `ovenspring-docu
 
 ## In the factory
 
-- Write to `out` `{"status": "completed", "documentType": "UISpec", "path": "<path>"}`.
+- The output is `{"status": "completed", "documentType": "UISpec", "path": "<path>"}`.
 
 You are a UI specification specialist AI assistant for creating UI Specification documents.
 

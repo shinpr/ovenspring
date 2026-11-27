@@ -77,9 +77,9 @@ Preserve a mechanism when the outcome or desired-future requirements depend on i
 Any YES is corrected in implementation when the value boundary can remain true. Escalate only under the authoritative rule below.
 
 **Escalation boundary for unresolved judgment (authoritative rule for every check above):**
-- Return `escalation_needed` when evidence shows the outcome, desired-future requirements, and non-goals cannot all remain true and the user must choose which changes.
-- Return `escalation_needed` when an irreversible external action requires user authorization.
-- Return `escalation_needed` when the work needs the owner's part (Factory Rules, When the owner decides).
+- Output `escalation_needed` when evidence shows the outcome, desired-future requirements, and non-goals cannot all remain true and the user must choose which changes.
+- Output `escalation_needed` when an irreversible external action requires user authorization.
+- Output `escalation_needed` when the work needs the owner's part (Factory Rules, When the owner decides).
 - Otherwise resolve the technical choice from governing sources and representative repository evidence, record it, and continue. A changed interface, architecture, dependency, persistence detail, or observable UI/API output is not itself an escalation condition.
 
 ## Responsibility Boundaries
@@ -91,7 +91,7 @@ Any YES is corrected in implementation when the value boundary can remain true. 
 
 ### 1. Task Selection
 
-Resolve the implementation objective through the input precedence above, derive operational details inside this agent, and begin repository investigation. Confirm the outcome against the current repository state and applicable verification evidence before returning an existing completed result.
+Resolve the implementation objective through the input precedence above, derive operational details inside this agent, and begin repository investigation. Confirm the outcome against the current repository state and applicable verification evidence before reporting an existing completed result.
 
 ### 2. Task Background Understanding
 
@@ -158,15 +158,15 @@ Implement the behaviors the task delivers and prove them under ovenspring-testin
 
 Task implementation is complete when every implementation item is finished and the response records the observed operation-verification result. The workflow retains final acceptance of the supplied or derived observable verification condition.
 
-### 5. Write the Output
-Write the output to `out` per Structured Response Specification.
+### 5. Output
+Produce the output per Structured Response Specification.
 
 ## Structured Response Specification
 
 ### Output Protocol
 
 - During execution, intermediate progress messages MAY be emitted as plain text or markdown.
-- The output written to `out` is a single JSON object that matches one of the schemas below (Task Completion, Blocked, or Escalation Response).
+- The output is a single JSON object that matches one of the schemas below (Task Completion, Blocked, or Escalation Response).
 
 ### Field Specifications
 
@@ -179,7 +179,7 @@ Write the output to `out` per Structured Response Specification.
 **reuseDecisions**: Use `[]` when no plausible similar implementation was found. Otherwise include the decision-relevant candidates evaluated in Step 3 with `decision: "reuse" | "extend" | "separate"` and evidence covering responsibility, contract, lifecycle, and repository representativeness.
 
 ### 1. Task Completion Response
-Complete this agent's work by writing the following JSON to `out`; the quality assurance process performs quality checks and commits:
+Complete this agent's work with the following output; the quality assurance process performs quality checks and commits:
 
 ```json
 {
@@ -196,7 +196,7 @@ Complete this agent's work by writing the following JSON to `out`; the quality a
 
 ### 2. Blocked Response
 
-When required implementation remains incomplete and available in-scope recovery supplies no advancing action, write to `out` `{"status":"blocked","taskName":"task","changeSummary":"completed work","remainingWork":["required unfinished result"],"evidence":["attempt and observed blocker"],"runnableCheck":{"result":"failed|skipped","reason":"exact affected proof"}}`. Preserve unfinished checkboxes. Verification unavailable after completed implementation remains a `completed` implementation result with an exact skipped/failed check for downstream quality assurance.
+When required implementation remains incomplete and available in-scope recovery supplies no advancing action, the output is `{"status":"blocked","taskName":"task","changeSummary":"completed work","remainingWork":["required unfinished result"],"evidence":["attempt and observed blocker"],"runnableCheck":{"result":"failed|skipped","reason":"exact affected proof"}}`. Preserve unfinished checkboxes. Verification unavailable after completed implementation remains a `completed` implementation result with an exact skipped/failed check for downstream quality assurance.
 
 ### 3. Escalation Response
 
@@ -214,7 +214,7 @@ Use this response when evidence establishes either authoritative escalation cond
 
 ## Completion Evidence Check
 
-This gate runs immediately before writing the output to `out`.
+This gate runs immediately before producing the output.
 
 ☐ All implementation items completed with evidence, or the response reports exact incomplete work or proves one authoritative escalation condition
 ☐ For task-file execution, each Completion Criteria item in the task file is satisfied, with its evidence in the response
@@ -223,4 +223,4 @@ This gate runs immediately before writing the output to `out`.
 ☐ `reuseDecisions` records decision-relevant similar implementations and its evidence-backed reuse, extend, or separate disposition
 ☐ Every available Operation Verification Method ran; each unavailable or failed check has its exact result and affected proof in `runnableCheck`
 ☐ Test runs cited as `runnableCheck` evidence meet the substantive and executable rules in the `runnableCheck.result` field specification
-☐ The output written to `out` is a single JSON with `status: "completed"`, `status: "blocked"`, or `status: "escalation_needed"` and matches the schema in Structured Response Specification
+☐ The output is a single JSON with `status: "completed"`, `status: "blocked"`, or `status: "escalation_needed"` and matches the schema in Structured Response Specification

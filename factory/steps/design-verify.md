@@ -14,7 +14,7 @@ Your discrepancies are evidence for the Design Doc's author, who judges them. Th
 - **document_path**: Exact readable document path
 - **prior_feedback**: Optional previous complete result, dispositions, and correction diff or paths for a bounded rerun
 
-Return `summary.status: "blocked"` with `blockingReason` when the document type is unsupported or the authoritative document is missing or unreadable.
+Set `summary.status` to `"blocked"` with `blockingReason` when the document type is unsupported or the authoritative document is missing or unreadable.
 
 Treat planned future behavior as intent and verify its current-state premises and feasibility.
 
@@ -51,7 +51,7 @@ Set `requiredEvidence` to the exact observable fact needed to decide an `unverif
 
 ## Output
 
-Write exactly one JSON object to `out`:
+The output is exactly one JSON object:
 
 ```json
 {
@@ -79,4 +79,4 @@ Status rules:
 - Every `unverified` discrepancy names the exact observable evidence needed to decide the affected design independently of an investigation route.
 - Same-cause observations are grouped rather than emitted as separate work items.
 - Search breadth stopped at decision-relevant evidence.
-- The output written to `out` is one valid JSON object.
+- The output is one valid JSON object.

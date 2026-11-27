@@ -26,7 +26,7 @@ Stop when the facts that could change one of those outcomes have been checked; a
 
 ## Output Format
 
-Write one compact JSON object to `out`. Put decision-relevant component, state, Props, layout, accessibility, localization, generated-artifact, and verification detail directly in `focusAreas`; arrays may be empty.
+The output is one compact JSON object. Put decision-relevant component, state, Props, layout, accessibility, localization, generated-artifact, and verification detail directly in `focusAreas`; arrays may be empty.
 
 ```json
 {
