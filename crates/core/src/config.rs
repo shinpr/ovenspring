@@ -44,6 +44,8 @@ pub struct Config {
     pub agreements: AgreementsConfig,
     #[serde(default)]
     pub knowledge: KnowledgeConfig,
+    #[serde(default)]
+    pub notices: NoticesConfig,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
@@ -204,6 +206,15 @@ pub enum Cli {
 }
 
 impl Cli {
+    /// The CLI's name as the owner reads it.
+    pub fn name(self) -> &'static str {
+        match self {
+            Cli::Claude => "Claude Code",
+            Cli::Codex => "Codex",
+            Cli::Opencode => "OpenCode",
+        }
+    }
+
     /// Where the CLI loads a repository's own skills from, relative to the working directory.
     pub fn skill_dirs(self) -> &'static [&'static str] {
         match self {
@@ -260,6 +271,16 @@ pub enum TrackerKind {
     Github,
 }
 
+impl TrackerKind {
+    /// The tracker's name as the owner reads it.
+    pub fn name(self) -> &'static str {
+        match self {
+            TrackerKind::Linear => "Linear",
+            TrackerKind::Github => "GitHub Issues",
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(deny_unknown_fields)]
 pub struct TrackerConfig {
@@ -277,6 +298,27 @@ pub struct SlackConfig {
     pub channel: String,
     /// The Slack users the factory responds to and whose approvals count.
     pub owners: Vec<String>,
+}
+
+/// What the factory tells the owner in Slack without being asked.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(deny_unknown_fields)]
+pub struct NoticesConfig {
+    /// One message when an error starts and one when it clears.
+    #[serde(default = "default_error_notices")]
+    pub errors: bool,
+}
+
+fn default_error_notices() -> bool {
+    true
+}
+
+impl Default for NoticesConfig {
+    fn default() -> Self {
+        NoticesConfig {
+            errors: default_error_notices(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default, TS)]
@@ -583,6 +625,7 @@ owners = ["U0123456789"]
         assert_eq!(c.limits.review_rounds, None);
         assert_eq!(c.limits.fix_ci_rounds, None);
         assert!(!c.app.settled());
+        assert!(c.notices.errors, "error notices are on without [notices]");
     }
 
     #[test]

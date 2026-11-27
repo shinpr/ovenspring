@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import type { LaunchRow } from '../api/types.gen.ts'
-import { runSentence } from './vocabulary.ts'
+import type { EventLine, LaunchRow } from '../api/types.gen.ts'
+import { eventSentence, plain, runSentence } from './vocabulary.ts'
 
 const none: LaunchRow['detail'] = {
   round: null,
@@ -121,5 +121,65 @@ describe('runSentence', () => {
     ],
   ])('%s', (_, given, expected) => {
     expect(runSentence(given)).toEqual(expected)
+  })
+})
+
+const line = (kind: string, fields: EventLine['fields'] = {}): EventLine => ({
+  seq: 0,
+  at: '2026-11-27T08:55:00Z',
+  kind,
+  fields,
+  issue: null,
+  sprint: null,
+  error: null,
+})
+
+describe('eventSentence', () => {
+  it.each([
+    ['a kind with no sentence of its own, as its code', line('replay-reset'), 'Replay reset.'],
+    [
+      'an issue marked done, naming the tracker',
+      line('closed-on-tracker', { issue: 'ACME-141', state: 'done', tracker: 'linear' }),
+      'Marked done on Linear.',
+    ],
+    [
+      'an issue canceled on the tracker',
+      line('closed-on-tracker', { issue: 'ACME-141', state: 'canceled', tracker: 'github' }),
+      'Canceled on GitHub.',
+    ],
+    [
+      'a close that records neither state nor tracker',
+      line('closed-on-tracker', { issue: 'ACME-141' }),
+      'Closed on the tracker.',
+    ],
+    [
+      'error notices turned off',
+      line('config-reloaded', { changes: [{ setting: 'notices.errors', value: false }] }),
+      'Settings changed: Error notices are now off.',
+    ],
+    [
+      'a number setting, by its Settings label',
+      line('config-reloaded', { changes: [{ setting: 'limits.issues_at_once', value: 3 }] }),
+      'Settings changed: Issues at once is now 3.',
+    ],
+    [
+      'a text setting, which records no value',
+      line('config-reloaded', { changes: [{ setting: 'tracker.filter' }] }),
+      'Settings changed: The issue filter command was changed.',
+    ],
+    [
+      'a setting the dashboard has no label for, by its path',
+      line('config-reloaded', { changes: [{ setting: 'future.knob', value: true }] }),
+      'Settings changed: future.knob is now on.',
+    ],
+    [
+      'several changes in one reload',
+      line('config-reloaded', {
+        changes: [{ setting: 'notices.errors', value: true }, { setting: 'merge.by' }],
+      }),
+      'Settings changed: Error notices are now on. Who merges was changed.',
+    ],
+  ])('words %s', (_, given, expected) => {
+    expect(plain(eventSentence(given))).toBe(expected)
   })
 })

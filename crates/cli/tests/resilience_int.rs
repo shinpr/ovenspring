@@ -1001,8 +1001,11 @@ fn a_service_out_of_reach_is_recorded_from_its_first_failure_until_it_answers() 
         ),
     );
     d.begin_issue("ACME-123", "Export", vec![]).unwrap();
-    let failing =
-        |d: &ovenspring_daemon::Daemon| ovenspring_daemon::records::unreachable(d.store()).unwrap();
+    let failing = |d: &ovenspring_daemon::Daemon| {
+        ovenspring_daemon::errors::Errors::read(d.store())
+            .unwrap()
+            .unreachable()
+    };
     run_until(&mut d, 60, |_| {}, |d| failing(d).len() == 2);
     let first = failing(&d);
     for _ in 0..3 {

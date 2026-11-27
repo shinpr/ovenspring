@@ -1,3 +1,5 @@
+import { useEffect, useRef } from 'react'
+import { useLocation } from 'react-router'
 import { api } from '../../api/client.ts'
 import { usePoll } from '../../api/usePoll.ts'
 import { Contact } from '../../components/Contact/Contact.tsx'
@@ -13,6 +15,21 @@ export function SprintsPage() {
     ended: await api.sprints(),
     runs: id === undefined ? [] : await api.launches({ sprint: id }),
   }))
+  const { hash } = useLocation()
+  // The hash scrolled to already: the sprint it names may arrive with either poll, the ended
+  // sprints with this page's or "This sprint" with the overview, so each render tries until one
+  // holds it, and later polls leave the page where the owner moved it.
+  const scrolled = useRef('')
+  useEffect(() => {
+    if (hash === scrolled.current) {
+      return
+    }
+    const target = hash === '' ? null : document.getElementById(decodeURIComponent(hash.slice(1)))
+    if (target !== null) {
+      target.scrollIntoView()
+      scrolled.current = hash
+    }
+  })
   const contact = <Contact what="The sprints" answeredAt={answeredAt} failed={failed} />
   if (data === undefined) {
     return contact

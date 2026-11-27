@@ -15,6 +15,8 @@
 pub mod app;
 pub mod conversation;
 pub mod download;
+pub mod errors;
+pub mod events;
 pub(crate) mod handoff;
 pub mod history;
 pub(crate) mod intake;
@@ -74,9 +76,17 @@ pub enum DaemonError {
 pub struct Services {
     pub github: Option<Arc<dyn GitHub>>,
     pub channel: Arc<dyn Channel>,
-    pub tracker: Option<Arc<dyn Tracker>>,
+    pub tracker: Option<ConnectedTracker>,
     /// Credential values held by the daemon, for masking owner-command output.
     pub secrets: Vec<String>,
+}
+
+/// The tracker client, with the kind it was built for: the tracker a write through it reaches,
+/// which the configuration can stop naming before the services are rebuilt.
+#[derive(Clone)]
+pub struct ConnectedTracker {
+    pub kind: ovenspring_core::config::TrackerKind,
+    pub client: Arc<dyn Tracker>,
 }
 
 /// How long the daemon waits between looks and before trying again. Production uses
@@ -202,6 +212,7 @@ pub struct Daemon {
     pub(crate) unfinished_recoveries_taken: bool,
     /// The start of the product with the lead's commands, while it runs (`product_run`).
     pub(crate) product_check: Option<std::thread::JoinHandle<()>>,
+    pub(crate) errors: errors::Live,
 }
 
 /// A filter command belongs to the daemon that started it, so no path that ends the daemon
@@ -284,6 +295,7 @@ impl Daemon {
             recoveries: channel(),
             unfinished_recoveries_taken: false,
             product_check: None,
+            errors: errors::Live::default(),
         }
     }
 
@@ -396,7 +408,9 @@ impl Daemon {
 
     /// Items left `doing` by a previous process run again. A launch that process left running (it
     /// ended without stopping its launches) is stopped first, so no two agents work on one item.
+    /// The errors going on are read back first, so a failure after a restart is a repeat.
     pub fn recover(&mut self) -> Result<(), DaemonError> {
+        self.recover_errors()?;
         let lines = records::launch_lines(&self.store)?;
         for path in self.store.active_items()? {
             let item = self.store.read_item(&path)?;
@@ -462,6 +476,7 @@ impl Daemon {
     /// runs whatever an earlier one met: a failure for one issue stays with that issue, and a
     /// failure no issue owns pauses the factory once it repeats.
     pub fn tick(&mut self) -> Result<(), DaemonError> {
+        self.errors.github_clear = false;
         while let Ok(exit) = self.exits.1.try_recv() {
             let r = self.finished(&exit);
             self.settle_part("taking in a finished launch", r)?;
@@ -470,6 +485,9 @@ impl Daemon {
         self.settle_part("taking in finished recovery procedures", r)?;
         let r = self.reload_config();
         self.settle_part("reading the configuration", r)?;
+        // Before the halt check, so notices still go out while the factory is paused.
+        let r = self.deliver_error_notices();
+        self.settle_part("telling the owner of errors", r)?;
         let r = self.take_channel_events();
         self.settle_part("taking in the owner's messages", r)?;
         let r = self.take_cancels();
@@ -523,7 +541,9 @@ impl Daemon {
         let r = self.deliver_decisions();
         self.settle_part("sending the owner's decisions", r)?;
         let r = self.launch_open();
-        self.settle_part("launching steps", r)
+        self.settle_part("launching steps", r)?;
+        let r = self.clear_github();
+        self.settle_part("recording that GitHub answers again", r)
     }
 
     fn launch_open(&mut self) -> Result<(), DaemonError> {

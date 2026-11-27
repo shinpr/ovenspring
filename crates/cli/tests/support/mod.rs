@@ -342,8 +342,16 @@ pub fn services(
     ovenspring_daemon::Services {
         github: Some(github),
         channel,
-        tracker: Some(tracker),
+        tracker: Some(linear(tracker)),
         secrets: Vec::new(),
+    }
+}
+
+/// `tracker` connected as Linear, the tracker the test configuration names.
+pub fn linear(tracker: Arc<recording::RecordingTracker>) -> ovenspring_daemon::ConnectedTracker {
+    ovenspring_daemon::ConnectedTracker {
+        kind: ovenspring_core::config::TrackerKind::Linear,
+        client: tracker,
     }
 }
 

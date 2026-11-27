@@ -51,5 +51,38 @@ export function dayAndClock(iso: string): string {
 
 /** When something happened: the time alone today, with its date on an earlier day. */
 export function when(iso: string, now: Date): string {
-  return day(iso) === day(now.toISOString()) ? clock(iso) : dayAndClock(iso)
+  return clockOn(iso, now.toISOString())
+}
+
+/** The local calendar day of `iso`, as a key that sorts and compares: "2026-11-27". */
+export function localDay(iso: string): string {
+  const d = new Date(iso)
+  const pad = (n: number): string => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+}
+
+/** A day's heading: "Today, Nov 27", "Yesterday, Nov 26", "Nov 25", "Dec 30, 2025" in another year. */
+export function dayHeading(iso: string, now: Date): string {
+  const yesterday = new Date(now)
+  yesterday.setDate(now.getDate() - 1)
+  const date = day(iso)
+  switch (localDay(iso)) {
+    case localDay(now.toISOString()):
+      return `Today, ${date}`
+    case localDay(yesterday.toISOString()):
+      return `Yesterday, ${date}`
+    default:
+      return new Date(iso).getFullYear() === now.getFullYear()
+        ? date
+        : new Date(iso).toLocaleDateString('en-US', {
+            day: 'numeric',
+            month: 'short',
+            year: 'numeric',
+          })
+  }
+}
+
+/** A time read under the heading of `on`'s day: the clock on that day, with its date otherwise. */
+export function clockOn(iso: string, on: string): string {
+  return localDay(iso) === localDay(on) ? clock(iso) : dayAndClock(iso)
 }

@@ -52,7 +52,7 @@ fn slack_services(
     Services {
         github: Some(gh),
         channel: slack,
-        tracker: Some(tracker),
+        tracker: Some(support::linear(tracker)),
         secrets: Vec::new(),
     }
 }
@@ -636,6 +636,49 @@ fn hold_keeps_the_merge_for_the_sprint_review() {
     ));
 }
 
+/// What each `closed-on-tracker` event of ACME-125 records of the close.
+fn closed_on_tracker(env: &Env) -> Vec<Value> {
+    env.events()
+        .into_iter()
+        .filter(|e| e["event"] == "closed-on-tracker" && e["issue"] == "ACME-125")
+        .map(|e| json!({"state": e["state"], "tracker": e["tracker"]}))
+        .collect()
+}
+
+// AC: UI Spec Vocabulary "Events", closed on the tracker: "Canceled on <Tracker>." names the
+//     tracker the event records. The daemon reloads its configuration at the start of a pass and
+//     rebuilds its tracker client only before the next one.
+// Behavior: ACME-125's merge is held -> the configuration switches the tracker to GitHub Issues
+//     and the owner cancels ACME-125 -> the pass that reloads the configuration takes the cancel
+//     through the client still connected to Linear.
+// @lane: integration
+// @dependency: dashboard cancel request, daemon (`reload_config`, `take_cancels`), RecordingTracker
+#[test]
+fn a_cancel_taken_as_the_tracker_setting_changes_names_the_tracker_that_closed_it() {
+    let env = Env::new();
+    let tracker = Arc::new(RecordingTracker::default());
+    let (mut d, _, _, _) = held_merge_told(&env, "", Map::new(), tracker.clone());
+    let config = env.repo.join(".ovenspring/config.toml");
+    let text = std::fs::read_to_string(&config).unwrap();
+    std::fs::write(
+        &config,
+        text.replacen("kind = \"linear\"", "kind = \"github\"", 1),
+    )
+    .unwrap();
+
+    ovenspring_daemon::records::request_cancel(d.store(), "ACME-125", "Not needed.").unwrap();
+    d.tick().unwrap();
+
+    assert_eq!(
+        d.config().tracker.kind,
+        ovenspring_core::config::TrackerKind::Github
+    );
+    assert_eq!(
+        closed_on_tracker(&env),
+        [json!({"state": "canceled", "tracker": "linear"})]
+    );
+}
+
 fn tracker_said(tracker: &RecordingTracker, key: &str) -> Vec<String> {
     tracker
         .calls()
@@ -682,7 +725,12 @@ fn a_cancel_from_the_dashboard_ends_a_held_issue_and_settles_its_merge_request()
             "comment: Canceled by the owner: The index moves to the billing service.",
             "state: Canceled"
         ]
-    ); // The issue page says the owner canceled it, in their words.
+    );
+    assert_eq!(
+        closed_on_tracker(&env),
+        [json!({"state": "canceled", "tracker": "linear"})]
+    );
+    // The issue page says the owner canceled it, in their words.
     let detail = ovenspring_daemon::history::issue_detail(d.store(), "ACME-125")
         .unwrap()
         .unwrap();
@@ -1054,7 +1102,7 @@ fn one_owner_event_that_fails_does_not_drop_the_others_taken_in_with_it() {
         Services {
             github: Some(Arc::new(always_passing(&env, requiring_test()))),
             channel: channel.clone(),
-            tracker: Some(Arc::new(RecordingTracker::default())),
+            tracker: Some(support::linear(Arc::new(RecordingTracker::default()))),
             secrets: Vec::new(),
         },
     );

@@ -330,6 +330,7 @@ impl Daemon {
             issue: None,
             text: format!("Goal: {}\n\n{}", self.goal()?, plan.message),
             preview: false,
+            marker: None,
         };
         match self.services.channel.post_notice(&notice) {
             Ok(message) => crate::records::set_told_waiting(

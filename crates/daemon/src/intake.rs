@@ -10,7 +10,6 @@ use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
 use ovenspring_core::sprint::SprintStage;
-use ovenspring_integrations::http::HttpError;
 use ovenspring_integrations::tracker::{TrackerComment, TrackerIssue};
 use ovenspring_store::StoreError;
 use serde::Serialize;
@@ -18,7 +17,7 @@ use serde_json::json;
 use sha2::{Digest as _, Sha256};
 
 use crate::app::stop_group;
-use crate::records::{self, Service};
+use crate::errors::{ErrorKey, Failure, out_of_reach};
 use crate::{Daemon, DaemonError};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -203,7 +202,8 @@ impl Daemon {
         let Some(tracker) = self.services.tracker.clone() else {
             return Ok(());
         };
-        match tracker.open_issues() {
+        let kind = tracker.kind;
+        match tracker.client.open_issues() {
             Ok(mut issues) => {
                 // An issue someone else already started is theirs; the factory's own stay.
                 issues.retain(|issue| {
@@ -224,18 +224,27 @@ impl Daemon {
                 self.tracker_issues = tracker_issues;
                 self.tracker_read = true;
                 self.tracker_error = None;
-                records::reached(&self.store, Service::Tracker, Ok(()))?;
+                self.succeeded(ErrorKey::TrackerUnreachable, &json!({"tracker": kind}))?;
             }
             // Not answering is the service's or the network's: shown as out of reach, not as a
             // connection to fix.
-            Err(error @ HttpError::Transient { why, .. }) => {
-                records::reached(&self.store, Service::Tracker, Err(why))?;
-                self.event(&json!({"event": "service-unreachable", "operation": "reading the tracker", "error": error.to_string()}))?;
-            }
             Err(error) => {
-                self.tracker_error = Some(error.to_string());
-                records::reached(&self.store, Service::Tracker, Ok(()))?;
-                self.event(&json!({"event": "tracker-error", "error": error.to_string()}))?;
+                if let Some((why, cause)) = out_of_reach(&error) {
+                    self.failed(
+                        ErrorKey::TrackerUnreachable,
+                        Failure {
+                            event: json!({"event": "service-unreachable", "operation": "reading the tracker",
+                                          "error": error.to_string(), "why": why, "tracker": kind}),
+                            cause,
+                            via: None,
+                        },
+                    )?;
+                } else {
+                    // A refusal is an answer.
+                    self.tracker_error = Some(error.to_string());
+                    self.succeeded(ErrorKey::TrackerUnreachable, &json!({"tracker": kind}))?;
+                    self.event(&json!({"event": "tracker-error", "error": error.to_string()}))?;
+                }
             }
         }
         self.intake_pass()

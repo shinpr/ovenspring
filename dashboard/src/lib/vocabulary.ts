@@ -1,5 +1,5 @@
 // The words the dashboard shows for each code the API returns. The glance layer (Now) uses short
-// fixed words; the read layer (Issue, Activity) uses sentences that name who acts.
+// fixed words; the read layer (Issue, Activity, Events) uses sentences that name who acts.
 
 import type {
   Activity,
@@ -8,6 +8,10 @@ import type {
   Cli,
   DocumentKind,
   Ending,
+  ErrorKey,
+  ErrorNow,
+  EventLine,
+  JsonValue,
   LaunchRow,
   Phase,
   Position,
@@ -15,6 +19,7 @@ import type {
   RunResult,
   Scale,
   Step,
+  TrackerKind,
 } from '../api/types.gen.ts'
 
 export const PHASE: Record<Phase, string> = {
@@ -457,4 +462,547 @@ const NOT_NEEDED: string = 'Not needed.'
 /** `text` ending in a period, unless it already ends a sentence. */
 export function asSentence(text: string): string {
   return /[.!?]$/.test(text) ? text : `${text}.`
+}
+
+// ---- Events (S-08)
+
+/**
+ * A sentence as the read layer shows it: words, and the parts drawn apart from them: a command or
+ * what it printed (`code`), someone's own words (`quote`), and the link to Settings > Connections.
+ */
+export type Part = string | { code: string } | { quote: string } | { settings: string }
+
+/** The words of `parts` as one string, as a screen reader or a test reads them. */
+export function plain(parts: readonly Part[]): string {
+  return parts
+    .map((p) => {
+      if (typeof p === 'string') {
+        return p
+      }
+      if ('code' in p) {
+        return p.code
+      }
+      return 'quote' in p ? `“${p.quote}”` : p.settings
+    })
+    .join('')
+}
+
+type Fields = EventLine['fields']
+
+function field(fields: Fields, name: string): string | undefined {
+  const v = fields[name]
+  return typeof v === 'string' ? v : undefined
+}
+
+function numberField(fields: Fields, name: string): number | undefined {
+  const v = fields[name]
+  return typeof v === 'number' ? v : undefined
+}
+
+const TRACKER: Record<TrackerKind, string> = { linear: 'Linear', github: 'GitHub' }
+
+function trackerOf(fields: Fields): string | undefined {
+  const kind = field(fields, 'tracker')
+  return kind === 'linear' || kind === 'github' ? TRACKER[kind] : undefined
+}
+
+function cliOf(key: ErrorKey | undefined, fields: Fields): string | undefined {
+  const named = field(fields, 'cli') ?? key?.replace(/^cli-/, '')
+  return named === 'claude' || named === 'codex' || named === 'opencode' ? CLI[named] : undefined
+}
+
+/** The error a line belongs to: from the server's reading of it, or its own `failure`. */
+function errorKey(line: EventLine): ErrorKey | undefined {
+  if (line.error !== null) {
+    return line.error.key
+  }
+  const failure = line.fields['failure']
+  const key =
+    typeof failure === 'object' && failure !== null && !Array.isArray(failure)
+      ? failure['key']
+      : undefined
+  return ERROR_KEYS.find((k) => k === key)
+}
+
+const ERROR_KEYS: readonly ErrorKey[] = [
+  'github-unreachable',
+  'tracker-unreachable',
+  'tracker-refused',
+  'cli-claude',
+  'cli-codex',
+  'cli-opencode',
+  'filter',
+]
+
+/** The issue a line concerns, by key. */
+function issueOf(line: EventLine): string {
+  return line.issue?.key ?? field(line.fields, 'issue') ?? 'the issue'
+}
+
+/** The cause the server read for an error's line, or the error the line records. */
+function causeOf(line: EventLine): string {
+  return line.error !== null && line.error.role !== 'cleared'
+    ? line.error.cause
+    : (field(line.fields, 'error') ?? 'no answer')
+}
+
+/** How often the factory tries a service again, after "tries again". */
+function interval(key: ErrorKey | undefined): ' every minute' | '' {
+  return key === 'tracker-unreachable' ? ' every minute' : ''
+}
+
+function unreachable(line: EventLine): Part[] {
+  const key = errorKey(line)
+  const service =
+    key === 'tracker-unreachable' ? (trackerOf(line.fields) ?? 'the tracker') : 'GitHub'
+  const cause = causeOf(line)
+  const operation = field(line.fields, 'operation')
+  const doing = operation === undefined ? '' : ` while ${operation}`
+  return [`Could not reach ${service}${doing}: ${cause}. The factory tries again${interval(key)}.`]
+}
+
+function filterFailed(line: EventLine): Part[] {
+  const issue = issueOf(line)
+  const error = field(line.fields, 'error') ?? 'failed'
+  const command = field(line.fields, 'command')
+  const output = field(line.fields, 'output')
+  return [
+    `The issue filter could not judge ${issue}: `,
+    ...(command === undefined ? [] : [{ code: command }, ' ']),
+    error,
+    ...(output === undefined || output === '' ? [] : [' (', { code: output }, ')']),
+    '. The issue goes on as without a filter.',
+  ]
+}
+
+function cleared(line: EventLine): string {
+  const key = errorKey(line)
+  const tracker = trackerOf(line.fields) ?? 'The tracker'
+  switch (key) {
+    case 'github-unreachable':
+      return 'GitHub answers again.'
+    case 'tracker-unreachable':
+      return `${tracker} answers again.`
+    case 'tracker-refused':
+      return `${tracker} accepts the connection again.`
+    case 'cli-claude':
+    case 'cli-codex':
+    case 'cli-opencode':
+      return `${cliOf(key, line.fields) ?? 'The agent CLI'} starts again.`
+    case 'filter':
+      return line.fields['removed'] === true
+        ? 'The issue filter was removed.'
+        : 'The issue filter works again.'
+    case undefined:
+      return 'An error cleared.'
+  }
+}
+
+const DECISION: Record<string, string> = {
+  sprint: 'Proposed the sprint in Slack.',
+  spec: 'Asked you a question in Slack.',
+  design: 'Asked you in Slack to approve its design.',
+  prototype: 'Asked you in Slack to approve its prototype.',
+  prd: 'Asked you in Slack to approve its PRD.',
+  merge: 'Asked you in Slack to approve its merge.',
+  review: 'Sent you the sprint review in Slack.',
+  recovery: 'Asked you in Slack to approve a way to recover.',
+  stopped: 'Asked you in Slack to resolve a stop.',
+}
+
+/** An issue's state change, by the fact that moved it. */
+const FACT: Record<string, string> = {
+  DependenciesMerged: 'Every issue it depends on is merged.',
+  DependencyLost: 'An issue it depends on was held or dropped.',
+  Planned: 'The plan is split into tasks.',
+  Stubs: 'The quality checks found unfinished work.',
+  OwnerAnswered: 'You answered in Slack.',
+  OwnerReplied: 'You replied in Slack instead of approving.',
+  OwnerHeld: 'You held its merge for the sprint review.',
+  TakenUp: 'The sprint takes it up again.',
+  Pushed: 'Its branch is pushed.',
+  ChecksPassed: 'CI passed.',
+  ChecksFailed: 'CI failed.',
+  BotWaitEnded: 'The wait for review bots ended.',
+  CommentsArrived: 'New comments arrived on its pull request.',
+  MergedOnGitHub: 'Its pull request was merged on GitHub.',
+  Committed: 'Its work is committed.',
+  CommitFailed: 'Its work could not be committed.',
+  PushRefused: 'The push was refused.',
+  PushConflict: 'The push met a conflict.',
+  PullClosed: 'Its pull request was closed.',
+  Stopped: 'It stopped: an operation kept failing.',
+  Resume: 'It goes on where it stopped.',
+  RecoveryFailed: 'The recovery failed.',
+  Canceled: 'It was canceled.',
+}
+
+/** The step a line names, as a noun: "PRD review". */
+function stepNamed(fields: Fields): string {
+  const step = field(fields, 'step')
+  return Object.entries(STEP_NAME).find(([s]) => s === step)?.[1] ?? 'a step'
+}
+
+/** A code in CamelCase as words: "DependenciesMerged" -> "Dependencies merged". */
+function camelWords(code: string): string {
+  return code
+    .replace(/(?<=[a-z])(?=[A-Z])/g, ' ')
+    .replace(/ ([A-Z])/g, (_, c: string) => ` ${c.toLowerCase()}`)
+}
+
+function issueFact(fields: Fields): string {
+  const fact = field(fields, 'fact') ?? ''
+  const worded = FACT[fact]
+  if (worded !== undefined) {
+    return worded
+  }
+  const from = fields['from']
+  const step =
+    typeof from === 'object' && from !== null && !Array.isArray(from)
+      ? stepNamed({ step: from['step'] ?? null })
+      : 'a step'
+  switch (fact) {
+    case 'Done':
+      return `${step} finished.`
+    case 'Stuck':
+      return `${step} could not finish.`
+    case 'Prepared':
+      return `${step} is prepared.`
+    default:
+      return fallbackSentence(camelWords(fact) || 'fact')
+  }
+}
+
+/** A sprint's state change, by the fact that moved it. */
+function sprintFact(fields: Fields): string | undefined {
+  const fact = field(fields, 'fact')
+  const from = fields['from']
+  const stage = typeof from === 'object' && from !== null && !Array.isArray(from) ? from : {}
+  switch (fact) {
+    case 'Approved':
+      return stage['stage'] === 'awaiting-review-approval'
+        ? 'You closed the sprint in Slack.'
+        : 'You approved the sprint proposal in Slack. The sprint started.'
+    case 'PlanDone':
+      return 'The lead wrote the sprint proposal.'
+    case 'Replied':
+      return 'You replied to the sprint in Slack.'
+    case 'IssuesSettled':
+      return 'Every issue of the sprint has ended.'
+    case 'FactsDone':
+      return "The sprint's facts are gathered."
+    case 'ReviewDone':
+      return 'The lead wrote the sprint review.'
+    case 'CheckDone':
+      return 'The working agreements were checked.'
+    case 'AgreementsMerged':
+      return "The working agreements' pull request merged."
+    case 'Stuck':
+      return 'A step of the sprint could not finish.'
+    case 'IssueOpened':
+      return 'A new issue opened on the tracker.'
+    case 'Stopped':
+      return 'The sprint stopped: an operation kept failing.'
+    case 'ExceptionDone':
+      return 'The lead looked into what stopped the sprint.'
+    case 'Resume':
+      return 'The sprint goes on where it stopped.'
+    default:
+      return undefined
+  }
+}
+
+/** A list of names as one phrase: "a, b and c". */
+function listed(value: JsonValue | undefined): string | undefined {
+  if (!Array.isArray(value) || value.length === 0) {
+    return undefined
+  }
+  const names = value.map(String)
+  return names.length === 1
+    ? names[0]
+    : `${names.slice(0, -1).join(', ')} and ${names.at(-1) ?? ''}`
+}
+
+/** The Settings row each setting is changed in, by its path; a table names all its keys. */
+const SETTING: Record<string, string> = {
+  'limits.issues_at_once': 'Issues at once',
+  'limits.review_rounds': 'Review rounds',
+  'limits.fix_ci_rounds': 'CI fixes',
+  'repo.base_branch': 'Base branch',
+  'merge.by': 'Who merges',
+  'tracker.filter': 'The issue filter command',
+  tracker: 'Issue tracker',
+  'slack.owners': 'Who the factory answers',
+  slack: 'Slack',
+  'agreements.path': 'Working agreements folder',
+  'knowledge.path': 'Knowledge folder',
+  held: 'Always held for you',
+  person_reviews: 'Changes a person reviews',
+  'review.bots': 'Review bots',
+  'guard.deny': 'Denied commands',
+  app: 'Commands',
+  agents: 'Agents',
+  roles: 'Agents',
+}
+
+function settingLabel(path: string): string {
+  const table = path.split('.')[0] ?? path
+  return SETTING[path] ?? SETTING[table] ?? path
+}
+
+/** One recorded change of a setting, as `config-reloaded.changes` holds it. */
+function settingChanged(change: JsonValue): string {
+  if (typeof change !== 'object' || change === null || Array.isArray(change)) {
+    return ''
+  }
+  const path = typeof change['setting'] === 'string' ? change['setting'] : ''
+  const value = change['value']
+  if (path === 'notices.errors') {
+    return typeof value === 'boolean'
+      ? `Error notices are now ${value ? 'on' : 'off'}.`
+      : 'Error notices were changed.'
+  }
+  const label = settingLabel(path)
+  if (typeof value === 'boolean') {
+    return `${label} is now ${value ? 'on' : 'off'}.`
+  }
+  return typeof value === 'number' ? `${label} is now ${value}.` : `${label} was changed.`
+}
+
+function settingsChanged(fields: Fields): string {
+  const changes = fields['changes']
+  const each = Array.isArray(changes) ? changes.map(settingChanged).filter(Boolean) : []
+  return each.length === 0 ? 'Settings changed.' : `Settings changed: ${each.join(' ')}`
+}
+
+/** A kind with no sentence of its own: its code with spaces, as a sentence ("Replay reset."). */
+function fallbackSentence(kind: string): string {
+  const words = kind.replace(/-/g, ' ').trim()
+  return asSentence(`${words.charAt(0).toUpperCase()}${words.slice(1)}`)
+}
+
+/** What a line of one kind says, from its fields. */
+type Sentence = (f: Fields, line: EventLine) => Part[]
+
+function said(sentence: string): Sentence {
+  return (): Part[] => [sentence]
+}
+
+function failedWith(before: string, after = '.'): Sentence {
+  return (f): Part[] => [`${before}${field(f, 'error') ?? ''}${after}`]
+}
+
+/** The sentence of each kind the factory records; a kind not here reads as its code. */
+const SENTENCE: Record<string, Sentence> = {
+  'service-unreachable': (_, line) => unreachable(line),
+  'tracker-error': (f, line) =>
+    errorKey(line) === 'tracker-refused' || field(f, 'issue') === undefined
+      ? [
+          `${trackerOf(f) ?? 'The tracker'} refused the connection (${causeOf(line)}). No new issue or change is read from it until it is fixed.`,
+        ]
+      : [
+          `${trackerOf(f) ?? 'The tracker'} refused a change to the issue: ${field(f, 'error') ?? ''}.`,
+        ],
+  'launch-error': (f, line) => [
+    `${cliOf(errorKey(line), f) ?? 'The agent'} could not start a run: `,
+    { code: field(f, 'error') ?? '' },
+    '.',
+  ],
+  'filter-failed': (_, line) => filterFailed(line),
+  'error-cleared': (_, line) => [cleared(line)],
+  'filter-dropped': (f, line) => [
+    `The issue filter dropped ${issueOf(line)}: `,
+    { quote: field(f, 'reason') ?? '' },
+  ],
+  pushed: (f) => {
+    const pr = numberField(f, 'pr')
+    return [
+      pr === undefined
+        ? 'Pushed its branch.'
+        : `Pushed its branch and updated pull request #${pr}.`,
+    ]
+  },
+  merged: (_, line) => [
+    line.issue === null && line.sprint !== null
+      ? "Merged the working agreements' pull request."
+      : 'Merged its pull request.',
+  ],
+  'merge-refused': (f) => [`GitHub refused the merge: ${field(f, 'reason') ?? ''}.`],
+  'closed-on-tracker': (f) => [closedOnTracker(f)],
+  'close-on-tracker': said('Not closed on the tracker: no tracker is set.'),
+  'started-on-tracker': said('Marked started on the tracker.'),
+  'issue-begun': said('Started: the lead is reading the issue.'),
+  decision: (f) => [DECISION[field(f, 'kind') ?? ''] ?? 'Asked you in Slack to decide.'],
+  'decision-answered': said('You answered in Slack.'),
+  'decision-action': said('You answered in Slack.'),
+  'decision-reply': said('You answered in Slack.'),
+  'decision-superseded': said('A question in Slack no longer needs your answer.'),
+  told: said('Told you in Slack what to know or prepare.'),
+  reminded: (f) => [
+    `Reminded you in Slack of ${numberField(f, 'waiting') ?? 'the'} decisions still waiting.`,
+  ],
+  paused: (f) => {
+    const reason = field(f, 'reason')
+    return reason === undefined || reason === 'paused by the owner'
+      ? ['Paused. You sent ', { code: '!pause' }, ' in Slack.']
+      : ['Paused: ', { quote: reason }, '.']
+  },
+  resumed: (_, line) =>
+    line.issue === null && line.sprint === null
+      ? ['Resumed. You sent ', { code: '!resume' }, ' in Slack.']
+      : ['Goes on: what stopped it was resolved.'],
+  command: (f) => ['You sent ', { code: `!${field(f, 'command') ?? ''}` }, ' in Slack.'],
+  'ignored-action': ignored,
+  'ignored-reply': ignored,
+  'ignored-command': ignored,
+  'ignored-message': ignored,
+  preview: said('Started the preview you asked for.'),
+  'preview-refused': (f) => [`Could not start the preview: ${field(f, 'why') ?? ''}.`],
+  'channel-error': failedWith('Slack did not accept a message: '),
+  'config-reloaded': (f) => [settingsChanged(f)],
+  'config-refused': failedWith('Settings not applied: '),
+  'goal-set': said('You changed the product goal.'),
+  prerequisites: (f) => {
+    const missing = listed(f['missing'])
+    return [missing === undefined ? 'Nothing is missing to work.' : `Missing to work: ${missing}.`]
+  },
+  'tracker-issues': said('The open issues on the tracker changed.'),
+  'operation-failed': (f) => [
+    `Could not finish ${field(f, 'operation') ?? 'an operation'}: ${field(f, 'error') ?? ''}.`,
+  ],
+  stopped: (f) => [
+    `Stopped: ${field(f, 'operation') ?? 'an operation'} kept failing: ${field(f, 'error') ?? ''}.`,
+  ],
+  filed: (f) => [`Filed ${stepNamed(f)} for an agent.`],
+  reconciled: (f) => [`Filed ${stepNamed(f)} again: it was missing.`],
+  'relaunch-after-restart': said('Started an agent again after a restart.'),
+  retry: (f) => [
+    `An agent run failed for a moment and is tried again: ${field(f, 'reason') ?? ''}.`,
+  ],
+  'resume-failed': said('An agent could not go on where it was and starts over.'),
+  failed: said('An agent ended without finishing its work.'),
+  'unreadable-output': failedWith("An agent's output could not be read: "),
+  'task-files-unreadable': failedWith("The plan's task files could not be read: "),
+  'nothing-to-commit': said('Nothing to commit.'),
+  committed: said('Committed its work.'),
+  'commit-refused': failedWith('The repository refused the commit: '),
+  'push-refused': failedWith('The push was refused: '),
+  'push-conflict': said('The push met a conflict with the base branch.'),
+  'push-failed': failedWith('Could not push: ', '. It is tried again.'),
+  'review-requested': (f) => [
+    `Asked ${listed(f['reviewers']) ?? 'its reviewers'} to review its pull request again.`,
+  ],
+  'head-conflict': said('Took in commits someone else pushed to its branch.'),
+  'head-taken': said('Took in commits someone else pushed to its branch.'),
+  'checks-failed': (f) => [`CI failed: ${listed(f['failed']) ?? 'a check'}.`],
+  'comments-accepted': said('Took in new comments on its pull request.'),
+  replied: said('Replied to a comment on its pull request.'),
+  'reply-failed': failedWith('Could not reply to a comment on its pull request: '),
+  gate: said('What its merge waits on changed.'),
+  'agreements-gate': said('What its merge waits on changed.'),
+  'pull-closed': (f) => {
+    const pr = numberField(f, 'pr')
+    return [pr === undefined ? 'Closed its pull request.' : `Closed pull request #${pr}.`]
+  },
+  'branch-deleted': said('Deleted its merged branch.'),
+  'github-error': failedWith('GitHub refused a request: '),
+  canceled: said('You canceled it.'),
+  'app-stop-error': failedWith('Could not stop its app: '),
+  'item-ended-with-issue': said('Stopped its agent work: the issue ended.'),
+  'recovery-started': said('Started the recovery you approved.'),
+  'recovery-ended': (f) => [
+    f['succeeded'] === true
+      ? 'The recovery you approved finished.'
+      : 'The recovery you approved failed.',
+  ],
+  'sprint-begun': said('Began a sprint.'),
+  'sprint-item-ended': said("A sprint step's work ended."),
+  'sprint-fact': (f, line) => [
+    sprintFact(f) ?? fallbackSentence(camelWords(field(f, 'fact') ?? line.kind)),
+  ],
+  fact: (f) => [issueFact(f)],
+  'agreements-pr': (f) => {
+    const pr = numberField(f, 'pr')
+    return [
+      pr === undefined
+        ? "Opened the working agreements' pull request."
+        : `Opened the working agreements' pull request #${pr}.`,
+    ]
+  },
+  'agreements-error': failedWith(
+    "The working agreements' pull request failed: ",
+    '. It is tried again.'
+  ),
+  'run-commands': said('The lead found how the product runs.'),
+}
+
+function ignored(f: Fields): Part[] {
+  return [`Ignored a Slack message from ${field(f, 'user') ?? 'someone'}, who is not an owner.`]
+}
+
+function closedOnTracker(f: Fields): string {
+  const tracker = trackerOf(f)
+  const state = field(f, 'state')
+  if (tracker !== undefined && state === 'done') {
+    return `Marked done on ${tracker}.`
+  }
+  return tracker !== undefined && state === 'canceled'
+    ? `Canceled on ${tracker}.`
+    : 'Closed on the tracker.'
+}
+
+/** What a recorded line says happened, as one sentence; its Error or Cleared word comes apart. */
+export function eventSentence(line: EventLine): Part[] {
+  return SENTENCE[line.kind]?.(line.fields, line) ?? [fallbackSentence(line.kind)]
+}
+
+/** An error going on, by its name: "Can't reach GitHub", "The issue filter fails". */
+export function errorName(e: ErrorNow): string {
+  const tracker = e.tracker === null ? 'the tracker' : TRACKER[e.tracker]
+  switch (e.key) {
+    case 'github-unreachable':
+      return "Can't reach GitHub"
+    case 'tracker-unreachable':
+      return `Can't reach ${tracker}`
+    case 'tracker-refused':
+      return `${e.tracker === null ? 'The tracker' : tracker} refuses the connection`
+    case 'cli-claude':
+    case 'cli-codex':
+    case 'cli-opencode':
+      return `${cliOf(e.key, e.cli === null ? {} : { cli: e.cli }) ?? 'The agent CLI'} cannot start a run`
+    case 'filter':
+      return 'The issue filter fails'
+  }
+}
+
+/** What the owner does while an error lasts. */
+export function errorFix(e: ErrorNow): Part[] {
+  switch (e.key) {
+    case 'github-unreachable':
+    case 'tracker-unreachable':
+      return [`Nothing to do unless it lasts. The factory tries again${interval(e.key)}.`]
+    case 'tracker-refused':
+      return ["Check the tracker's key or token in ", { settings: 'Settings' }, '.']
+    case 'cli-claude':
+    case 'cli-codex':
+    case 'cli-opencode':
+      return ['Fix it in a terminal on this computer, as the error says.']
+    case 'filter':
+      return [
+        'Issues go on as without a filter until it works. Fix ',
+        ...(e.command === null ? ['the filter command'] : [{ code: e.command }]),
+        ' or change it in ',
+        { settings: 'Settings' },
+        '.',
+      ]
+  }
+}
+
+/** What a drop's link opens, named after its address: "Linear issue". */
+export function trackerLinkName(url: string): 'Linear issue' | 'GitHub issue' | 'Tracker issue' {
+  const host = URL.canParse(url) ? new URL(url).hostname : ''
+  if (host === 'linear.app' || host.endsWith('.linear.app')) {
+    return 'Linear issue'
+  }
+  return host === 'github.com' ? 'GitHub issue' : 'Tracker issue'
 }

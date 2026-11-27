@@ -1,8 +1,6 @@
 //! The factory's records as the daemon and the dashboard server both read them: the goal, the
 //! sprint, the issues and the decisions, over the state directory.
 
-use std::collections::BTreeMap;
-use std::collections::btree_map::Entry;
 use std::fs;
 
 use ovenspring_core::config::{Cli, Permissions, Role};
@@ -23,8 +21,6 @@ use ovenspring_integrations::http::Unanswered;
 pub(crate) const SPRINT: &str = "sprint.json";
 
 pub(crate) const LAUNCHES: &str = "launches.jsonl";
-
-const SERVICES: &str = "services-unanswered.json";
 
 /// A service the factory calls that can fail to answer for a while.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, TS)]
@@ -61,44 +57,6 @@ pub(crate) fn set_told_waiting(store: &Store, told: Option<&Told>) -> Result<(),
 pub struct Failing {
     pub since: String,
     pub why: Unanswered,
-}
-
-/// The services failing to answer.
-pub fn unreachable(store: &Store) -> Result<BTreeMap<Service, Failing>, DaemonError> {
-    Ok(store.read_record(SERVICES)?.unwrap_or_default())
-}
-
-/// Records whether `service` answered: a failure keeps the time of the first one and why the
-/// latest failed, an answer removes it.
-pub(crate) fn reached(
-    store: &Store,
-    service: Service,
-    outcome: Result<(), Unanswered>,
-) -> Result<(), DaemonError> {
-    let mut failing = unreachable(store)?;
-    let changed = match (outcome, failing.entry(service)) {
-        (Ok(()), Entry::Occupied(entry)) => {
-            entry.remove();
-            true
-        }
-        (Ok(()), Entry::Vacant(_)) => false,
-        (Err(why), Entry::Vacant(first)) => {
-            first.insert(Failing {
-                since: jiff::Timestamp::now().to_string(),
-                why,
-            });
-            true
-        }
-        (Err(why), Entry::Occupied(mut entry)) => {
-            let changed = entry.get().why != why;
-            entry.get_mut().why = why;
-            changed
-        }
-    };
-    if changed {
-        store.write_record(SERVICES, &failing)?;
-    }
-    Ok(())
 }
 
 /// A launch's start, its first line in `launches.jsonl`.
@@ -215,21 +173,31 @@ pub fn last_activity(store: &Store) -> Option<i64> {
 
 /// Appends `value` to `events.jsonl` with the time it happened.
 pub fn event(store: &Store, value: &serde_json::Value) -> Result<(), DaemonError> {
+    append_event(store, value).map(drop)
+}
+
+/// As [`event`], returning the line as appended, its time included.
+pub(crate) fn append_event(
+    store: &Store,
+    value: &serde_json::Value,
+) -> Result<serde_json::Value, DaemonError> {
     let mut v = value.clone();
     if let Some(obj) = v.as_object_mut() {
         obj.insert("at".into(), json!(jiff::Timestamp::now().to_string()));
     }
-    Ok(store.append_event(&v)?)
+    store.append_event(&v)?;
+    Ok(v)
 }
 
 /// The lines of a JSON Lines file under the state directory; none before its first line. A line
-/// cut short by a crash mid-write is the only one that does not parse; it is skipped.
+/// cut short by a crash mid-write is the only one that does not parse; it is skipped. Each line is
+/// decoded on its own, so a cut inside a multibyte character loses only that line.
 pub(crate) fn lines(store: &Store, file: &str) -> Result<Vec<serde_json::Value>, DaemonError> {
     let path = store.root().join(file);
-    match fs::read_to_string(&path) {
-        Ok(text) => Ok(text
-            .lines()
-            .filter_map(|l| serde_json::from_str(l).ok())
+    match fs::read(&path) {
+        Ok(bytes) => Ok(bytes
+            .split(|b| *b == b'\n')
+            .filter_map(|l| serde_json::from_slice(l).ok())
             .collect()),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Vec::new()),
         Err(e) => Err(StoreError::io(&path)(e).into()),
@@ -339,5 +307,33 @@ pub fn pause_reason(store: &Store) -> Result<Option<String>, DaemonError> {
         Ok(text) => Ok(Some(text.trim().to_owned())),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
         Err(e) => Err(StoreError::io(&path)(e).into()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Behavior: a write cut inside a multibyte character leaves a torn last line with no newline,
+    //     then a line is appended -> every whole line, the appended one included, is returned and
+    //     only the torn line is skipped.
+    #[test]
+    fn a_line_torn_inside_a_multibyte_character_is_the_only_line_skipped() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::open(dir.path().join("state")).unwrap();
+        let torn = &"{\"event\":\"note\",\"text\":\"caf\u{e9}\"}".as_bytes()[..28];
+        assert!(std::str::from_utf8(torn).is_err());
+        let mut file = b"{\"event\":\"first\"}\n".to_vec();
+        file.extend_from_slice(torn);
+        fs::write(store.root().join("events.jsonl"), file).unwrap();
+
+        store
+            .append_line("events.jsonl", &json!({"event": "after"}))
+            .unwrap();
+
+        assert_eq!(
+            lines(&store, "events.jsonl").unwrap(),
+            [json!({"event": "first"}), json!({"event": "after"})]
+        );
     }
 }

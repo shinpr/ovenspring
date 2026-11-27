@@ -65,6 +65,8 @@ pub struct FakeGitHub {
     pub fail_next_open: std::sync::atomic::AtomicBool,
     /// While set, every call fails as if GitHub could not be reached.
     pub unreachable: std::sync::atomic::AtomicBool,
+    /// While set, reading a pull request answers HTTP 502, while other calls still answer.
+    pub failing_pull_reads: std::sync::atomic::AtomicBool,
     /// While set, replying to a comment is refused (HTTP 403).
     pub refuse_replies: std::sync::atomic::AtomicBool,
     /// While set, reading the pull request of this branch is refused (HTTP 403).
@@ -104,6 +106,7 @@ impl FakeGitHub {
             before_merge_look: Mutex::new(None),
             fail_next_open: std::sync::atomic::AtomicBool::new(false),
             unreachable: std::sync::atomic::AtomicBool::new(false),
+            failing_pull_reads: std::sync::atomic::AtomicBool::new(false),
             refuse_replies: std::sync::atomic::AtomicBool::new(false),
             refuse_pull_of: Mutex::new(None),
             stale_head: Mutex::new(None),
@@ -169,6 +172,16 @@ impl FakeGitHub {
     }
 
     fn pull_of(&self, number: u64) -> Result<Pull, HttpError> {
+        if self
+            .failing_pull_reads
+            .load(std::sync::atomic::Ordering::SeqCst)
+        {
+            return Err(HttpError::Transient {
+                why: Unanswered::ServerError,
+                status: Some(502),
+                message: format!("GET pulls/{number}: HTTP 502"),
+            });
+        }
         let st = self.state.lock().unwrap();
         let (n, head, base, state) = st
             .pulls

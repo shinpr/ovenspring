@@ -192,7 +192,7 @@ fn start(
         ovenspring_daemon::Services {
             github: Some(gh.clone()),
             channel,
-            tracker: Some(tracker.clone()),
+            tracker: Some(support::linear(tracker.clone())),
             secrets: Vec::new(),
         },
     );
@@ -773,7 +773,7 @@ fn the_agreements_reply_asks_the_owner_to_approve_only_when_github_requires_it()
             ovenspring_daemon::Services {
                 github: Some(gh.clone()),
                 channel: channel.clone(),
-                tracker: Some(tracker),
+                tracker: Some(support::linear(tracker)),
                 secrets: Vec::new(),
             },
         );
@@ -966,7 +966,7 @@ fn no_sprint_is_proposed_while_github_is_not_connected() {
         ovenspring_daemon::Services {
             github: None,
             channel: Arc::new(RecordingChannel::default()),
-            tracker: Some(tracker),
+            tracker: Some(support::linear(tracker)),
             secrets: Vec::new(),
         },
     );
@@ -1285,7 +1285,7 @@ fn agreements_failing_their_check() -> (
         ovenspring_daemon::Services {
             github: Some(gh.clone()),
             channel: channel.clone(),
-            tracker: Some(tracker),
+            tracker: Some(support::linear(tracker)),
             secrets: Vec::new(),
         },
     );

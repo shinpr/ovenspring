@@ -14,11 +14,12 @@ use ovenspring_integrations::github::{
     BranchRules, Check, CheckState, Comment, CommentKind, GitHub, MergeOutcome, MergeState,
     NewPull, PullState, Review, ReviewDecision, ReviewState,
 };
+use ovenspring_integrations::http::Unanswered;
 use serde_json::json;
 
+use crate::errors::{ErrorKey, Failure, Via, out_of_reach, unanswered_cause};
 use crate::issues::IssueRecord;
 use crate::owner::{DecisionRecord, DecisionStatus};
-use crate::records::{self, Service};
 use crate::worktree::git;
 use crate::{Daemon, DaemonError};
 
@@ -321,17 +322,42 @@ impl Daemon {
         let Some(gh) = self.services.github.clone() else {
             return Ok(());
         };
-        // GitHub out of reach is shown until it answers again; while it does not, the reads below
-        // would fail the same way.
-        if records::unreachable(&self.store)?.contains_key(&Service::Github) {
-            let outcome = match gh.viewer() {
-                Err(ovenspring_integrations::http::HttpError::Transient { why, .. }) => Err(why),
-                Ok(_) | Err(_) => Ok(()),
-            };
-            records::reached(&self.store, Service::Github, outcome)?;
-            if outcome.is_err() {
+        // While GitHub is out of reach, each way that failed is asked whether it answers again;
+        // they all answering only lets the error clear at the pass's end, since a read below can
+        // still fail as out of reach.
+        if let Some(open) = self.errors.state.open().get(&ErrorKey::GithubUnreachable) {
+            let via = open.via.clone();
+            let mut answered = true;
+            if via.contains(&Via::Api)
+                && let Err(e) = gh.viewer()
+                && let Some((why, cause)) = out_of_reach(&e)
+            {
+                self.failed(
+                    ErrorKey::GithubUnreachable,
+                    Failure {
+                        event: json!({"event": "service-unreachable", "operation": "checking that GitHub answers",
+                                      "error": e.to_string(), "why": why}),
+                        cause,
+                        via: Some(Via::Api),
+                    },
+                )?;
+                // The reads below would fail the same way.
                 return Ok(());
             }
+            if via.contains(&Via::Git) && !self.origin_answers() {
+                let why = Unanswered::NoConnection;
+                self.failed(
+                    ErrorKey::GithubUnreachable,
+                    Failure {
+                        event: json!({"event": "service-unreachable", "operation": "checking that origin answers",
+                                      "error": "origin does not answer", "why": why}),
+                        cause: unanswered_cause(why, None),
+                        via: Some(Via::Git),
+                    },
+                )?;
+                answered = false;
+            }
+            self.errors.github_clear = answered;
         }
         for record in self.issues()? {
             let key = record.key().to_owned();

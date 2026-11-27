@@ -405,7 +405,7 @@ impl Daemon {
             }
             Action::StartOnTracker => {
                 if let Some(tracker) = &self.services.tracker {
-                    match tracker.start(key) {
+                    match tracker.client.start(key) {
                         Ok(()) => self.event(&json!({"event": "started-on-tracker", "issue": key}))?,
                         Err(e) => self.event(
                             &json!({"event": "tracker-error", "issue": key, "error": e.to_string()}),
@@ -449,8 +449,12 @@ impl Daemon {
         };
         if me.flow.stage == Stage::Merged {
             if let Some(tracker) = &self.services.tracker {
-                match tracker.set_state(key, ovenspring_integrations::tracker::TrackerState::Done) {
-                    Ok(()) => self.event(&json!({"event": "closed-on-tracker", "issue": key}))?,
+                match tracker
+                    .client
+                    .set_state(key, ovenspring_integrations::tracker::TrackerState::Done)
+                {
+                    Ok(()) => self.event(&json!({"event": "closed-on-tracker", "issue": key,
+                                                 "state": "done", "tracker": tracker.kind}))?,
                     Err(e) => self.event(
                         &json!({"event": "tracker-error", "issue": key, "error": e.to_string()}),
                     )?,
@@ -549,14 +553,15 @@ impl Daemon {
         let Some(tracker) = &self.services.tracker else {
             return self.event(&json!({"event": "close-on-tracker", "issue": key, "note": "no tracker configured"}));
         };
-        let result = tracker.comment(key, &evidence).and_then(|()| {
-            tracker.set_state(
+        let result = tracker.client.comment(key, &evidence).and_then(|()| {
+            tracker.client.set_state(
                 key,
                 ovenspring_integrations::tracker::TrackerState::Canceled,
             )
         });
         match result {
-            Ok(()) => self.event(&json!({"event": "closed-on-tracker", "issue": key})),
+            Ok(()) => self.event(&json!({"event": "closed-on-tracker", "issue": key,
+                                         "state": "canceled", "tracker": tracker.kind})),
             Err(e) => {
                 self.event(&json!({"event": "tracker-error", "issue": key, "error": e.to_string()}))
             }

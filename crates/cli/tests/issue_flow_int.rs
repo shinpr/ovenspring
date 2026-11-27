@@ -478,6 +478,17 @@ fn one_issue_runs_from_requirements_to_the_merge_of_its_checked_sha() {
             .calls()
             .contains(&("ACME-123".to_owned(), "state: Done".to_owned()))
     );
+    // The event records which tracker marked it done, so Events can say so.
+    let closed: Vec<Value> = env
+        .events()
+        .into_iter()
+        .filter(|e| e["event"] == "closed-on-tracker")
+        .map(|e| json!({"issue": e["issue"], "state": e["state"], "tracker": e["tracker"]}))
+        .collect();
+    assert_eq!(
+        closed,
+        [json!({"issue": "ACME-123", "state": "done", "tracker": "linear"})]
+    );
     // The writer's comment and the configured bot's are findings of the issue, each with how it
     // was answered.
     let detail = ovenspring_daemon::history::issue_detail(d.store(), "ACME-123")

@@ -23,7 +23,9 @@ function area(path: string): Area | undefined {
   if (path === '/' || path.startsWith('/issues')) {
     return 'now'
   }
-  return (['activity', 'sprints', 'settings'] as const).find((a) => path.startsWith(`/${a}`))
+  return (['activity', 'events', 'sprints', 'settings'] as const).find((a) =>
+    path.startsWith(`/${a}`)
+  )
 }
 
 export function Shell() {

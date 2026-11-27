@@ -20,6 +20,7 @@ use ovenspring_integrations::channel::slack::{
 };
 use ovenspring_integrations::channel::{
     Channel, ChannelEvent, DecisionKind, DecisionRequest, MessageRef, Notice, NoticeKind,
+    NoticeMarker,
 };
 use ovenspring_integrations::http::Method;
 use serde_json::{Value, json};
@@ -279,6 +280,7 @@ fn each_kind_of_decision_gets_its_buttons_and_an_issues_wait_can_cancel_it() {
         issue: Some("ACME-125".into()),
         text: "ACME-125 is ready to merge".into(),
         preview: true,
+        marker: None,
     });
     assert_eq!(
         buttons(&ready),
@@ -300,6 +302,7 @@ fn each_kind_of_decision_gets_its_buttons_and_an_issues_wait_can_cancel_it() {
         issue: Some("ACME-125".into()),
         text: "ACME-125 is ready to merge".into(),
         preview: false,
+        marker: None,
     });
     assert_eq!(buttons(&ready_without), [] as [(String, String); 0]);
     let paused = notice_blocks(&Notice {
@@ -307,6 +310,7 @@ fn each_kind_of_decision_gets_its_buttons_and_an_issues_wait_can_cancel_it() {
         issue: None,
         text: "Oven Spring paused".into(),
         preview: false,
+        marker: None,
     });
     assert_eq!(buttons(&paused), [] as [(String, String); 0]);
     assert_eq!(
@@ -476,6 +480,131 @@ fn a_decision_is_posted_with_its_id_in_its_metadata() {
             "authorization".to_owned(),
             "Bearer xoxb-fixture-0001".to_owned()
         )]
+    );
+}
+
+/// An error notice marked as the factory marks its transitions, recorded at Unix time
+/// 1_795_000_000.
+fn marked_notice() -> Notice {
+    Notice {
+        kind: NoticeKind::ErrorStarted,
+        issue: None,
+        text: "GitHub isn't answering.".into(),
+        preview: false,
+        marker: Some(NoticeMarker {
+            id: "github-unreachable@2026-11-18T04:26:40Z/started".into(),
+            recorded: 1_795_000_000,
+        }),
+    }
+}
+
+/// The history read a marked notice makes first: from an hour before its record.
+fn marked_history(cursor: Option<&str>) -> String {
+    let page = cursor.map_or(String::new(), |c| format!("&cursor={c}"));
+    format!(
+        "{API}/conversations.history?channel={CHANNEL}&oldest=1794996400.000000&limit=200&include_all_metadata=true{page}"
+    )
+}
+
+fn notice_message(ts: &str, id: &str) -> Value {
+    json!({"ts": ts, "text": "GitHub isn't answering.",
+           "metadata": {"event_type": "ovenspring_notice", "event_payload": {"id": id}}})
+}
+
+#[test]
+fn a_marked_notice_not_in_the_channel_is_posted_with_its_marker() {
+    let decision_with_same_id = json!({"ts": "1794999000.000100", "metadata": {
+        "event_type": "ovenspring_decision",
+        "event_payload": {"id": "github-unreachable@2026-11-18T04:26:40Z/started"}}});
+    let t = Recorded::new()
+        .on(
+            (Method::Get, &marked_history(None)),
+            200,
+            &history(&json!([decision_with_same_id])),
+        )
+        .on(
+            (Method::Post, &format!("{API}/chat.postMessage")),
+            200,
+            &json!({"ok": true, "ts": "1795000001.000100"}),
+        )
+        .on(
+            (
+                Method::Get,
+                &format!("{API}/chat.getPermalink?channel={CHANNEL}&message_ts=1795000001.000100"),
+            ),
+            200,
+            &json!({"ok": true, "permalink": "https://norsica.slack.test/p1"}),
+        );
+    let m = slack(&t).post_notice(&marked_notice()).unwrap();
+    assert_eq!(m.ts, "1795000001.000100");
+    let sent = t.sent();
+    assert_eq!(
+        sent[0].url,
+        marked_history(None),
+        "history is read before posting"
+    );
+    let posts: Vec<Value> = sent
+        .iter()
+        .filter(|r| r.url.ends_with("/chat.postMessage"))
+        .map(|r| r.body.clone().unwrap())
+        .collect();
+    assert_eq!(posts.len(), 1);
+    assert_eq!(
+        posts[0]["metadata"],
+        json!({"event_type": "ovenspring_notice",
+               "event_payload": {"id": "github-unreachable@2026-11-18T04:26:40Z/started"}})
+    );
+}
+
+#[test]
+fn a_marked_notice_already_in_the_channel_is_not_posted_again() {
+    let t = Recorded::new().on(
+        (Method::Get, &marked_history(None)),
+        200,
+        &history(&json!([
+            notice_message(
+                "1795000002.000100",
+                "github-unreachable@2026-11-18T04:26:40Z/cleared"
+            ),
+            notice_message(
+                "1795000001.000100",
+                "github-unreachable@2026-11-18T04:26:40Z/started"
+            ),
+        ])),
+    );
+    let m = slack(&t).post_notice(&marked_notice()).unwrap();
+    assert_eq!(
+        (m.channel.as_str(), m.ts.as_str()),
+        (CHANNEL, "1795000001.000100")
+    );
+    assert_eq!(t.sent().len(), 1, "only the history was read");
+}
+
+/// Slack may answer fewer messages than asked with a cursor to the rest; a lookup that stopped
+/// there would post the notice twice.
+#[test]
+fn a_marked_notice_is_looked_for_on_every_history_page() {
+    let t = Recorded::new()
+        .on(
+            (Method::Get, &marked_history(None)),
+            200,
+            &json!({"ok": true, "has_more": true,
+                    "messages": [{"ts": "1795000009.000100", "text": "hello"}],
+                    "response_metadata": {"next_cursor": "bmV4dF90czox"}}),
+        )
+        .on(
+            (Method::Get, &marked_history(Some("bmV4dF90czox"))),
+            200,
+            &json!({"ok": true, "has_more": false,
+                    "messages": [notice_message("1795000001.000100", "github-unreachable@2026-11-18T04:26:40Z/started")],
+                    "response_metadata": {"next_cursor": ""}}),
+        );
+    let m = slack(&t).post_notice(&marked_notice()).unwrap();
+    assert_eq!(m.ts, "1795000001.000100");
+    let urls: Vec<String> = t.sent().into_iter().map(|r| r.url).collect();
+    assert_eq!(
+        urls,
+        [marked_history(None), marked_history(Some("bmV4dF90czox"))]
     );
 }
 

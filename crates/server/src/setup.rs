@@ -474,6 +474,7 @@ fn config_of(request: &SetupRequest) -> Config {
         person_reviews: BTreeMap::new(),
         agreements: ovenspring_core::config::AgreementsConfig::default(),
         knowledge: ovenspring_core::config::KnowledgeConfig::default(),
+        notices: ovenspring_core::config::NoticesConfig::default(),
         agents: ovenspring_core::config::AgentsConfig::default(),
         roles: Roles::all_on(request.cli),
         app: AppConfig::default(),

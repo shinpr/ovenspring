@@ -4,9 +4,10 @@
 
 use std::collections::BTreeSet;
 use std::sync::{Arc, Mutex};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use ovenspring_integrations::channel::slack::{Slack, parse_envelope};
-use ovenspring_integrations::http::{HttpError, Request, Response, Transport};
+use ovenspring_integrations::http::{HttpError, Request, Response, Transport, Unanswered};
 use serde_json::{Value, json};
 
 pub const API: &str = "https://slack.test/api";
@@ -26,6 +27,8 @@ struct State {
     /// Every message posted, with the `ts` Slack gave it.
     messages: Vec<Value>,
     failing: BTreeSet<String>,
+    /// Methods Slack carries out but whose answer never arrives.
+    losing: BTreeSet<String>,
     next_ts: u64,
 }
 
@@ -72,6 +75,12 @@ impl Transport for SlackStub {
         } else {
             answer(&mut st, &method, &args)
         };
+        if st.losing.contains(&method) {
+            return Err(HttpError::transient(
+                Unanswered::NoConnection,
+                format!("{method}: the answer was lost"),
+            ));
+        }
         Ok(Response {
             status: 200,
             headers: Vec::new(),
@@ -87,8 +96,13 @@ fn answer(st: &mut State, method: &str, args: &Value) -> Value {
     };
     match method {
         "chat.postMessage" => {
+            // Now, as Slack stamps a message, so a read from a recorded time finds it.
             st.next_ts += 1;
-            let ts = format!("{}.000100", 1_700_000_000 + st.next_ts);
+            let now = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs();
+            let ts = format!("{now}.{:06}", st.next_ts);
             let mut message = args.clone();
             message["ts"] = json!(ts);
             st.messages.push(message);
@@ -98,6 +112,9 @@ fn answer(st: &mut State, method: &str, args: &Value) -> Value {
             "https://acme.slack.test/archives/{CHANNEL}/p{}",
             args["message_ts"].as_str().unwrap_or_default().replace('.', "")
         )}),
+        "conversations.history" if args.get("ts").or_else(|| args.get("latest")).is_none() => {
+            history_page(st, args)
+        }
         "conversations.history" | "conversations.replies" => {
             let found = named(st).map_or_else(
                 || vec![json!({"ts": args.get("ts").cloned().unwrap_or_default()})],
@@ -112,6 +129,38 @@ fn answer(st: &mut State, method: &str, args: &Value) -> Value {
         }),
         _ => json!({"ok": true}),
     }
+}
+
+/// The channel's messages from `oldest` on, newest first, `limit` to a page, the next page named by
+/// `next_cursor` as Slack does.
+fn history_page(st: &State, args: &Value) -> Value {
+    let arg = |key: &str| args.get(key).and_then(Value::as_str).unwrap_or_default();
+    let ts = |m: &Value| {
+        m["ts"]
+            .as_str()
+            .unwrap_or_default()
+            .parse::<f64>()
+            .unwrap_or(0.0)
+    };
+    let oldest: f64 = arg("oldest").parse().unwrap_or(0.0);
+    let limit: usize = arg("limit").parse().unwrap_or(100);
+    let start: usize = arg("cursor").parse().unwrap_or(0);
+    let mut messages: Vec<Value> = st
+        .messages
+        .iter()
+        .filter(|m| m["channel"] == arg("channel") && m.get("thread_ts").is_none())
+        .filter(|m| ts(m) >= oldest)
+        .cloned()
+        .collect();
+    messages.sort_by(|a, b| ts(b).total_cmp(&ts(a)));
+    let end = messages.len().min(start + limit);
+    let next = if end < messages.len() {
+        end.to_string()
+    } else {
+        String::new()
+    };
+    json!({"ok": true, "messages": messages.get(start..end).unwrap_or_default(),
+           "response_metadata": {"next_cursor": next}})
 }
 
 impl SlackStub {
@@ -132,6 +181,17 @@ impl SlackStub {
             st.failing.insert(method.into());
         } else {
             st.failing.remove(method);
+        }
+    }
+
+    /// Makes Slack carry out `method` but lose its answer, as when the connection drops after the
+    /// request arrived, until `lose_answer(method, false)`.
+    pub fn lose_answer(&self, method: &str, losing: bool) {
+        let mut st = self.0.lock().unwrap();
+        if losing {
+            st.losing.insert(method.into());
+        } else {
+            st.losing.remove(method);
         }
     }
 

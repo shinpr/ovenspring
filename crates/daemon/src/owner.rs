@@ -438,6 +438,7 @@ impl Daemon {
             issue: Some(key.into()),
             text: format!("{key}: {}\n\n{message}", record.title),
             preview: false,
+            marker: None,
         };
         if let Err(e) = self.services.channel.post_notice(&notice) {
             self.event(&json!({"event": "channel-error", "issue": key, "error": e.0}))?;
@@ -480,6 +481,7 @@ impl Daemon {
                 record.pr_url.as_deref().unwrap_or_default()
             ),
             preview: self.config.app.start.is_some(),
+            marker: None,
         };
         if let Err(e) = self.services.channel.post_notice(&notice) {
             self.event(&json!({"event": "channel-error", "issue": key, "error": e.0}))?;
@@ -1000,6 +1002,7 @@ impl Daemon {
             issue: None,
             text: format!("Still waiting for you:\n{}", lines.join("\n")),
             preview: false,
+            marker: None,
         };
         if let Err(e) = self.services.channel.post_notice(&notice) {
             self.event(&json!({"event": "channel-error", "error": e.0}))?;
@@ -1020,11 +1023,9 @@ impl Daemon {
         let notice = Notice {
             kind: NoticeKind::Paused,
             issue: None,
-            text: format!(
-                "Oven Spring paused because {}.\nAgents already at work finish their step; nothing new starts. To start again, mention me with `!resume`.",
-                reason.trim()
-            ),
+            text: pause_text(&reason),
             preview: false,
+            marker: None,
         };
         match self.services.channel.post_notice(&notice) {
             Ok(_) => {
@@ -1034,6 +1035,14 @@ impl Daemon {
             Err(e) => self.event(&json!({"event": "channel-error", "error": e.0})),
         }
     }
+}
+
+/// M-08: why the factory paused, and how to start it again.
+pub(crate) fn pause_text(reason: &str) -> String {
+    format!(
+        "Oven Spring paused because {}.\nAgents already at work finish their step; nothing new starts. To start again, mention me with `!resume`.",
+        reason.trim()
+    )
 }
 
 /// A `!command` as the daemon handles it.

@@ -420,6 +420,48 @@ fn overview_reports_pause_cause_pending_decisions_and_sprint_progress_from_the_s
     );
 }
 
+// AC: "When the daemon starts with a `services-unanswered.json` from the previous version, Now
+//     shall keep that service's 'since' and reason" — docs/design/events-and-error-notices-design.md
+//     § Acceptance Criteria > Error notices; `status.unreachable` comes from the open errors in
+//     `events.jsonl` (§ Selected Design > Error state). The upgrade itself is errors_int's.
+// Behavior: `events.jsonl` holds a `github-unreachable` start and a repeat with a later reason, and
+//     a `tracker-unreachable` start and its clear -> `GET /api/v1/overview`.
+// Observable result: `status.unreachable` is GitHub since its start, with the latest reason; the
+//     cleared tracker is not named.
+// @lane: integration
+// @dependency: dashboard server, store, overview
+#[test]
+fn overview_names_the_service_out_of_reach_from_the_errors_in_the_event_log() {
+    let env = Env::new();
+    let dash = Dashboard::start(&env, Checks { refuse: None });
+    for line in [
+        json!({"event": "service-unreachable", "operation": "reading the tracker", "why": "no-connection",
+               "at": "2026-11-27T04:30:00Z",
+               "failure": {"key": "tracker-unreachable", "since": "2026-11-27T04:30:00Z", "cause": "no answer",
+                           "start": true, "notice": "waiting"}}),
+        json!({"event": "service-unreachable", "operation": "reading its pull request", "why": "server-error",
+               "issue": "ACME-142", "at": "2026-11-27T04:41:00Z",
+               "failure": {"key": "github-unreachable", "since": "2026-11-27T04:41:00Z", "cause": "HTTP 502",
+                           "via": ["api"], "start": true, "notice": "waiting"}}),
+        json!({"event": "error-cleared", "count": 1, "at": "2026-11-27T04:42:00Z",
+               "failure": {"key": "tracker-unreachable", "since": "2026-11-27T04:30:00Z", "notice": "waiting"}}),
+        json!({"event": "service-unreachable", "operation": "pushing its branch", "why": "rate-limited",
+               "issue": "ACME-142", "at": "2026-11-27T04:43:00Z",
+               "failure": {"key": "github-unreachable", "since": "2026-11-27T04:41:00Z", "cause": "HTTP 429",
+                           "via": ["api"]}}),
+    ] {
+        dash.store.append_event(&line).unwrap();
+    }
+
+    let o = dash.get("/api/v1/overview").json();
+
+    assert_eq!(o["status"]["state"], "unreachable");
+    assert_eq!(
+        o["status"]["unreachable"],
+        json!({"service": "github", "since": "2026-11-27T04:41:00Z", "why": "rate-limited"})
+    );
+}
+
 // AC: UI Spec S-04 Activity: runs newest first, each at the time it ended.
 // Behavior: a code review starts before a security review and ends after it, and a third run is
 //     still running -> the list reads running, then the code review, then the security review.
@@ -1710,4 +1752,55 @@ fn the_version_answer_offers_a_newer_release_then_a_restart_once_it_is_installed
         json!({"running": running, "update": {"kind": "restart", "version": "99.0.0"}}),
         "(b) the release is installed and waits for a restart"
     );
+}
+
+// AC: Design `docs/design/events-and-error-notices-design.md` § Risks and Mitigation:
+//     `events.jsonl` grows without rotation (about 360 lines a day), and the Events page reads it
+//     whole on each 5-second poll; "Measure on a large seeded file". § Non-Functional Requirements:
+//     the page reflects a new event at its next 5 s poll.
+// Behavior: a year of lines at that rate, with errors among them, is seeded -> `GET /api/v1/events`
+//     is asked for the newest lines and for every line -> each answers well within one poll.
+// @lane: integration
+// @dependency: dashboard server, `events::page`, store
+/// A year of `events.jsonl` at about 360 lines a day.
+const YEAR_OF_LINES: usize = 130_000;
+
+#[test]
+fn the_events_page_answers_within_a_poll_over_a_year_of_lines() {
+    let env = Env::new();
+    let dash = Dashboard::start(&env, Checks { refuse: None });
+    let mut lines = Vec::with_capacity(YEAR_OF_LINES);
+    for i in 0..YEAR_OF_LINES {
+        let line = if i % 100 == 0 {
+            json!({"event": "service-unreachable", "operation": "reading the tracker", "why": "no-connection",
+                   "tracker": "linear", "at": "2026-11-27T04:00:00Z",
+                   "failure": {"key": "tracker-unreachable", "since": "2026-11-27T04:00:00Z",
+                               "cause": "no answer", "start": i == 0, "notice": "waiting"}})
+        } else {
+            json!({"event": "pushed", "issue": format!("ACME-{}", i % 400), "sha": format!("{i:040x}"),
+                   "at": "2026-11-27T04:00:00Z"})
+        };
+        lines.push(line.to_string());
+    }
+    let text = lines.join("\n");
+    std::fs::write(dash.store.root().join("events.jsonl"), &text).unwrap();
+
+    for path in [
+        "/api/v1/events",
+        "/api/v1/events?show=errors",
+        "/api/v1/events?from=0",
+    ] {
+        let started = std::time::Instant::now();
+        let answer = dash.get(path);
+        let took = started.elapsed();
+        eprintln!(
+            "{path}: {took:?} over {YEAR_OF_LINES} lines ({} bytes)",
+            text.len()
+        );
+        assert_eq!(answer.status, 200, "{path}");
+        assert!(
+            took < std::time::Duration::from_secs(5),
+            "{path} took {took:?}, longer than the page's poll"
+        );
+    }
 }

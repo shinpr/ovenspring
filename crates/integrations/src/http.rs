@@ -52,9 +52,14 @@ impl Response {
 
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum HttpError {
-    /// The request may succeed later.
+    /// The request may succeed later. `status` is the answer's HTTP status, when an answer with
+    /// an error status is why (429, 5xx); none when nothing answered or a 403 told a rate limit.
     #[error("{message}")]
-    Transient { why: Unanswered, message: String },
+    Transient {
+        why: Unanswered,
+        status: Option<u16>,
+        message: String,
+    },
     /// The service refused the request.
     #[error("{method} {url}: HTTP {status}: {message}")]
     Status {
@@ -89,7 +94,11 @@ impl HttpError {
     }
 
     pub fn transient(why: Unanswered, message: String) -> HttpError {
-        HttpError::Transient { why, message }
+        HttpError::Transient {
+            why,
+            status: None,
+            message,
+        }
     }
 }
 
@@ -191,19 +200,21 @@ pub fn check(request: &Request, response: Response) -> Result<Response, HttpErro
             Unanswered::RateLimited,
             format!("{} {}: rate limited", request.method.as_str(), request.url),
         )),
-        429 => Err(HttpError::transient(
-            Unanswered::RateLimited,
-            format!("{} {}: HTTP 429", request.method.as_str(), request.url),
-        )),
-        500..=599 => Err(HttpError::transient(
-            Unanswered::ServerError,
-            format!(
+        429 => Err(HttpError::Transient {
+            why: Unanswered::RateLimited,
+            status: Some(429),
+            message: format!("{} {}: HTTP 429", request.method.as_str(), request.url),
+        }),
+        500..=599 => Err(HttpError::Transient {
+            why: Unanswered::ServerError,
+            status: Some(response.status),
+            message: format!(
                 "{} {}: HTTP {}",
                 request.method.as_str(),
                 request.url,
                 response.status
             ),
-        )),
+        }),
         status => Err(HttpError::Status {
             method: request.method.as_str(),
             url: request.url.clone(),

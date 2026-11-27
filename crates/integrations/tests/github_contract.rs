@@ -527,6 +527,7 @@ fn a_moved_head_or_an_unmergeable_pull_request_is_a_refusal_and_an_outage_is_tra
         client(&t).merge(7, "1111111"),
         Err(HttpError::Transient {
             why: Unanswered::ServerError,
+            status: Some(502),
             ..
         })
     ));
@@ -543,6 +544,7 @@ fn a_rate_limit_is_transient_and_a_bad_token_is_not() {
         client(&t).viewer(),
         Err(HttpError::Transient {
             why: Unanswered::RateLimited,
+            status: None,
             ..
         })
     ));

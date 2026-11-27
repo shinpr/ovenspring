@@ -344,7 +344,8 @@ fn status(
 ) -> Result<Status, DaemonError> {
     let reason = records::pause_reason(store)?;
     let prerequisites = crate::prerequisites::missing(store)?;
-    let unreachable = records::unreachable(store)?
+    let unreachable = crate::errors::Errors::read(store)?
+        .unreachable()
         .into_iter()
         .next()
         .map(|(service, f)| Unreachable {

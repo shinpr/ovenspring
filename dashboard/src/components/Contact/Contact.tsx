@@ -25,7 +25,7 @@ export function Contact({
   }
   return (
     <p className={styles['contact']} role="status">
-      The dashboard lost contact with the factory; this page is as it was at{' '}
+      The dashboard lost contact with the factory. This page is as it was at{' '}
       {clock(answeredAt.toISOString())}.
     </p>
   )
