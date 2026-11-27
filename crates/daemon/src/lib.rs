@@ -149,6 +149,9 @@ pub(crate) struct Running {
     /// The launch continued an earlier session (a design-phase work turn).
     resumed: bool,
     launch: Launched,
+    /// Its CLI's error going on when it launched, by its latest failure: only a launch started
+    /// after that failure shows the CLI runs again.
+    cli_error: Option<(String, u32)>,
 }
 
 /// What a launch's end is read from: its CLI's stream in `log`, and what was known before it ran.
@@ -640,6 +643,17 @@ impl Daemon {
         }
     }
 
+    /// The directory a launch's files go in, made when missing.
+    fn launch_dir(&self, name: &str, attempt: u32) -> Result<PathBuf, DaemonError> {
+        let dir = self
+            .store
+            .root()
+            .join("launches")
+            .join(format!("{name}.{attempt}"));
+        fs::create_dir_all(&dir).map_err(StoreError::io(&dir))?;
+        Ok(dir)
+    }
+
     fn launch(&mut self, path: &Path, item: &Item) -> Result<(), DaemonError> {
         let name = item_name(path);
         let role = self.config.roles.get(item.front.to).clone();
@@ -651,12 +665,7 @@ impl Daemon {
         let unselected_skills =
             assets::unselected_skills(&cwd, &role.skills).map_err(skills_error)?;
         let attempt = self.next_attempt(&name)?;
-        let launch_dir = self
-            .store
-            .root()
-            .join("launches")
-            .join(format!("{name}.{attempt}"));
-        fs::create_dir_all(&launch_dir).map_err(StoreError::io(&launch_dir))?;
+        let launch_dir = self.launch_dir(&name, attempt)?;
         let log = launch_dir.with_extension(format!("{attempt}.log"));
 
         // A work turn continues the session that prepared it or asked the owner: the next turn
@@ -715,6 +724,7 @@ impl Daemon {
             Running {
                 pid,
                 resumed: resume.is_some(),
+                cli_error: self.errors.state.latest_failure(ErrorKey::of_cli(role.cli)),
                 launch: Launched {
                     cli: role.cli,
                     attempt,
@@ -807,6 +817,16 @@ impl Daemon {
         });
     }
 
+    /// A launch that ended well shows its CLI runs again, and clears that CLI's error going on,
+    /// only when it began after the error's latest failure: one begun before shows nothing since.
+    fn cli_ran(&mut self, run: &Running) -> Result<(), DaemonError> {
+        let key = ErrorKey::of_cli(run.launch.cli);
+        if run.cli_error.is_some() && run.cli_error == self.errors.state.latest_failure(key) {
+            self.succeeded(key, &json!({"cli": run.launch.cli}))?;
+        }
+        Ok(())
+    }
+
     fn finished(&mut self, exit: &Exit) -> Result<(), DaemonError> {
         let Some(run) = self.running.remove(&exit.item) else {
             return Ok(());
@@ -838,12 +858,8 @@ impl Daemon {
                 cost_usd,
             }),
         )?;
-        // Its CLI runs again, so an error of that CLI going on clears.
         if failure.is_none() {
-            self.succeeded(
-                ErrorKey::of_cli(run.launch.cli),
-                &json!({"cli": run.launch.cli}),
-            )?;
+            self.cli_ran(&run)?;
         }
 
         let path = self.store.active_dir().join(format!("{}.md", exit.item));

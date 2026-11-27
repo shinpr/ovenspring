@@ -519,7 +519,8 @@ function numberField(fields: Fields, name: string): number | undefined {
   return typeof v === 'number' ? v : undefined
 }
 
-const TRACKER: Record<TrackerKind, string> = { linear: 'Linear', github: 'GitHub' }
+/** Each tracker by its own name: GitHub Issues apart from GitHub, the repository's service. */
+export const TRACKER: Record<TrackerKind, string> = { linear: 'Linear', github: 'GitHub Issues' }
 
 function trackerOf(fields: Fields): string | undefined {
   const kind = field(fields, 'tracker')

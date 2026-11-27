@@ -315,6 +315,16 @@ test.describe('issue and sprint subjects lead to their pages, the sprint scrolle
     await expect(page.locator(`[id="sprint-${id}"]`)).toBeInViewport({ timeout: 10_000 })
   })
 
+  test('a malformed fragment leaves the sprint list in place', async ({ page }) => {
+    const errors: Error[] = []
+    page.on('pageerror', (e) => errors.push(e))
+    await serve(page, { now: EVENTS_NOW })
+    await page.goto('/sprints#%E0%A4')
+
+    await expect(page.getByRole('heading', { name: 'Ended sprints' })).toBeVisible()
+    expect(errors).toEqual([])
+  })
+
   test('a sprint Sprints does not list is named in plain text', async ({ page }) => {
     await serve(page, { events: withSprint(false), now: EVENTS_NOW })
     await page.goto('/events')

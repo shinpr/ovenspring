@@ -4,7 +4,7 @@ import type { Overview, Service, TrackerKind, Unreachable } from '../../api/type
 import { settingsPath } from '../../lib/settings.ts'
 import { clock, dayAndClock } from '../../lib/time.ts'
 import { typed } from '../../lib/typed.tsx'
-import { asSentence } from '../../lib/vocabulary.ts'
+import { asSentence, TRACKER } from '../../lib/vocabulary.ts'
 import { ExternalLink } from '../ExternalLink/ExternalLink.tsx'
 import styles from './FactoryStatus.module.css'
 
@@ -21,8 +21,6 @@ interface Said {
   tone: Tone
   lines: ReactNode
 }
-
-const TRACKER: Record<TrackerKind, string> = { linear: 'Linear', github: 'GitHub Issues' }
 
 /** Where the open issues are, after "the 9 open issues": "on Linear", "in GitHub Issues". */
 const WHERE: Record<TrackerKind, string> = { linear: 'on Linear', github: 'in GitHub Issues' }

@@ -244,8 +244,9 @@ impl EventsQuery {
         let shown = match self.show {
             Show::All => true,
             Show::Errors => line.raw.get("failure").is_some(),
+            // A `filter-failed` line recorded before error tracking has no `failure`.
             Show::Filter => {
-                line.kind == "filter-dropped"
+                matches!(line.kind.as_str(), "filter-dropped" | "filter-failed")
                     || line.raw.pointer("/failure/key") == Some(&Value::from("filter"))
             }
         };

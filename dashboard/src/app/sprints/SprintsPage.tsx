@@ -24,7 +24,9 @@ export function SprintsPage() {
     if (hash === scrolled.current) {
       return
     }
-    const target = hash === '' ? null : document.getElementById(decodeURIComponent(hash.slice(1)))
+    // Sprint ids are digits and dashes, so a fragment is never decoded: one that names nothing
+    // here, malformed or not, leaves the list as it is.
+    const target = hash === '' ? null : document.getElementById(hash.slice(1))
     if (target !== null) {
       target.scrollIntoView()
       scrolled.current = hash

@@ -260,6 +260,12 @@ impl Errors {
         }
     }
 
+    /// The latest failure of `key`'s error going on, as `(since, count)`: what a later failure
+    /// or a clear changes.
+    pub(crate) fn latest_failure(&self, key: ErrorKey) -> Option<(String, u32)> {
+        self.open.get(&key).map(|o| (o.since.clone(), o.count))
+    }
+
     pub fn open(&self) -> &BTreeMap<ErrorKey, Occurrence> {
         &self.open
     }
@@ -539,9 +545,10 @@ impl Daemon {
     }
 
     /// Posts each waiting notice in the order it was recorded, or drops it while notices are off.
-    /// A refusal stops the pass's delivery, so a later notice never goes before an earlier one;
-    /// it is logged once per notice, not per attempt.
+    /// A refusal stops the pass's posting, so a later notice never goes before an earlier one,
+    /// while the drops still run; it is logged once per notice, not per attempt.
     pub(crate) fn deliver_error_notices(&mut self) -> Result<(), DaemonError> {
+        let mut refused = false;
         for waiting in self.errors.state.waiting.clone() {
             let failure = json!({"key": waiting.key.to_string(), "since": waiting.since});
             if !self.config.notices.errors && !waiting.pauses() {
@@ -550,6 +557,9 @@ impl Daemon {
                     "phase": waiting.phase, "outcome": "dropped",
                     "at": jiff::Timestamp::now().to_string(),
                 }))?;
+                continue;
+            }
+            if refused {
                 continue;
             }
             let notice = self.notice_of(&waiting);
@@ -576,7 +586,7 @@ impl Daemon {
                             "error": cut(&crate::download::mask(&e.0, &secrets)),
                         }))?;
                     }
-                    return Ok(());
+                    refused = true;
                 }
             }
         }

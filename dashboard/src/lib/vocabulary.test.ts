@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import type { EventLine, LaunchRow } from '../api/types.gen.ts'
-import { eventSentence, plain, runSentence } from './vocabulary.ts'
+import type { ErrorNow, EventLine, LaunchRow } from '../api/types.gen.ts'
+import { errorName, eventSentence, plain, runSentence } from './vocabulary.ts'
 
 const none: LaunchRow['detail'] = {
   round: null,
@@ -181,7 +181,24 @@ describe('eventSentence', () => {
     [
       'an issue canceled on the tracker',
       line('closed-on-tracker', { issue: 'ACME-141', state: 'canceled', tracker: 'github' }),
-      'Canceled on GitHub.',
+      'Canceled on GitHub Issues.',
+    ],
+    [
+      'GitHub Issues answering again, apart from GitHub',
+      line('error-cleared', {
+        tracker: 'github',
+        count: 2,
+        failure: { key: 'tracker-unreachable', since: '2026-11-27T04:00:00Z' },
+      }),
+      'GitHub Issues answers again.',
+    ],
+    [
+      'GitHub answering again',
+      line('error-cleared', {
+        count: 2,
+        failure: { key: 'github-unreachable', since: '2026-11-27T04:00:00Z' },
+      }),
+      'GitHub answers again.',
     ],
     [
       'a close that records neither state nor tracker',
@@ -312,5 +329,30 @@ describe('eventSentence', () => {
     ],
   ])('words %s', (_, given, expected) => {
     expect(plain(eventSentence(given))).toBe(expected)
+  })
+})
+
+describe('errorName', () => {
+  const going = (key: ErrorNow['key']): ErrorNow => ({
+    key,
+    since: '2026-11-27T04:00:00Z',
+    last: '2026-11-27T04:05:00Z',
+    times: 2,
+    firstIssue: null,
+    cause: 'no answer',
+    tracker: 'github',
+    cli: null,
+    command: null,
+  })
+
+  it.each([
+    [
+      'GitHub Issues out of reach, by the tracker it is',
+      'tracker-unreachable',
+      "Can't reach GitHub Issues",
+    ],
+    ['GitHub out of reach', 'github-unreachable', "Can't reach GitHub"],
+  ] as const)('names %s', (_, key, expected) => {
+    expect(errorName(going(key))).toBe(expected)
   })
 })
