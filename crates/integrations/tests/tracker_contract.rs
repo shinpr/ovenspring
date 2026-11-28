@@ -234,6 +234,7 @@ fn github(t: &Recorded) -> GitHubApi<&Recorded> {
         RepoId {
             owner: "acme".into(),
             name: "storefront".into(),
+            remote: "https://github.com/acme/storefront.git".into(),
         },
         "tok".into(),
     )
@@ -346,7 +347,7 @@ fn github_issues_starts_an_issue_by_assigning_the_token_owner() {
         .on(
             (Method::Get, "https://api.test/user"),
             200,
-            &json!({"login": "shin"}),
+            &json!({"login": "shin", "id": 7}),
         )
         .on(
             (Method::Post, &format!("{REPO}/issues/12/assignees")),

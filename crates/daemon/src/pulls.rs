@@ -20,7 +20,8 @@ use serde_json::json;
 use crate::errors::{ErrorKey, Failure, Via, out_of_reach, unanswered_cause};
 use crate::issues::IssueRecord;
 use crate::owner::{DecisionRecord, DecisionStatus};
-use crate::worktree::git;
+use crate::stops::GitReach;
+use crate::worktree::{git, git_as, git_remote};
 use crate::{Daemon, DaemonError};
 
 /// Whether the checks on a commit passed: every check reported on it finished and succeeded, and
@@ -174,7 +175,7 @@ fn review_standing(reviews: &[Review]) -> (bool, BTreeSet<String>) {
 }
 
 impl Daemon {
-    fn github(&self) -> Result<&dyn GitHub, DaemonError> {
+    pub(crate) fn github(&self) -> Result<&dyn GitHub, DaemonError> {
         self.services
             .github
             .as_deref()
@@ -191,18 +192,22 @@ impl Daemon {
             self.event(&json!({"event": "push-conflict", "issue": key}))?;
             return Ok(Some(Fact::PushConflict));
         }
-        let pushed = git(
+        let remote = self.github()?.git_remote();
+        let pushed = git_remote(
             &worktree,
+            &remote,
             &["push", "-q", "origin", &format!("HEAD:refs/heads/{branch}")],
         )
         .and_then(|_| git(&worktree, &["rev-parse", "HEAD"]));
         let sha = match pushed {
             Ok(sha) => sha,
             // `origin` answered and refused the push (a hook, most often): the quality run corrects
-            // what it said. Otherwise `origin` was out of reach, and the next pass pushes again.
+            // what it said. Otherwise the failure is classified like any other (out of reach,
+            // refused locally or a refused token), and the issue stays in `pushing`.
             Err(e)
-                if git(
+                if git_remote(
                     &worktree,
+                    &remote,
                     &["ls-remote", "-q", "--exit-code", "origin", "HEAD"],
                 )
                 .is_ok() =>
@@ -210,10 +215,7 @@ impl Daemon {
                 self.refused(key, "push", &e.to_string())?;
                 return Ok(Some(Fact::PushRefused));
             }
-            Err(e) => {
-                self.event(&json!({"event": "push-failed", "issue": key, "error": e.to_string()}))?;
-                return Ok(None);
-            }
+            Err(e) => return Err(e.into()),
         };
         let decided: Vec<DecisionRecord> = self
             .decisions()?
@@ -280,17 +282,18 @@ impl Daemon {
     }
 
     /// Merges the branch's current head on `origin` (what anyone pushed to it) and the base into
-    /// the worktree before a push, so CI and the bots run once, on the current base. These merges
-    /// carry no code of the factory's own and take the repository's git identity. `Ok(false)` when
-    /// one conflicts: the merge is undone and the executor resolves it.
+    /// the worktree before a push, so CI and the bots run once, on the current base. `Ok(false)`
+    /// when one conflicts: the merge is undone and the executor resolves it.
     pub(crate) fn bring_in(
         &self,
         worktree: &std::path::Path,
         branch: &str,
     ) -> Result<bool, DaemonError> {
         let base = &self.config.repo.base_branch;
-        let pushed_before = git(
+        let github = self.github()?;
+        let pushed_before = git_remote(
             worktree,
+            &github.git_remote(),
             &[
                 "ls-remote",
                 "-q",
@@ -305,7 +308,7 @@ impl Daemon {
         if pushed_before {
             refs.push(branch);
         }
-        merge_from_origin(worktree, &refs)
+        merge_from_origin(worktree, github, &refs)
     }
 
     pub(crate) fn github_error(
@@ -345,19 +348,26 @@ impl Daemon {
                 // The reads below would fail the same way.
                 return Ok(());
             }
-            if via.contains(&Via::Git) && !self.origin_answers() {
-                let why = Unanswered::NoConnection;
-                self.failed(
-                    ErrorKey::GithubUnreachable,
-                    Failure {
-                        event: json!({"event": "service-unreachable", "operation": "checking that origin answers",
-                                      "error": "origin does not answer", "why": why}),
-                        cause: unanswered_cause(why, None),
-                        via: Some(Via::Git),
-                        reason: None,
-                    },
-                )?;
-                answered = false;
+            if via.contains(&Via::Git) {
+                match self.probe_git() {
+                    GitReach::Answers => {}
+                    // Not GitHub answering: the operations that meet the refusal count it.
+                    GitReach::Refused => answered = false,
+                    GitReach::OutOfReach => {
+                        let why = Unanswered::NoConnection;
+                        self.failed(
+                            ErrorKey::GithubUnreachable,
+                            Failure {
+                                event: json!({"event": "service-unreachable", "operation": "checking that origin answers",
+                                              "error": "origin does not answer", "why": why}),
+                                cause: unanswered_cause(why, None),
+                                via: Some(Via::Git),
+                                reason: None,
+                            },
+                        )?;
+                        answered = false;
+                    }
+                }
             }
             self.errors.github_clear = answered;
         }
@@ -456,7 +466,11 @@ impl Daemon {
             return Ok(Observed::Waiting(Box::new(record.clone())));
         }
         // Nothing uncommitted is in the worktree while the issue waits: every commit was pushed.
-        git(&worktree, &["fetch", "-q", "origin", &record.branch()])?;
+        git_remote(
+            &worktree,
+            &self.github()?.git_remote(),
+            &["fetch", "-q", "origin", &record.branch()],
+        )?;
         git(&worktree, &["reset", "-q", "--hard", &pull.head_sha])?;
         let key = record.key().to_owned();
         let taken = self.update_issue(&key, |r| {
@@ -701,8 +715,9 @@ impl Daemon {
             Reviews::Settled
         };
         // The head is judged whoever pushed it, so it is fetched with the base before its diff.
-        git(
+        git_remote(
             &subject.worktree,
+            &gh.git_remote(),
             &["fetch", "-q", "origin", base, &subject.branch],
         )?;
         let contains_base = git(
@@ -902,20 +917,26 @@ fn categories_of_change<'a>(
 }
 
 /// Fetches `refs` from `origin` and merges each one the worktree does not contain yet, the last
-/// first. `Ok(false)` when one conflicts: the merge is undone.
+/// first, as the GitHub account. `Ok(false)` when one conflicts: the merge is undone.
 pub(crate) fn merge_from_origin(
     worktree: &std::path::Path,
+    github: &dyn GitHub,
     refs: &[&str],
 ) -> Result<bool, DaemonError> {
     let mut fetch = vec!["fetch", "-q", "origin"];
     fetch.extend(refs);
-    git(worktree, &fetch)?;
+    git_remote(worktree, &github.git_remote(), &fetch)?;
+    let mut account = None;
     for name in refs.iter().rev() {
         let target = format!("origin/{name}");
         if git(worktree, &["merge-base", "--is-ancestor", &target, "HEAD"]).is_ok() {
             continue;
         }
-        if git(worktree, &["merge", "-q", "--no-edit", &target]).is_err() {
+        let account = match &mut account {
+            Some(account) => account,
+            None => account.insert(github.viewer()?),
+        };
+        if git_as(worktree, account, &["merge", "-q", "--no-edit", &target]).is_err() {
             let _ = git(worktree, &["merge", "--abort"]);
             return Ok(false);
         }

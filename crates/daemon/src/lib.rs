@@ -601,10 +601,25 @@ impl Daemon {
     /// where the factory's skills would otherwise be written.
     pub(crate) fn checkout_for(&self, issue: Option<&str>) -> Result<PathBuf, DaemonError> {
         let base = &self.config.repo.base_branch;
-        Ok(match issue {
-            Some(issue) => worktree::ensure(&self.paths.repo, &self.store, issue, base)?,
-            None => worktree::ensure_detached(&self.paths.repo, &self.store, worktree::BASE, base)?,
-        })
+        if let Some(issue) = issue {
+            return Ok(worktree::ensure(
+                &self.paths.repo,
+                &self.store,
+                issue,
+                base,
+            )?);
+        }
+        worktree::git_remote(
+            &self.paths.repo,
+            &self.github()?.git_remote(),
+            &["fetch", "-q", "origin", base],
+        )?;
+        Ok(worktree::ensure_detached(
+            &self.paths.repo,
+            &self.store,
+            worktree::BASE,
+            base,
+        )?)
     }
 
     /// Before an agent step on a branch with a pull request: what anyone pushed to the branch is
@@ -617,7 +632,9 @@ impl Daemon {
         let Some(record) = self.issue(issue)? else {
             return Ok(());
         };
-        if record.flow.pr.is_some() && !pulls::merge_from_origin(cwd, &[&record.branch()])? {
+        if record.flow.pr.is_some()
+            && !pulls::merge_from_origin(cwd, self.github()?, &[&record.branch()])?
+        {
             self.event(&json!({"event": "head-conflict", "issue": issue}))?;
         }
         Ok(())

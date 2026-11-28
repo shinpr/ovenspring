@@ -11,8 +11,19 @@ use ovenspring_core::sprint::SprintFact;
 use ovenspring_integrations::http::Unanswered;
 
 use crate::errors::{ErrorKey, Failure, Via, out_of_reach, unanswered_cause};
-use crate::worktree::git;
+use crate::worktree::git_remote;
 use crate::{Daemon, DaemonError};
+
+/// What a probe of `origin` with the connection's token found.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum GitReach {
+    Answers,
+    /// The probe failed while GitHub's API answers the token, or is out of reach too.
+    OutOfReach,
+    /// The factory's or the token's own failure, which retrying does not mend: no GitHub
+    /// connection, `origin` refused locally, or GitHub refused the token.
+    Refused,
+}
 
 /// The operation that stopped an issue, and what it last answered.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -154,12 +165,13 @@ impl Daemon {
     }
 
     /// A failure that is the service's or the network's, not the factory's: no connection, a
-    /// timeout, 429 or 5xx from an API, or a git command when `origin` cannot be reached; with
+    /// timeout, 429 or 5xx from an API, or a git command when GitHub's Git endpoint cannot be reached; with
     /// its cause and the way to GitHub that failed.
     fn unreachable(&self, e: &DaemonError) -> Option<(Unanswered, String, Via)> {
         match e {
             DaemonError::GitHub(e) => out_of_reach(e).map(|(why, cause)| (why, cause, Via::Api)),
-            DaemonError::Git(_) => (!self.origin_answers()).then(|| {
+            DaemonError::Git(e) if e.refused_locally => None,
+            DaemonError::Git(_) => (self.probe_git() == GitReach::OutOfReach).then(|| {
                 let why = Unanswered::NoConnection;
                 (why, unanswered_cause(why, None), Via::Git)
             }),
@@ -170,13 +182,24 @@ impl Daemon {
         }
     }
 
-    /// Whether the repository's `origin` answers git.
-    pub(crate) fn origin_answers(&self) -> bool {
-        git(
+    /// What the token-authenticated probe of `origin` finds.
+    pub(crate) fn probe_git(&self) -> GitReach {
+        let Ok(github) = self.github() else {
+            return GitReach::Refused;
+        };
+        match git_remote(
             &self.paths.repo,
+            &github.git_remote(),
             &["ls-remote", "-q", "--exit-code", "origin", "HEAD"],
-        )
-        .is_ok()
+        ) {
+            Ok(_) => GitReach::Answers,
+            Err(e) if e.refused_locally => GitReach::Refused,
+            Err(_) => match github.viewer() {
+                Ok(_) => GitReach::OutOfReach,
+                Err(e) if out_of_reach(&e).is_some() => GitReach::OutOfReach,
+                Err(_) => GitReach::Refused,
+            },
+        }
     }
 
     /// Stops the issue on `operation`: its open work ends, the record names what failed, and the

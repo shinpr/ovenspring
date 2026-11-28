@@ -270,6 +270,15 @@ impl Store {
         read_json(&self.root.join(rel))
     }
 
+    /// Removes `<state>/<rel>`; a record that does not exist is already removed.
+    pub fn remove_record(&self, rel: &str) -> Result<(), StoreError> {
+        let path = self.root.join(rel);
+        match fs::remove_file(&path) {
+            Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(StoreError::io(&path)(e)),
+            _ => Ok(()),
+        }
+    }
+
     /// The names (without `.json`) of the records in `<state>/<dir>`, sorted.
     pub fn record_names(&self, dir: &str) -> Result<Vec<String>, StoreError> {
         json_names(&self.root.join(dir))

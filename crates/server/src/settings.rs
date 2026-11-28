@@ -17,7 +17,9 @@ use serde_json::Value;
 use ts_rs::TS;
 
 use crate::Context;
-use crate::setup::{AppRefused, RunRequest, SlackSetup, TrackerSetup, settle_app, write_config};
+use crate::setup::{
+    AppRefused, GitHubConnection, RunRequest, SlackSetup, TrackerSetup, settle_app, write_config,
+};
 
 /// Why a save did not happen.
 pub(crate) enum Refusal {
@@ -334,23 +336,28 @@ pub(crate) fn save(
     if let Err(ConfigError::Invalid { key, message, .. }) = config.check(&context.repo) {
         return Err(Refusal::Invalid(BTreeMap::from([(key, message)])));
     }
-    check_connection(context, section, &config, &held)?;
-    if held != before {
-        credentials::write(&context.credentials, &held)
-            .map_err(|e| Refusal::Failed(e.to_string()))?;
-    }
+    let connection = check_connection(context, section, &config, &held)?;
+    let saved = match &connection {
+        Some(connection) => crate::setup::save_connection(context, &held, connection),
+        None if held != before => {
+            credentials::write(&context.credentials, &held).map_err(|e| e.to_string())
+        }
+        None => Ok(()),
+    };
+    saved.map_err(Refusal::Failed)?;
     write_config(&context.repo, &config).map_err(Refusal::Failed)?;
     state(context)
 }
 
 /// The general, tracker and Slack sections connect the factory to a service: they are checked the
 /// way setup checks them, so a wrong token, base branch, key or channel is refused instead of saved.
+/// Returns the GitHub connection a general save passed, for the save to record.
 fn check_connection(
     context: &Context,
     section: SettingsSection,
     config: &Config,
     held: &Credentials,
-) -> Result<(), Refusal> {
+) -> Result<Option<GitHubConnection>, Refusal> {
     let missing = |field: &str, what: &str| {
         Refusal::Invalid(BTreeMap::from([(
             field.to_owned(),
@@ -358,16 +365,12 @@ fn check_connection(
         )]))
     };
     let result = match section {
-        SettingsSection::General => context
-            .checks
-            .github(
-                &context.repo,
-                held.github.token.as_deref(),
-                &config.repo.base_branch,
-            )
-            .and_then(|account| {
-                crate::setup::record_account(context, &account).map(|()| account.login)
-            }),
+        SettingsSection::General => crate::setup::check_github(
+            context,
+            held.github.token.as_deref(),
+            &config.repo.base_branch,
+        )
+        .map(Some),
         SettingsSection::Tracker => {
             let tracker = match config.tracker.kind {
                 TrackerKind::Linear => TrackerSetup::Linear {
@@ -383,6 +386,7 @@ fn check_connection(
             context
                 .checks
                 .tracker(&context.repo, &tracker, held.github.token.as_deref())
+                .map(|_| None)
         }
         SettingsSection::Slack => {
             let slack = SlackSetup {
@@ -399,7 +403,7 @@ fn check_connection(
                 channel: config.slack.channel.clone(),
                 owner: config.slack.owners.first().cloned().unwrap_or_default(),
             };
-            context.checks.slack(&slack)
+            context.checks.slack(&slack).map(|_| None)
         }
         SettingsSection::Agents
         | SettingsSection::Roles
@@ -407,11 +411,9 @@ fn check_connection(
         | SettingsSection::App
         | SettingsSection::Guard
         | SettingsSection::Review
-        | SettingsSection::Notices => return Ok(()),
+        | SettingsSection::Notices => return Ok(None),
     };
-    result
-        .map(|_| ())
-        .map_err(|why| Refusal::Invalid(BTreeMap::from([(section.name().to_owned(), why)])))
+    result.map_err(|why| Refusal::Invalid(BTreeMap::from([(section.name().to_owned(), why)])))
 }
 
 impl SettingsSection {
@@ -438,7 +440,7 @@ mod tests {
     use std::sync::Arc;
 
     use super::*;
-    use crate::setup::{GitHubAccount, SetupChecks, SlackSetup, TrackerSetup};
+    use crate::setup::{GitHubAccount, GitHubConnection, SetupChecks, SlackSetup, TrackerSetup};
 
     struct ConnectedChecks;
 
@@ -461,10 +463,13 @@ mod tests {
             _repo: &Path,
             _token: Option<&str>,
             _base_branch: &str,
-        ) -> Result<GitHubAccount, String> {
-            Ok(GitHubAccount {
-                login: "owner".into(),
-                from_gh: false,
+        ) -> Result<GitHubConnection, String> {
+            Ok(GitHubConnection {
+                account: GitHubAccount {
+                    login: "owner".into(),
+                    from_gh: false,
+                },
+                remote: "https://github.com/acme/storefront.git".into(),
             })
         }
     }
@@ -491,7 +496,7 @@ mod tests {
             _repo: &Path,
             _token: Option<&str>,
             _base_branch: &str,
-        ) -> Result<GitHubAccount, String> {
+        ) -> Result<GitHubConnection, String> {
             Err("GitHub refused".into())
         }
     }

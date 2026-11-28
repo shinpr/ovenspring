@@ -12,6 +12,7 @@ use ovenspring_core::config::{
 use ovenspring_core::output::RunCommandsOutput;
 use ovenspring_daemon::product_run::{self, RunCheck};
 use ovenspring_daemon::{DaemonError, history, records, worktree};
+use ovenspring_store::Store;
 use ovenspring_store::credentials::{self, Credentials};
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
@@ -123,7 +124,7 @@ pub trait SetupChecks: Send + Sync {
         repo: &Path,
         token: Option<&str>,
         base_branch: &str,
-    ) -> Result<GitHubAccount, String>;
+    ) -> Result<GitHubConnection, String>;
 }
 
 /// The account GitHub answered a passed check as, which pull requests are opened as.
@@ -133,6 +134,18 @@ pub struct GitHubAccount {
     pub login: String,
     /// The signed-in `gh`'s token, not one the owner entered.
     pub from_gh: bool,
+}
+
+/// A passed GitHub check: the account GitHub answered as, and `origin`'s URL the check was made
+/// for, the only destination the dashboard's own Git fetch reaches with the token.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitHubConnection {
+    #[serde(flatten)]
+    pub account: GitHubAccount,
+    /// Empty in a record kept before the URL was.
+    #[serde(default)]
+    pub remote: String,
 }
 
 impl GitHubAccount {
@@ -155,18 +168,51 @@ pub(crate) fn origin(context: &Context) -> Option<String> {
         .map(|id| format!("{}/{}", id.owner, id.name))
 }
 
-/// Keeps the account a passed GitHub check answered as, for Settings to show.
-pub(crate) fn record_account(context: &Context, account: &GitHubAccount) -> Result<(), String> {
-    context
-        .store
-        .write_record(GITHUB_ACCOUNT, account)
+/// Keeps what a passed GitHub check found: the account for Settings to show, and the repository
+/// the dashboard's base fetch may reach.
+pub fn record_connection(store: &Store, connection: &GitHubConnection) -> Result<(), String> {
+    store
+        .write_record(GITHUB_ACCOUNT, connection)
         .map(|_| ())
         .map_err(|e| e.to_string())
 }
 
+/// Stores `held` and the GitHub connection checked with its token. The connection recorded before
+/// is removed first, so a write that fails leaves no recorded destination beside a token not
+/// checked for it, whichever write failed: the base fetch then waits for a save that passes.
+pub(crate) fn save_connection(
+    context: &Context,
+    held: &Credentials,
+    connection: &GitHubConnection,
+) -> Result<(), String> {
+    context
+        .store
+        .remove_record(GITHUB_ACCOUNT)
+        .map_err(|e| e.to_string())?;
+    credentials::write(&context.credentials, held).map_err(|e| e.to_string())?;
+    record_connection(&context.store, connection)
+}
+
+/// The GitHub check Connect and Settings › General run: the service check, then `origin`'s URL as
+/// the factory's Git commands would take it, so no connection their first fetch refuses is
+/// reported as passed or recorded.
+pub(crate) fn check_github(
+    context: &Context,
+    token: Option<&str>,
+    base_branch: &str,
+) -> Result<GitHubConnection, String> {
+    let connection = context.checks.github(&context.repo, token, base_branch)?;
+    worktree::usable_remote(&connection.remote)?;
+    Ok(connection)
+}
+
+fn connection(context: &Context) -> Option<GitHubConnection> {
+    context.store.read_record(GITHUB_ACCOUNT).ok().flatten()
+}
+
 /// The account the last passed GitHub check answered as.
 pub(crate) fn account(context: &Context) -> Option<GitHubAccount> {
-    context.store.read_record(GITHUB_ACCOUNT).ok().flatten()
+    connection(context).map(|c| c.account)
 }
 
 /// The step setup is at, from what is saved.
@@ -299,10 +345,8 @@ pub(crate) fn check(
     let (section, result) = match block {
         SetupCheck::Github { token, base_branch } => (
             "github",
-            context
-                .checks
-                .github(&context.repo, entered(token.as_deref()), base_branch.trim())
-                .map(|a| a.found()),
+            check_github(context, entered(token.as_deref()), base_branch.trim())
+                .map(|c| c.account.found()),
         ),
         SetupCheck::Tracker {
             tracker,
@@ -343,11 +387,15 @@ pub(crate) fn save(context: &Context, request: &SetupRequest) -> Result<SetupSta
         return Err(SetupRefused::Invalid(BTreeMap::from([(key, message)])));
     }
     let github = entered(request.github.token.as_deref());
-    let account = context
-        .checks
-        .github(&context.repo, github, &request.repo.base_branch);
+    let connection = check_github(context, github, &request.repo.base_branch);
     let found = [
-        ("github", account.clone().map(|a| a.found())),
+        (
+            "github",
+            connection
+                .as_ref()
+                .map(|c| c.account.found())
+                .map_err(Clone::clone),
+        ),
         (
             "tracker",
             context
@@ -360,13 +408,11 @@ pub(crate) fn save(context: &Context, request: &SetupRequest) -> Result<SetupSta
         .into_iter()
         .filter_map(|(section, result)| result.err().map(|why| (section.to_owned(), why)))
         .collect();
-    if !errors.is_empty() {
-        return Err(SetupRefused::Invalid(errors));
-    }
-    if let Ok(account) = &account {
-        record_account(context, account).map_err(SetupRefused::Failed)?;
-    }
-    write(context, request, &config).map_err(SetupRefused::Failed)?;
+    let connection = match connection {
+        Ok(connection) if errors.is_empty() => connection,
+        _ => return Err(SetupRefused::Invalid(errors)),
+    };
+    write(context, request, &config, &connection).map_err(SetupRefused::Failed)?;
     state(context).map_err(|e| SetupRefused::Failed(e.to_string()))
 }
 
@@ -391,7 +437,8 @@ pub(crate) fn save_run(context: &Context, request: RunRequest) -> Result<SetupSt
 
 /// `[app]` from the owner's answer. Commands are started once in the base branch's worktree,
 /// unless they are `started` already; they are refused under `check` when the product did not
-/// answer.
+/// answer, and under `request` when the base could not be fetched, which the owner fixes (a
+/// changed `origin`, a missing token or connection, an unreachable GitHub).
 pub(crate) fn settle_app(
     context: &Context,
     config: &Config,
@@ -428,6 +475,8 @@ pub(crate) fn settle_app(
     if started == Some(&app) {
         return Ok(app);
     }
+    fetch_base(context, &config.repo.base_branch)
+        .map_err(|why| AppRefused::Invalid(BTreeMap::from([("request".to_owned(), why)])))?;
     let base = worktree::ensure_detached(
         &context.repo,
         &context.store,
@@ -442,6 +491,29 @@ pub(crate) fn settle_app(
             output,
         )]))),
     }
+}
+
+/// Fetches `base` from `origin` with the GitHub token the factory pushes with, before the daemon
+/// that holds its connection may run. Only the repository the last passed GitHub check was made
+/// for is reached: an `origin` changed since is refused before any contact.
+fn fetch_base(context: &Context, base: &str) -> Result<(), String> {
+    let url = connection(context)
+        .map(|c| c.remote)
+        .filter(|remote| !remote.is_empty())
+        .ok_or(
+            "The repository the GitHub connection was checked for is not recorded; \
+             save Settings › General to check it again.",
+        )?;
+    let stored = credentials::read(&context.credentials).map_err(|e| e.to_string())?;
+    let token = ovenspring_integrations::github::selected_token(stored.github.token)
+        .ok_or("No GitHub token is set up to fetch the base branch with.")?;
+    let remote = ovenspring_integrations::github::GitRemote {
+        url: &url,
+        token: &token,
+    };
+    worktree::git_remote(&context.repo, &remote, &["fetch", "-q", "origin", base])
+        .map(|_| ())
+        .map_err(|e| e.to_string())
 }
 
 /// A value the owner typed, or `None` when the field was left empty.
@@ -484,9 +556,14 @@ fn config_of(request: &SetupRequest) -> Config {
     }
 }
 
-/// Writes the credentials first and the configuration last: the daemon starts once the
-/// configuration exists, by which time everything it reads is in place.
-fn write(context: &Context, request: &SetupRequest, config: &Config) -> Result<(), String> {
+/// Writes the credentials and the connection checked with them, and the configuration last: the
+/// daemon starts once the configuration exists, by which time everything it reads is in place.
+fn write(
+    context: &Context,
+    request: &SetupRequest,
+    config: &Config,
+    connection: &GitHubConnection,
+) -> Result<(), String> {
     let held = Credentials {
         slack: credentials::Slack {
             bot_token: Some(request.slack.bot_token.trim().to_owned()),
@@ -502,7 +579,7 @@ fn write(context: &Context, request: &SetupRequest, config: &Config) -> Result<(
             token: entered(request.github.token.as_deref()).map(str::to_owned),
         },
     };
-    credentials::write(&context.credentials, &held).map_err(|e| e.to_string())?;
+    save_connection(context, &held, connection)?;
     let dir = context.repo.join(".ovenspring");
     std::fs::create_dir_all(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
     write_config(&context.repo, config)

@@ -74,12 +74,15 @@ fn worktrees_of_a_state_directory_moved_aside_are_created_again() {
     let repo = repo(dir.path());
     let state = dir.path().join("state");
     let store = Store::open(&state).unwrap();
+    // `ensure_detached` checks out `origin/main`; its callers fetch it first.
+    git(&repo, &["fetch", "-q", "origin", "main"]);
     ensure_detached(&repo, &store, "base", "main").unwrap();
     ensure(&repo, &store, "GH-1", "main").unwrap();
 
     std::fs::rename(&state, dir.path().join("state.aside")).unwrap();
 
     let store = Store::open(&state).unwrap();
+    git(&repo, &["fetch", "-q", "origin", "main"]);
     let base = ensure_detached(&repo, &store, "base", "main").unwrap();
     let issue = ensure(&repo, &store, "GH-1", "main").unwrap();
     assert!(base.join(".git").exists() && issue.join(".git").exists());

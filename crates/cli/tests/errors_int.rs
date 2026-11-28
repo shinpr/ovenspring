@@ -70,17 +70,34 @@ use ovenspring_integrations::tracker::TrackerIssue;
 use serde_json::{Value, json};
 use support::dashboard::Dashboard;
 use support::fake_github::FakeGitHub;
+use support::git_http::GitHttp;
 use support::recording::{RecordingChannel, RecordingTracker};
 use support::scripts::requiring_test;
 use support::slack_stub::SlackStub;
 use support::{Env, daemon, git, run_until};
 
+fn passing_checks() -> support::fake_github::CheckScript {
+    Box::new(|_| vec![("test".to_owned(), CheckState::Success)])
+}
+
 fn passing_github(env: &Env) -> Arc<FakeGitHub> {
     Arc::new(FakeGitHub::new(
         env.origin.clone(),
         requiring_test(),
-        Box::new(|_| vec![("test".to_owned(), CheckState::Success)]),
+        passing_checks(),
     ))
+}
+
+/// The commit `origin`'s bare repository holds for ACME-123's branch; empty when it has none.
+fn issue_head_on_origin(env: &Env) -> String {
+    git(
+        &env.origin,
+        &[
+            "for-each-ref",
+            "--format=%(objectname)",
+            "refs/heads/ovenspring/ACME-123",
+        ],
+    )
 }
 
 /// Services with Slack as the real adapter over `slack`.
@@ -158,11 +175,14 @@ fn unreachable_now(d: &Daemon) -> Value {
     serde_json::to_value(o.status.unreachable).unwrap()
 }
 
-fn set_origin(env: &Env, url: &std::path::Path) {
-    git(
-        &env.repo,
-        &["remote", "set-url", "origin", url.to_str().unwrap()],
-    );
+/// Takes the bare repository behind `origin` away, so `origin` does not answer while its URL, the
+/// one the GitHub connection was built for, stays as it is.
+fn take_origin_away(env: &Env) {
+    std::fs::rename(&env.origin, env.dir.path().join("origin-away.git")).unwrap();
+}
+
+fn bring_origin_back(env: &Env) {
+    std::fs::rename(env.dir.path().join("origin-away.git"), &env.origin).unwrap();
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -442,15 +462,17 @@ fn with_error_notices_turned_off_the_waiting_notice_is_dropped_and_nothing_is_po
 //     unreachable." (Design § Acceptance Criteria > Error notices; § Selected Design > Errors,
 //     GitHub clear rule)
 // Cases (reported distinctly; each starts from a fresh `Env`):
-//     a. `via: git`: the repository's `origin` is an unreachable path while the API (`viewer`)
-//        answers -> several passes -> `origin` is pointed at a reachable bare repository.
+//     a. `via: git`: `origin` is the token-required Git endpoint fixture, whose bare repository is
+//        taken away while the API (`viewer`) answers -> several passes -> it is brought back; only
+//        the token-authenticated probe sees it answer.
 //     b. `via: api`: pull reads fail as unreachable (HTTP 502) while `viewer` answers -> several
 //        passes -> pull reads answer.
 // Observable result (each case): while the failing way still fails, `events.jsonl` has exactly one
 //     start line for `github-unreachable` and no `error-cleared`, and the stub one `/started`
 //     message; after the way answers, exactly one `error-cleared` and one `/cleared` message.
 // @lane: integration
-// @dependency: daemon, store, real git `origin` (case a), FakeGitHub, real `Slack` over `SlackStub`
+// @dependency: daemon, store, real git `origin` over the GitHttp fixture (case a), FakeGitHub, real
+//     `Slack` over `SlackStub`
 // Name: github_stays_one_open_error_until_every_failing_way_answers
 
 /// GitHub's error while one way to it keeps failing, then after `answer` makes that way answer:
@@ -494,11 +516,16 @@ fn github_stays_one_open_error_until_every_failing_way_answers_by_git() {
     let env = Env::new();
     env.configure("");
     env.script_agents(&Value::Object(support::scripts::straight("ACME-123")));
-    let gh = passing_github(&env);
+    // `origin` answers only the token, so the probe that clears the error must carry it.
+    let fixture = GitHttp::serve(&env.origin);
+    git(&env.repo, &["remote", "set-url", "origin", &fixture.url]);
+    let mut gh = FakeGitHub::new(env.origin.clone(), requiring_test(), passing_checks());
+    gh.remote.clone_from(&fixture.url);
+    let gh = Arc::new(gh);
     let slack = SlackStub::default();
     let mut d = started(&env, on_slack(&gh, &slack, None));
     d.begin_issue("ACME-123", "Export", vec![]).unwrap();
-    set_origin(&env, &env.dir.path().join("gone.git"));
+    take_origin_away(&env);
     run_until(
         &mut d,
         60,
@@ -511,7 +538,124 @@ fn github_stays_one_open_error_until_every_failing_way_answers_by_git() {
     );
 
     assert!(gh.viewer().is_ok(), "the API answers meanwhile");
-    stays_open_until_it_answers(&env, &slack, &mut d, || set_origin(&env, &env.origin));
+    stays_open_until_it_answers(&env, &slack, &mut d, || bring_origin_back(&env));
+}
+
+// AC: GH-34 AC5 "... it shall clear once that probe answers." A refused probe is not an answer.
+// Behavior: GitHub is out of reach by Git -> `origin` is changed to another repository, so the
+//     probe is refused locally -> the open error stays open with no recovery notice.
+#[test]
+fn an_origin_changed_during_a_git_outage_does_not_clear_it() {
+    let env = Env::new();
+    env.configure("");
+    env.script_agents(&Value::Object(support::scripts::straight("ACME-123")));
+    let gh = passing_github(&env);
+    let slack = SlackStub::default();
+    let mut d = started(&env, on_slack(&gh, &slack, None));
+    d.begin_issue("ACME-123", "Export", vec![]).unwrap();
+    take_origin_away(&env);
+    run_until(
+        &mut d,
+        60,
+        |_| {},
+        |_| failures(&env, "github-unreachable") >= 1,
+    );
+    let elsewhere = env.dir.path().join("elsewhere.git");
+    git(
+        env.dir.path(),
+        &["init", "-q", "--bare", elsewhere.to_str().unwrap()],
+    );
+    git(
+        &env.repo,
+        &["remote", "set-url", "origin", elsewhere.to_str().unwrap()],
+    );
+
+    for _ in 0..3 {
+        d.tick().unwrap();
+    }
+
+    assert_eq!(starts(&env, "github-unreachable").len(), 1);
+    assert_eq!(cleared(&env, "github-unreachable"), 0);
+    assert!(
+        notices(&slack, "github-unreachable")
+            .iter()
+            .all(|n| !n.ends_with("/cleared")),
+        "{:?}",
+        notices(&slack, "github-unreachable")
+    );
+}
+
+// AC: GH-34 AC5 "When a factory Git command fails while `origin` passes the check in AC4 and its
+//     token-authenticated probe also fails, ... it shall be retried as `github-unreachable` with
+//     `via: git`, and it shall clear once that probe answers." (docs/design/github-git-identity-design.md
+//     § Tests, "AC5 push after a successful fetch")
+// Behavior: the repository's `pre-push` hook takes the bare repository away and exits 1, so the
+//     pass's pre-push fetch succeeds, Git aborts the push without sending anything, and the probe
+//     after it fails -> the hook is removed and the repository brought back.
+// @lane: integration
+// @dependency: daemon, flow, stops (`probe_git`), real Git push and hook, FakeGitHub
+#[test]
+fn a_push_that_fails_after_its_fetch_succeeded_opens_github_unreachable_on_that_pass() {
+    let env = Env::new();
+    env.configure("");
+    env.script_agents(&Value::Object(support::scripts::straight("ACME-123")));
+    let hook = env.repo.join(".git/hooks/pre-push");
+    let away = env.dir.path().join("origin-away.git");
+    std::fs::write(
+        &hook,
+        format!(
+            "#!/bin/sh\nmv '{}' '{}'\nexit 1\n",
+            env.origin.display(),
+            away.display()
+        ),
+    )
+    .unwrap();
+    let mut permissions = std::fs::metadata(&hook).unwrap().permissions();
+    std::os::unix::fs::PermissionsExt::set_mode(&mut permissions, 0o755);
+    std::fs::set_permissions(&hook, permissions).unwrap();
+    let gh = passing_github(&env);
+    let slack = SlackStub::default();
+    let mut d = started(&env, on_slack(&gh, &slack, None));
+    d.begin_issue("ACME-123", "Export", vec![]).unwrap();
+
+    run_until(&mut d, 60, |_| {}, |_| away.exists());
+
+    let opened = starts(&env, "github-unreachable");
+    assert_eq!(opened.len(), 1, "on the pass whose push failed: {opened:?}");
+    assert_eq!(opened[0]["failure"]["via"], json!(["git"]));
+    assert!(
+        opened[0]["error"]
+            .as_str()
+            .unwrap()
+            .starts_with("git push "),
+        "{}",
+        opened[0]["error"]
+    );
+    assert!(
+        env.events().iter().all(|e| e["event"] != "push-failed"),
+        "{:?}",
+        env.events()
+    );
+
+    std::fs::remove_file(&hook).unwrap();
+    bring_origin_back(&env);
+    assert_eq!(issue_head_on_origin(&env), "", "nothing was pushed yet");
+    run_until(
+        &mut d,
+        60,
+        |_| {},
+        |d| d.issue("ACME-123").unwrap().unwrap().pushed_sha.is_some(),
+    );
+    assert_eq!(
+        issue_head_on_origin(&env),
+        d.issue("ACME-123").unwrap().unwrap().pushed_sha.unwrap(),
+        "the later pass published the issue branch"
+    );
+    for _ in 0..3 {
+        d.tick().unwrap();
+    }
+    assert_eq!(starts(&env, "github-unreachable").len(), 1);
+    assert_eq!(cleared(&env, "github-unreachable"), 1);
 }
 
 #[test]
@@ -602,12 +746,12 @@ fn an_outage_recorded_by_the_previous_version_keeps_its_since_and_clears_once() 
     assert_eq!(imported[0]["failure"]["via"], json!(["api", "git"]));
     assert_eq!(imported[0]["failure"]["since"], since);
 
-    set_origin(&env, &env.dir.path().join("gone.git"));
+    take_origin_away(&env);
     for _ in 0..3 {
         d.tick().unwrap();
     }
     assert_eq!(cleared(&env, "github-unreachable"), 0, "origin still fails");
-    set_origin(&env, &env.origin);
+    bring_origin_back(&env);
     run_until(
         &mut d,
         60,

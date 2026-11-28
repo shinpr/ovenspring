@@ -32,7 +32,9 @@ use ovenspring_daemon::owner::{DecisionRecord, DecisionStatus};
 use ovenspring_daemon::records;
 use ovenspring_integrations::channel::{DecisionKind, MessageRef};
 use ovenspring_server::Context;
-use ovenspring_server::setup::{GitHubAccount, SetupChecks, SlackSetup, TrackerSetup};
+use ovenspring_server::setup::{
+    GitHubAccount, GitHubConnection, SetupChecks, SlackSetup, TrackerSetup,
+};
 use ovenspring_store::Store;
 use serde_json::{Value, json};
 use support::dashboard::Dashboard;
@@ -61,11 +63,14 @@ impl SetupChecks for Checks {
     fn slack(&self, _: &SlackSetup) -> Result<String, String> {
         self.answer("slack", "Connected to channel C0123456789, as Kai Moreno.")
     }
-    fn github(&self, _: &Path, _: Option<&str>, _: &str) -> Result<GitHubAccount, String> {
+    fn github(&self, repo: &Path, _: Option<&str>, _: &str) -> Result<GitHubConnection, String> {
         self.answer("github", "Signed in as kai.")
-            .map(|_| GitHubAccount {
-                login: "kai".into(),
-                from_gh: false,
+            .map(|_| GitHubConnection {
+                account: GitHubAccount {
+                    login: "kai".into(),
+                    from_gh: false,
+                },
+                remote: git(repo, &["remote", "get-url", "origin"]),
             })
     }
 }
@@ -837,6 +842,7 @@ fn run_the_product_writes_commands_only_once_they_start_then_the_goal_finishes_s
     let env = Env::new();
     env.configure("[app]\n");
     let dash = Dashboard::with_checks(&env, Checks { refuse: None });
+    dash.connect_github("test-token", env.origin.to_str().unwrap());
     assert_eq!(dash.get("/api/v1/setup").json()["step"], "run");
 
     let broken = dash.put(
@@ -1504,6 +1510,7 @@ fn app_guard_and_review_settings_are_saved_to_the_configuration() {
     let env = Env::new();
     env.configure("");
     let dash = Dashboard::with_checks(&env, Checks { refuse: None });
+    dash.connect_github("test-token", env.origin.to_str().unwrap());
 
     let broken = dash.put(
         "/api/v1/settings/app",
@@ -1529,6 +1536,153 @@ fn app_guard_and_review_settings_are_saved_to_the_configuration() {
     assert_eq!(config.app.ready, None);
     assert_eq!(config.guard.deny, ["terraform apply *"]);
     assert_eq!(config.review.bots, ["ai-reviewer[bot]"]);
+}
+
+/// The GitHub connection the last passed check recorded, as stored.
+fn recorded_connection(dash: &Dashboard) -> Option<String> {
+    std::fs::read_to_string(dash.store.root().join("github-account.json")).ok()
+}
+
+fn general_with_token(token: Option<&str>) -> Value {
+    json!({"baseBranch": "main", "mergeBy": "factory", "held": {}, "githubToken": token,
+           "personReviews": {}, "agreementsPath": "docs/factory/agreements",
+           "knowledgePath": "docs/knowledge"})
+}
+
+// AC: docs/design/github-git-identity-design.md AC4 and § Implementation Path Mapping
+//     (`SetupChecks::github`): the factory's Git commands refuse an SSH `origin` and one whose URL
+//     carries a password, so Connect and Settings › General refuse to record such a connection.
+// Behavior: a recorded connection -> `origin` set to an SSH URL, then to an HTTPS URL with a
+//     password -> the Connect check, the Settings › General save and, on a repository not yet
+//     set up, Connect's save are refused.
+// Cases (reported distinctly): (a) SSH: the refusal asks for an HTTPS origin; (b) password: the
+//     refusal shows it as `***`; in both, the recorded connection is the one before, Connect's
+//     save records none and writes no configuration, and neither the response nor the record
+//     carries the password.
+// @lane: integration
+// @dependency: dashboard server, setup and settings saves, connection record
+#[test]
+fn an_origin_the_factorys_git_would_refuse_is_refused_before_the_connection_is_recorded() {
+    let env = Env::new();
+    env.configure("");
+    let dash = Dashboard::with_checks(&env, Checks { refuse: None });
+    dash.connect_github("test-token", env.origin.to_str().unwrap());
+    let before = recorded_connection(&dash);
+
+    for (origin, expected) in [
+        ("git@github.com:acme/storefront.git", "HTTPS"),
+        (
+            "https://kai:hunter2@github.com/acme/storefront.git",
+            "kai:***@github.com",
+        ),
+    ] {
+        git(&env.repo, &["remote", "set-url", "origin", origin]);
+
+        let checked = dash.post(
+            "/api/v1/setup/check",
+            &json!({"section": "github", "token": null, "baseBranch": "main"}),
+        );
+        let saved = dash.put("/api/v1/settings/general", &general_with_token(None));
+        let fresh = Env::new();
+        git(&fresh.repo, &["remote", "set-url", "origin", origin]);
+        let connect = Dashboard::with_checks(&fresh, Checks { refuse: None });
+        let first_save = connect.put("/api/v1/setup", &setup_request());
+
+        for response in [&checked, &saved, &first_save] {
+            assert_eq!(response.status, 400, "{origin}: {}", response.body);
+            assert!(
+                response.body.contains(expected),
+                "{origin}: {}",
+                response.body
+            );
+            assert!(!response.body.contains("hunter2"), "{}", response.body);
+        }
+        assert_eq!(recorded_connection(&dash), before, "{origin}");
+        assert_eq!(recorded_connection(&connect), None, "{origin}");
+        assert!(!fresh.repo.join(".ovenspring/config.toml").exists());
+    }
+}
+
+// AC: docs/design/github-git-identity-design.md § Selected Design item 5: the dashboard's base
+//     fetch reaches only the URL the last passed GitHub check recorded, with the token it was
+//     checked with.
+// Behavior: a save whose GitHub check passed for a new `origin` and token fails at one of its
+//     writes -> `origin` is restored to the repository connected before -> the base fetch is
+//     refused before any request reaches that repository, until a save passes.
+// Cases (reported distinctly): (a) Settings › General, the credentials cannot be written: the old
+//     token stays; (b) Settings › General, the token is written but the connection record cannot
+//     be; (c) Connect records no connection and writes no configuration.
+// @lane: integration
+// @dependency: dashboard server, setup and settings saves, connection record, credentials file,
+//     Git HTTP endpoint
+#[test]
+fn a_save_that_fails_partway_leaves_no_connection_the_base_fetch_can_use() {
+    let credentials_staging = |dash: &Dashboard| dash.credentials.with_extension("toml.new");
+    let record_staging = |dash: &Dashboard| dash.store.root().join("github-account.tmp");
+    for (case, blocked, token_after) in [
+        (
+            "credentials",
+            &credentials_staging as &dyn Fn(&Dashboard) -> PathBuf,
+            "old-token",
+        ),
+        ("record", &record_staging, "new-token"),
+    ] {
+        let env = Env::new();
+        env.configure("");
+        let fixture = support::git_http::GitHttp::serve(&env.origin);
+        let dash = Dashboard::with_checks(&env, Checks { refuse: None });
+        dash.connect_github("old-token", &fixture.url);
+        let elsewhere = env.dir.path().join("elsewhere.git");
+        git(
+            env.dir.path(),
+            &["init", "-q", "--bare", elsewhere.to_str().unwrap()],
+        );
+        git(
+            &env.repo,
+            &["remote", "set-url", "origin", elsewhere.to_str().unwrap()],
+        );
+        std::fs::create_dir_all(blocked(&dash)).unwrap();
+
+        let saved = dash.put(
+            "/api/v1/settings/general",
+            &general_with_token(Some("new-token")),
+        );
+        git(&env.repo, &["remote", "set-url", "origin", &fixture.url]);
+        let fetched = dash.put(
+            "/api/v1/settings/app",
+            &json!({"runs": "commands", "setup": "", "start": "exit 3", "ready": ""}),
+        );
+
+        assert_eq!(saved.status, 500, "{case}: {}", saved.body);
+        let held = ovenspring_store::credentials::read(&dash.credentials).unwrap();
+        assert_eq!(held.github.token.as_deref(), Some(token_after), "{case}");
+        assert_eq!(recorded_connection(&dash), None, "{case}");
+        assert_eq!(fetched.status, 400, "{case}: {}", fetched.body);
+        assert!(
+            fetched.json()["errors"]["request"]
+                .as_str()
+                .is_some_and(|why| why.contains("Settings › General")),
+            "{case}: {}",
+            fetched.body
+        );
+        assert_eq!(
+            fixture.requests(),
+            0,
+            "{case}: the connected repository was contacted"
+        );
+    }
+
+    let fresh = Env::new();
+    let connect = Dashboard::with_checks(&fresh, Checks { refuse: None });
+    std::fs::create_dir_all(connect.credentials.with_extension("toml.new")).unwrap();
+    let mut request = setup_request();
+    request["github"]["token"] = json!("new-token");
+
+    let failed = connect.put("/api/v1/setup", &request);
+
+    assert_eq!(failed.status, 500, "{}", failed.body);
+    assert_eq!(recorded_connection(&connect), None);
+    assert!(!fresh.repo.join(".ovenspring/config.toml").exists());
 }
 
 // AC: PRD AC-069 (the owner names kinds of change a person reviews) and AC-070 (the working
@@ -1719,6 +1873,10 @@ fn the_version_answer_offers_a_newer_release_then_a_restart_once_it_is_installed
 // @dependency: dashboard server, `events::page`, store
 /// A year of `events.jsonl` at about 360 lines a day.
 const YEAR_OF_LINES: usize = 130_000;
+/// How much longer the unoptimized build `cargo test` makes takes to serve the page than the
+/// release build the owner runs: every line at `from=0` took 0.18 s in release and 2.0 s
+/// unoptimized on one machine, and 5.1 s unoptimized on a shared CI runner.
+const UNOPTIMIZED_ALLOWANCE: u32 = if cfg!(debug_assertions) { 4 } else { 1 };
 
 #[test]
 fn the_events_page_answers_within_a_poll_over_a_year_of_lines() {
@@ -1754,8 +1912,8 @@ fn the_events_page_answers_within_a_poll_over_a_year_of_lines() {
         );
         assert_eq!(answer.status, 200, "{path}");
         assert!(
-            took < std::time::Duration::from_secs(5),
-            "{path} took {took:?}, longer than the page's poll"
+            took < std::time::Duration::from_secs(5) * UNOPTIMIZED_ALLOWANCE,
+            "{path} took {took:?}, longer than the page's poll (x{UNOPTIMIZED_ALLOWANCE} unoptimized)"
         );
     }
 }

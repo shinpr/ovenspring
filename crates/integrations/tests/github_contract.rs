@@ -19,8 +19,8 @@ use std::collections::BTreeSet;
 use common::Recorded;
 use ovenspring_integrations::comments::{Trust, accept, render};
 use ovenspring_integrations::github::{
-    BranchRules, CheckState, Comment, CommentKind, GitHub, GitHubApi, MergeOutcome, MergeState,
-    NewPull, Permission, PullState, RepoId, ReviewDecision, ReviewState, Standing,
+    Account, BranchRules, CheckState, Comment, CommentKind, GitHub, GitHubApi, MergeOutcome,
+    MergeState, NewPull, Permission, PullState, RepoId, ReviewDecision, ReviewState, Standing,
 };
 use ovenspring_integrations::http::{HttpError, Method, Unanswered};
 use serde_json::{Value, json};
@@ -35,6 +35,7 @@ fn client(t: &Recorded) -> GitHubApi<&Recorded> {
         RepoId {
             owner: "acme".into(),
             name: "storefront".into(),
+            remote: "https://github.com/acme/storefront.git".into(),
         },
         "tok".into(),
     )
@@ -61,7 +62,15 @@ fn every_request_carries_the_token_and_api_version() {
         200,
         &user("factory-bot", "User"),
     );
-    assert_eq!(client(&t).viewer().unwrap(), "factory-bot");
+    let account = client(&t).viewer().unwrap();
+    assert_eq!(
+        account,
+        Account {
+            login: "factory-bot".into(),
+            id: 1
+        }
+    );
+    assert_eq!(account.email(), "1+factory-bot@users.noreply.github.com");
     let headers = &t.sent()[0].headers;
     assert!(headers.contains(&("authorization".into(), "Bearer tok".into())));
     assert!(headers.contains(&("x-github-api-version".into(), "2022-11-28".into())));
