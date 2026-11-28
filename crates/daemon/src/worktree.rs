@@ -76,9 +76,14 @@ const TRACE_REDACT: &str = "GIT_TRACE_REDACT";
 const TOKEN_VARIABLE: &str = "OVENSPRING_GITHUB_TOKEN";
 const PROTOCOL_VARIABLE: &str = "OVENSPRING_GITHUB_PROTOCOL";
 const HOST_VARIABLE: &str = "OVENSPRING_GITHUB_HOST";
+/// Turns certificate verification off for every HTTPS request when set, whatever the config says;
+/// remote commands never pass it on, so the token reaches only a verified GitHub.
+const SSL_NO_VERIFY: &str = "GIT_SSL_NO_VERIFY";
+/// The oldest Git that honors `http.<url>.proactiveAuth`. An older one ignores it, and libcurl then
+/// answers GitHub's first 401 with the owner's netrc login before Git asks for the token.
+const MINIMUM_GIT: (u32, u32) = (2, 46);
 /// Answers a credential request with the token only when it is for the connected URL's protocol
-/// and host, so neither a proxy nor the target of a redirect receives it. It never stores or
-/// erases anything.
+/// and host, so a proxy never receives it. It never stores or erases anything.
 const TOKEN_HELPER: &str = "!f() { test \"$1\" = get || exit 0; \
      while IFS='=' read -r key value; do case \"$key\" in \
      protocol) protocol=$value;; host) host=$value;; esac; done; \
@@ -101,6 +106,7 @@ fn remote_with(
     inherited: &[(OsString, OsString)],
     args: &[&str],
 ) -> Result<String, GitError> {
+    supported_git(dir, args)?;
     let environment = remote_environment(remote, inherited, args)?;
     admit(dir, remote, &environment, args)?;
     run(remote_command(&environment), dir, &single_repository(args))
@@ -116,6 +122,40 @@ fn single_repository<'a>(args: &[&'a str]) -> Vec<&'a str> {
                 .collect()
         }
         _ => args.to_vec(),
+    }
+}
+
+/// Refuses, before any remote is contacted, a Git too old to send only the token.
+fn supported_git(dir: &Path, args: &[&str]) -> Result<(), GitError> {
+    let version = run(Command::new("git"), dir, &["--version"]).map_err(|e| GitError {
+        refused_locally: true,
+        ..e
+    })?;
+    if sends_only_the_token(&version) {
+        Ok(())
+    } else {
+        let (major, minor) = MINIMUM_GIT;
+        Err(refusal(
+            args,
+            format!(
+                "{version} is older than Git {major}.{minor}, the oldest that sends the GitHub \
+                 token instead of a netrc login; upgrade Git and resume"
+            ),
+        ))
+    }
+}
+
+/// Whether `git --version`'s output names a Git at or above `MINIMUM_GIT`.
+fn sends_only_the_token(version: &str) -> bool {
+    let mut numbers = version
+        .split_whitespace()
+        .nth(2)
+        .unwrap_or_default()
+        .split('.')
+        .map(str::parse::<u32>);
+    match (numbers.next(), numbers.next()) {
+        (Some(Ok(major)), Some(Ok(minor))) => (major, minor) >= MINIMUM_GIT,
+        _ => false,
     }
 }
 
@@ -155,11 +195,17 @@ fn remote_environment(
     let header_reset = format!("http.{}.extraHeader", remote.url);
     // Credentials go with the first request, so libcurl never fills them from the owner's netrc.
     let proactive = format!("http.{}.proactiveAuth", remote.url);
+    // libcurl keeps sending the credential on a redirect within the host, which can lead to
+    // another repository; a redirect fails the command instead.
+    let no_redirects = format!("http.{}.followRedirects", remote.url);
+    let verify = format!("http.{}.sslVerify", remote.url);
     let factory = [
         ("credential.helper", ""),
         ("credential.helper", TOKEN_HELPER),
         (header_reset.as_str(), ""),
         (proactive.as_str(), "basic"),
+        (no_redirects.as_str(), "false"),
+        (verify.as_str(), "true"),
     ];
     let mut environment: Vec<(OsString, OsString)> = inherited
         .iter()
@@ -197,6 +243,7 @@ fn remote_command(environment: &[(OsString, OsString)]) -> Command {
     command
         .env_remove(CONFIG_PARAMETERS)
         .env_remove(TRACE_REDACT)
+        .env_remove(SSL_NO_VERIFY)
         // The daemon has no one to answer a prompt; a refused credential fails instead.
         .env("GIT_TERMINAL_PROMPT", "0")
         .envs(
@@ -639,6 +686,7 @@ mod tests {
     /// What a `record`ed endpoint saw of one request.
     #[derive(Debug, Default, Clone)]
     struct Seen {
+        path: String,
         host: String,
         authorization: Option<String>,
         proxy_authorization: Option<String>,
@@ -669,8 +717,9 @@ mod tests {
                     }
                     line.clear();
                 }
+                request.path = path.unwrap_or_default();
+                let head = answer(&request.path, port);
                 recording.lock().unwrap().push(request);
-                let head = answer(&path.unwrap_or_default(), port);
                 write!(
                     stream,
                     "{head}Content-Length: 0\r\nConnection: close\r\n\r\n"
@@ -748,41 +797,106 @@ mod tests {
         );
     }
 
-    fn redirect_to_localhost(path: &str, port: u16) -> String {
+    fn redirect_to_another_repository(path: &str, port: u16) -> String {
         if path.starts_with("/connected.git") {
             format!(
                 "HTTP/1.1 301 Moved Permanently\r\n\
-                 Location: http://localhost:{port}/elsewhere.git/info/refs?service=git-upload-pack\r\n"
+                 Location: http://127.0.0.1:{port}/elsewhere.git/info/refs?service=git-upload-pack\r\n"
             )
         } else {
             challenge(path, port)
         }
     }
 
-    // Behavior: the connected URL redirects to another host that asks for credentials -> that
-    //     host never receives the token.
+    // Behavior: the connected URL redirects to another repository on the same host -> Git does
+    //     not follow it, so that repository receives no request and no token.
     #[test]
-    fn a_redirect_to_another_host_never_receives_the_token() {
+    fn a_redirect_to_another_repository_on_the_host_is_not_followed() {
         let dir = tempfile::tempdir().unwrap();
-        let (port, seen) = record(redirect_to_localhost);
+        let (port, seen) = record(redirect_to_another_repository);
         let url = format!("http://127.0.0.1:{port}/connected.git");
         let repo = repository(dir.path(), &url);
 
         let result = git_remote(&repo, &remote(&url), &["ls-remote", "origin"]);
 
         assert!(result.is_err(), "{result:?}");
-        let redirected: Vec<Seen> = seen
-            .lock()
-            .unwrap()
-            .iter()
-            .filter(|s| s.host == format!("localhost:{port}"))
-            .cloned()
-            .collect();
-        assert!(!redirected.is_empty(), "Git followed the redirect");
+        let seen = seen.lock().unwrap().clone();
         assert!(
-            redirected.iter().all(|s| s.authorization.is_none()),
-            "{redirected:?}"
+            seen.iter().any(|s| s.path.starts_with("/connected.git")),
+            "control: the connected repository was asked: {seen:?}"
         );
+        assert!(
+            seen.iter().all(|s| !s.path.starts_with("/elsewhere.git")),
+            "{seen:?}"
+        );
+    }
+
+    // Behavior: the daemon inherits `GIT_SSL_NO_VERIFY` and the repository turns `http.sslVerify`
+    //     off -> the remote command still verifies the connected URL's certificate.
+    #[test]
+    fn certificate_verification_stays_on_whatever_the_daemon_inherits() {
+        let dir = tempfile::tempdir().unwrap();
+        let connected = "https://github.example/connected.git";
+        let repo = repository(dir.path(), connected);
+        git(&repo, &["config", "http.sslVerify", "false"]).unwrap();
+        let show = format!(
+            "alias.ssl-verify=!printenv {SSL_NO_VERIFY} || \
+             git config --type=bool --get-urlmatch http.sslVerify {connected}"
+        );
+
+        let result = remote_in_child(
+            &repo,
+            connected,
+            &["-c", &show, "ssl-verify"],
+            &[(SSL_NO_VERIFY, "1")],
+        );
+
+        assert_eq!(result, Ok("true".to_owned()));
+    }
+
+    // Behavior: the machine's Git is older than the one that honors proactive authentication ->
+    //     the command is refused locally, naming the version, before anything is contacted.
+    #[test]
+    fn a_git_too_old_to_send_only_the_token_is_refused() {
+        let dir = tempfile::tempdir().unwrap();
+        let (port, seen) = record(challenge);
+        let url = format!("http://127.0.0.1:{port}/connected.git");
+        let repo = repository(dir.path(), &url);
+        let bin = dir.path().join("bin");
+        std::fs::create_dir(&bin).unwrap();
+        let fake = bin.join("git");
+        std::fs::write(&fake, "#!/bin/sh\necho 'git version 2.43.0'\n").unwrap();
+        let mut permissions = std::fs::metadata(&fake).unwrap().permissions();
+        std::os::unix::fs::PermissionsExt::set_mode(&mut permissions, 0o755);
+        std::fs::set_permissions(&fake, permissions).unwrap();
+
+        let result = remote_in_child(
+            &repo,
+            &url,
+            &["ls-remote", "origin"],
+            &[("PATH", bin.to_str().unwrap())],
+        );
+
+        let error = result.unwrap_err();
+        assert!(
+            error.contains("git version 2.43.0") && error.contains("2.46"),
+            "{error}"
+        );
+        assert!(seen.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn git_versions_from_2_46_send_only_the_token() {
+        for (version, supported) in [
+            ("git version 2.43.0", false),
+            ("git version 2.46.0", true),
+            ("git version 2.54.0 (Apple Git-157)", true),
+            ("git version 2.47.1.windows.1", true),
+            ("git version 3.0.0", true),
+            ("not git", false),
+        ] {
+            assert_eq!(sends_only_the_token(version), supported, "{version}");
+        }
     }
 
     fn proxy_challenge(_: &str, _: u16) -> String {

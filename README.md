@@ -67,7 +67,7 @@ So Oven Spring runs the whole process, from requirements to merge, and fits into
 ## Requirements
 
 - macOS or Linux, on arm64 or x86_64
-- `git`, and a repository hosted on GitHub
+- `git` 2.46 or later, and a repository hosted on GitHub
 - Linear or GitHub Issues
 - A Slack workspace where you can create an app
 - Claude Code, Codex or OpenCode, installed and signed in on the same machine
