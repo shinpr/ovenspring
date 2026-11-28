@@ -1356,12 +1356,13 @@ fn a_large_issue_has_its_prd_approved_and_its_change_reviewed_by_unit() {
     );
 }
 
-/// Installs a repository hook that refuses until the worktree holds `lint-fixed`.
+/// Installs a repository hook that refuses until the worktree holds `lint-fixed`, printing its
+/// reason only on standard output, as lefthook does with everything its jobs print.
 fn refusing_hook(env: &Env, hook: &str) {
     let path = env.repo.join(".git/hooks").join(hook);
     std::fs::write(
         &path,
-        "#!/bin/sh\ntest -f lint-fixed || { echo 'knip: unused export ping' >&2; exit 1; }\n",
+        "#!/bin/sh\ntest -f lint-fixed || { echo 'knip: unused export ping'; exit 1; }\n",
     )
     .unwrap();
     std::process::Command::new("chmod")
@@ -1424,8 +1425,9 @@ fn a_commit_the_repository_refuses_is_corrected_by_quality_before_review() {
 
 // AC: docs/design/factory-core-design.md § Pull request: a push `origin` refuses goes back to
 //     `quality` with what it said; a push that cannot reach `origin` is tried again.
-// Behavior: the pre-push hook refuses -> `quality` runs again with the hook's output, its fix is
-//     committed and pushed, and the issue merges.
+// Behavior: the pre-push hook refuses, printing its reason on standard output -> `quality` runs
+//     again with the hook's reason and git's own error, its fix is committed and pushed, and the
+//     issue merges.
 // @lane: integration
 // @dependency: daemon, flow, fake agent, FakeGitHub
 #[test]
@@ -1450,6 +1452,14 @@ fn a_push_the_repository_refuses_is_corrected_by_quality_and_pushed_again() {
         60,
         |_| {},
         |d| stage(d, "ACME-142") == Stage::Merged,
+    );
+    let findings = handoffs(&env, "quality", None, "correction_findings");
+    assert!(
+        findings.iter().any(|c| {
+            let text = c.to_string();
+            text.contains("knip: unused export ping") && text.contains("failed to push some refs")
+        }),
+        "the second quality run receives the hook's reason with git's error: {findings:?}"
     );
     assert_eq!(git(&env.origin, &["show", "develop:lint-fixed"]), "x");
 }
@@ -1505,67 +1515,6 @@ fn a_test_review_receives_the_tests_a_task_changed_whatever_their_naming() {
         .find(|l| l.starts_with("changedFiles: "))
         .unwrap_or_default();
     assert!(line.contains("tests/export_int.rs"), "{text}");
-}
-
-// AC: "`review-response` ... for pull request comments, `test-review` first when required";
-//     "`test-review` ... given the files the task changed" (factory core design, steps).
-// Behavior: a writer comments on ACME-151's pull request -> the executor's correction adds
-//     `tests/refund_int.rs` and asks for a test review -> the test-review item names the
-//     correction's file, not the files the implementation changed before it.
-// @lane: integration
-// @dependency: daemon, flow, handoff, fake agent, FakeGitHub
-#[test]
-fn a_test_review_after_a_correction_receives_the_files_the_correction_changed() {
-    let env = Env::new();
-    env.configure(CONFIG);
-    env.add_branch("develop");
-    let mut script = straight("ACME-151");
-    script.insert(
-        "review-response@ACME-151".into(),
-        json!([{"change": {"path": "tests/refund_int.rs", "content": "#[test] fn refund() {}\n"},
-                "output": {"status": "completed", "taskName": "comments", "changeSummary": "Count refunds",
-                           "requiresTestReview": true,
-                           "dispositions": [{"id": "review-comment-1", "disposition": "apply", "reason": "src/ACME-151.ts:1 leaves refunds out"}]}}]),
-    );
-    script.insert("test-review@ACME-151".into(), json!([{"hang": true}]));
-    env.script_agents(&Value::Object(script));
-    let mut gh = always_passing(&env, requiring_test());
-    gh.permissions.insert("acme-dev".into(), Permission::Write);
-    gh.on_open = vec![writer_comment(
-        "ovenspring/ACME-151",
-        "The total ignores refunds.",
-    )];
-    let mut d = daemon(
-        &env,
-        services(
-            Arc::new(gh),
-            Arc::new(RecordingChannel::default()),
-            Arc::new(RecordingTracker::default()),
-        ),
-    );
-    d.begin_issue("ACME-151", "Refunds", vec![]).unwrap();
-
-    run_until(
-        &mut d,
-        60,
-        |_| {},
-        |d| stage(d, "ACME-151") == Stage::running(Step::TestReview),
-    );
-
-    let item = d
-        .store()
-        .active_items()
-        .unwrap()
-        .into_iter()
-        .find(|p| p.to_string_lossy().contains("-test-review-ACME-151"))
-        .unwrap();
-    let text = std::fs::read_to_string(item).unwrap();
-    let line = text
-        .lines()
-        .find(|l| l.starts_with("changedFiles: "))
-        .unwrap_or_default();
-    assert!(line.contains("tests/refund_int.rs"), "{text}");
-    assert!(!line.contains("src/ACME-151.ts"), "{text}");
 }
 
 // AC: "Each finding, from a reviewer or a bot, is judged before anything is changed" (AC-021);
@@ -2025,34 +1974,21 @@ fn a_work_turn_that_cannot_resume_starts_over_in_a_new_session() {
 }
 
 /// ACME-160 passes every step until its pull request gets two comments from a writer and one from
-/// a reader. The executor applies the first, declines the second, and also names the reader's
-/// comment, which was never handed to it; its correction asks for a test review; the test review
-/// finds `T002`, which the executor applies, then passes; quality runs and the correction is
-/// pushed.
-fn comments_then_test_review_script() -> Value {
+/// a reader. The executor applies the first with a change to its test, declines the second, and
+/// also names the reader's comment, which was never handed to it; its correction asks for a test
+/// review, which the commenters' own review of the push replaces: quality runs and the correction
+/// is pushed.
+fn tested_comment_correction_script() -> Value {
     let mut script = straight("ACME-160");
     script.insert(
         "review-response@ACME-160".into(),
         json!([
-            {"change": {"path": "src/ACME-160.ts", "content": "refunds\n"},
+            {"change": {"path": "tests/ACME-160.test.ts", "content": "asserts the refunded total\n"},
              "output": {"status": "completed", "taskName": "comments", "changeSummary": "Subtract refunds",
-                        "requiresTestReview": true, "dispositions": [
+                        "testsAdded": ["tests/ACME-160.test.ts"], "requiresTestReview": true, "dispositions": [
                             {"id": "$COMMENT_1", "disposition": "apply", "reason": "the total must subtract refunds"},
                             {"id": "$COMMENT_2", "disposition": "decline", "reason": "archived orders widen the outcome"},
-                            {"id": "review-comment-3", "disposition": "decline", "reason": "a reader's comment"}]}},
-            {"change": {"path": "tests/ACME-160.test.ts", "content": "asserts the total\n"},
-             "output": {"status": "completed", "taskName": "T002", "changeSummary": "Assert the refunded total",
-                        "requiresTestReview": true, "dispositions": [
-                            {"id": "T002", "disposition": "apply", "reason": "the test asserts no total"}]}}
-        ]),
-    );
-    script.insert(
-        "test-review@ACME-160".into(),
-        json!([
-            {"output": {"status": "needs_revision", "qualityIssues": [
-                {"id": "T002", "description": "The refund test asserts nothing about the total."}]}},
-            {"output": {"status": "pass", "prior_feedback_reconciliation": [
-                {"id": "T002", "prior_disposition": "apply", "status": "resolved"}]}}
+                            {"id": "review-comment-3", "disposition": "decline", "reason": "a reader's comment"}]}}
         ]),
     );
     Value::Object(script)
@@ -2120,23 +2056,31 @@ fn run_acme_160(env: &Env, script: &Value, gh: FakeGitHub) -> Arc<FakeGitHub> {
     gh
 }
 
-/// Runs ACME-160 until it merges, after its correction of the comments was pushed. The
-/// correction's commit, which reached `origin`, carries the executor's correction of `T002`, so
-/// the push followed the executor's judgment of the test review's finding.
-fn run_comments_then_test_review(refuse_replies: bool) -> (Env, Arc<FakeGitHub>) {
+/// Runs ACME-160 until it merges, after its correction of the comments was pushed. The pushed
+/// correction's commit carries the test it changed, and no test review was filed for the issue.
+fn run_tested_comment_correction(refuse_replies: bool) -> (Env, Arc<FakeGitHub>) {
     let env = Env::new();
     let gh = github_commenting_on_acme_160(&env);
     gh.refuse_replies
         .store(refuse_replies, std::sync::atomic::Ordering::SeqCst);
-    let gh = run_acme_160(&env, &comments_then_test_review_script(), gh);
+    let gh = run_acme_160(&env, &tested_comment_correction_script(), gh);
     let applied = applying_commit(&env);
     assert_eq!(
         git(
             &env.origin,
             &["show", &format!("{applied}:tests/ACME-160.test.ts")]
         ),
-        "asserts the total"
+        "asserts the refunded total"
     );
+    let test_reviews = std::fs::read_dir(env.state().join("board/archive"))
+        .unwrap()
+        .filter(|e| {
+            std::fs::read_to_string(e.as_ref().unwrap().path())
+                .unwrap()
+                .contains("step: test-review\n")
+        })
+        .count();
+    assert_eq!(test_reviews, 0);
     (env, gh)
 }
 
@@ -2200,29 +2144,29 @@ fn assert_answered_after_the_push_of(env: &Env, gh: &FakeGitHub, commit: &str) {
 // AC: "each new comment from configured bots or write-access accounts is judged as a finding,
 //     and each is answered in its thread with the commit that applied it or the reason it was
 //     declined (AC-022)"; "Comments from accounts without write access ... receive no response
-//     (AC-023)"; GH-17: also when a test review with findings, the executor's judgment of those
-//     findings and quality ran between the judgment and the push.
-// Behavior: two writer comments judged, plus a disposition for a reader's comment -> test review
-//     finds T002 -> the executor applies T002 -> the test review passes -> quality -> the
-//     correction is pushed -> after that push, each writer comment has its reply in its thread,
-//     the applied one naming the correction's commit; the reader's has none.
+//     (AC-023)"; GH-44: a correction that changed tests and asks for a test review goes to
+//     quality and the push with no test review.
+// Behavior: two writer comments judged, plus a disposition for a reader's comment, the
+//     correction asking for a test review -> quality, no test review -> the correction is pushed
+//     -> after that push, each writer comment has its reply in its thread, the applied one naming
+//     the correction's commit; the reader's has none.
 // @lane: integration
 // @dependency: daemon, flow, handoff, fake agent, FakeGitHub
 #[test]
-fn each_judged_comment_is_answered_after_a_test_review_of_its_correction() {
-    let (env, gh) = run_comments_then_test_review(false);
+fn each_judged_comment_is_answered_after_the_push_of_its_tested_correction() {
+    let (env, gh) = run_tested_comment_correction(false);
 
     assert_answered_after_the_push_of(&env, &gh, &applying_commit(&env));
 }
 
-// AC: GH-17: the comment judgment survives the executor's judgment of a test review's findings.
-// Behavior: two writer comments judged, the first applied -> test review finds T002 -> the
-//     executor applies T002 -> the test review passes -> quality is handed the applied comment.
+// AC: R5: quality checks the correction of the comments the executor applied.
+// Behavior: two writer comments judged, the first applied with a change to its test, the
+//     correction asking for a test review -> quality is handed the applied comment.
 // @lane: integration
 // @dependency: daemon, flow, handoff, fake agent, FakeGitHub
 #[test]
-fn quality_after_a_test_reviewed_comment_correction_checks_the_applied_comment() {
-    let (env, _gh) = run_comments_then_test_review(false);
+fn quality_after_a_tested_comment_correction_checks_the_applied_comment() {
+    let (env, _gh) = run_tested_comment_correction(false);
 
     let scope = handoffs(&env, "quality", None, "correction_findings");
     let ids: Vec<&Value> = scope
@@ -2240,7 +2184,7 @@ fn quality_after_a_test_reviewed_comment_correction_checks_the_applied_comment()
 // @dependency: daemon, flow, fake agent, FakeGitHub
 #[test]
 fn a_reply_github_refuses_is_recorded_for_its_comment() {
-    let (env, gh) = run_comments_then_test_review(true);
+    let (env, gh) = run_tested_comment_correction(true);
 
     assert_eq!(gh.replies(), Vec::<String>::new());
     let failed: Vec<Value> = env

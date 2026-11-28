@@ -36,7 +36,7 @@ Write to the path in your item's `out` field one compact JSON object. Put decisi
     "entries": [{"label": "selected label", "resolutionStatus": "fetched|inspected_local|recorded_for_manual_confirmation|unavailable", "accessMethod": "recorded source or verification method", "summary": "relevant facts or access limitation"}]
   },
   "focusAreas": [
-    {"fact_id": "path:identifier", "area": "UI question", "evidence": "path:line or external source; observed or inferred", "factsToAddress": "decision-relevant behavior, contract, reuse, or verification", "risk": "effect if ignored", "decisionEffect": "UI Spec, design, or verification decision this controls"}
+    {"fact_id": "path:identifier", "area": "UI question", "evidence": "path:line or external source; observed or inferred", "factsToAddress": "decision-relevant behavior, contract, reuse, or verification"}
   ],
   "simplifications": [
     {"avoidableChange": "responsibility, branch, artifact, or change that can be omitted", "evidence": "path:line, governing source, or focusArea reference", "conditions": "conditions or unknowns under which the outcome still holds"}
@@ -45,4 +45,4 @@ Write to the path in your item's `out` field one compact JSON object. Put decisi
 }
 ```
 
-Complete when the current UI decisions have evidence-backed facts or explicit decision-changing unknowns and limitations. Include only external resources a current decision used, give every `focusAreas` entry an evidence pointer and decision effect, and use an empty `simplifications` array when no avoidable change is evidenced.
+Complete when the current UI decisions have evidence-backed facts or explicit decision-changing unknowns and limitations. Include only external resources a current decision used, cite the evidence for each focus area, and use an empty `simplifications` array when no avoidable change is evidenced.
