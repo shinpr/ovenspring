@@ -337,15 +337,14 @@ pub(crate) fn save(
         return Err(Refusal::Invalid(BTreeMap::from([(key, message)])));
     }
     let connection = check_connection(context, section, &config, &held)?;
-    // The credentials go first, so a failed write never leaves the recorded destination beside a
-    // token not checked for it.
-    if held != before {
-        credentials::write(&context.credentials, &held)
-            .map_err(|e| Refusal::Failed(e.to_string()))?;
-    }
-    if let Some(connection) = &connection {
-        crate::setup::record_connection(&context.store, connection).map_err(Refusal::Failed)?;
-    }
+    let saved = match &connection {
+        Some(connection) => crate::setup::save_connection(context, &held, connection),
+        None if held != before => {
+            credentials::write(&context.credentials, &held).map_err(|e| e.to_string())
+        }
+        None => Ok(()),
+    };
+    saved.map_err(Refusal::Failed)?;
     write_config(&context.repo, &config).map_err(Refusal::Failed)?;
     state(context)
 }

@@ -1604,41 +1604,73 @@ fn an_origin_the_factorys_git_would_refuse_is_refused_before_the_connection_is_r
 }
 
 // AC: docs/design/github-git-identity-design.md § Selected Design item 5: the dashboard's base
-//     fetch reaches only the URL the last passed GitHub check recorded, with the stored token.
-// Behavior: the credentials file cannot be replaced -> a save whose GitHub check passed for a new
-//     `origin` and token fails -> the destination and token the next base fetch would use are
-//     still the pair checked before.
-// Cases (reported distinctly): (a) Settings › General keeps the recorded URL and the stored
-//     token; (b) Connect records no connection.
+//     fetch reaches only the URL the last passed GitHub check recorded, with the token it was
+//     checked with.
+// Behavior: a save whose GitHub check passed for a new `origin` and token fails at one of its
+//     writes -> `origin` is restored to the repository connected before -> the base fetch is
+//     refused before any request reaches that repository, until a save passes.
+// Cases (reported distinctly): (a) Settings › General, the credentials cannot be written: the old
+//     token stays; (b) Settings › General, the token is written but the connection record cannot
+//     be; (c) Connect records no connection and writes no configuration.
 // @lane: integration
-// @dependency: dashboard server, setup and settings saves, connection record, credentials file
+// @dependency: dashboard server, setup and settings saves, connection record, credentials file,
+//     Git HTTP endpoint
 #[test]
-fn a_save_whose_credentials_cannot_be_written_leaves_the_connection_it_had() {
-    let env = Env::new();
-    env.configure("");
-    let dash = Dashboard::with_checks(&env, Checks { refuse: None });
-    dash.connect_github("old-token", env.origin.to_str().unwrap());
-    let before = recorded_connection(&dash);
-    let elsewhere = env.dir.path().join("elsewhere.git");
-    git(
-        env.dir.path(),
-        &["init", "-q", "--bare", elsewhere.to_str().unwrap()],
-    );
-    git(
-        &env.repo,
-        &["remote", "set-url", "origin", elsewhere.to_str().unwrap()],
-    );
-    std::fs::create_dir_all(dash.credentials.with_extension("toml.new")).unwrap();
+fn a_save_that_fails_partway_leaves_no_connection_the_base_fetch_can_use() {
+    let credentials_staging = |dash: &Dashboard| dash.credentials.with_extension("toml.new");
+    let record_staging = |dash: &Dashboard| dash.store.root().join("github-account.tmp");
+    for (case, blocked, token_after) in [
+        (
+            "credentials",
+            &credentials_staging as &dyn Fn(&Dashboard) -> PathBuf,
+            "old-token",
+        ),
+        ("record", &record_staging, "new-token"),
+    ] {
+        let env = Env::new();
+        env.configure("");
+        let fixture = support::git_http::GitHttp::serve(&env.origin);
+        let dash = Dashboard::with_checks(&env, Checks { refuse: None });
+        dash.connect_github("old-token", &fixture.url);
+        let elsewhere = env.dir.path().join("elsewhere.git");
+        git(
+            env.dir.path(),
+            &["init", "-q", "--bare", elsewhere.to_str().unwrap()],
+        );
+        git(
+            &env.repo,
+            &["remote", "set-url", "origin", elsewhere.to_str().unwrap()],
+        );
+        std::fs::create_dir_all(blocked(&dash)).unwrap();
 
-    let saved = dash.put(
-        "/api/v1/settings/general",
-        &general_with_token(Some("new-token")),
-    );
+        let saved = dash.put(
+            "/api/v1/settings/general",
+            &general_with_token(Some("new-token")),
+        );
+        git(&env.repo, &["remote", "set-url", "origin", &fixture.url]);
+        let fetched = dash.put(
+            "/api/v1/settings/app",
+            &json!({"runs": "commands", "setup": "", "start": "exit 3", "ready": ""}),
+        );
 
-    assert_eq!(saved.status, 500, "{}", saved.body);
-    assert_eq!(recorded_connection(&dash), before);
-    let held = ovenspring_store::credentials::read(&dash.credentials).unwrap();
-    assert_eq!(held.github.token.as_deref(), Some("old-token"));
+        assert_eq!(saved.status, 500, "{case}: {}", saved.body);
+        let held = ovenspring_store::credentials::read(&dash.credentials).unwrap();
+        assert_eq!(held.github.token.as_deref(), Some(token_after), "{case}");
+        assert_eq!(recorded_connection(&dash), None, "{case}");
+        assert_eq!(fetched.status, 400, "{case}: {}", fetched.body);
+        assert!(
+            fetched.json()["errors"]["request"]
+                .as_str()
+                .is_some_and(|why| why.contains("Settings › General")),
+            "{case}: {}",
+            fetched.body
+        );
+        assert_eq!(
+            fixture.requests(),
+            0,
+            "{case}: the connected repository was contacted"
+        );
+    }
 
     let fresh = Env::new();
     let connect = Dashboard::with_checks(&fresh, Checks { refuse: None });

@@ -177,6 +177,22 @@ pub fn record_connection(store: &Store, connection: &GitHubConnection) -> Result
         .map_err(|e| e.to_string())
 }
 
+/// Stores `held` and the GitHub connection checked with its token. The connection recorded before
+/// is removed first, so a write that fails leaves no recorded destination beside a token not
+/// checked for it, whichever write failed: the base fetch then waits for a save that passes.
+pub(crate) fn save_connection(
+    context: &Context,
+    held: &Credentials,
+    connection: &GitHubConnection,
+) -> Result<(), String> {
+    context
+        .store
+        .remove_record(GITHUB_ACCOUNT)
+        .map_err(|e| e.to_string())?;
+    credentials::write(&context.credentials, held).map_err(|e| e.to_string())?;
+    record_connection(&context.store, connection)
+}
+
 /// The GitHub check Connect and Settings › General run: the service check, then `origin`'s URL as
 /// the factory's Git commands would take it, so no connection their first fetch refuses is
 /// reported as passed or recorded.
@@ -540,9 +556,8 @@ fn config_of(request: &SetupRequest) -> Config {
     }
 }
 
-/// Writes the credentials first, then the connection checked with them, and the configuration
-/// last: the daemon starts once the configuration exists, by which time everything it reads is in
-/// place, and a failed write never leaves a recorded destination beside a token not checked for it.
+/// Writes the credentials and the connection checked with them, and the configuration last: the
+/// daemon starts once the configuration exists, by which time everything it reads is in place.
 fn write(
     context: &Context,
     request: &SetupRequest,
@@ -564,8 +579,7 @@ fn write(
             token: entered(request.github.token.as_deref()).map(str::to_owned),
         },
     };
-    credentials::write(&context.credentials, &held).map_err(|e| e.to_string())?;
-    record_connection(&context.store, connection)?;
+    save_connection(context, &held, connection)?;
     let dir = context.repo.join(".ovenspring");
     std::fs::create_dir_all(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
     write_config(&context.repo, config)
