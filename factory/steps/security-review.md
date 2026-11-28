@@ -61,7 +61,7 @@ Without `prior_feedback`, continue to Step 2 within the Review scope of your ite
 
 When `prior_feedback` is present, complete the correction re-review here:
 1. Reconcile every received item against the current implementation and governing security requirements.
-2. Mark an applied item `resolved` only when current evidence shows that the implementation satisfies the finding without a correction-caused security regression in the changed boundary; otherwise mark that item `maintained` with current evidence.
+2. Mark an applied finding `resolved` when the evidence distinguishes the corrected behavior from the security failure described in the finding and the correction preserves security at the changed boundary. Otherwise, mark it `maintained` and state what the evidence leaves open.
 3. Mark a declined item `withdrawn` only when current evidence no longer supports it; otherwise mark that item `maintained` with current evidence.
 4. Emit exactly one `prior_feedback_reconciliation` entry for every received ID.
 5. Set `status` to `blocked` for any newly observed condition matching a Status Determination `blocked` trigger, regardless of whether an applied correction caused it.
