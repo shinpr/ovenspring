@@ -28,7 +28,7 @@ use ovenspring_daemon::owner::{
 };
 use ovenspring_integrations::channel::DecisionKind;
 use ovenspring_server::Context;
-use ovenspring_server::setup::{GitHubAccount, SlackSetup, TrackerSetup};
+use ovenspring_server::setup::{GitHubConnection, SlackSetup, TrackerSetup};
 use ovenspring_store::Store;
 use ovenspring_store::credentials::{self, Credentials};
 use serde_json::{Value, json};
@@ -230,7 +230,7 @@ impl ovenspring_server::SetupChecks for NoChecks {
     fn slack(&self, _: &SlackSetup) -> Result<String, String> {
         Err("unused".into())
     }
-    fn github(&self, _: &Path, _: Option<&str>, _: &str) -> Result<GitHubAccount, String> {
+    fn github(&self, _: &Path, _: Option<&str>, _: &str) -> Result<GitHubConnection, String> {
         Err("unused".into())
     }
 }

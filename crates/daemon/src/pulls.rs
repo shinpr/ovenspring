@@ -20,6 +20,7 @@ use serde_json::json;
 use crate::errors::{ErrorKey, Failure, Via, out_of_reach, unanswered_cause};
 use crate::issues::IssueRecord;
 use crate::owner::{DecisionRecord, DecisionStatus};
+use crate::stops::GitReach;
 use crate::worktree::{git, git_as, git_remote};
 use crate::{Daemon, DaemonError};
 
@@ -347,19 +348,26 @@ impl Daemon {
                 // The reads below would fail the same way.
                 return Ok(());
             }
-            if via.contains(&Via::Git) && self.git_out_of_reach() {
-                let why = Unanswered::NoConnection;
-                self.failed(
-                    ErrorKey::GithubUnreachable,
-                    Failure {
-                        event: json!({"event": "service-unreachable", "operation": "checking that origin answers",
-                                      "error": "origin does not answer", "why": why}),
-                        cause: unanswered_cause(why, None),
-                        via: Some(Via::Git),
-                        reason: None,
-                    },
-                )?;
-                answered = false;
+            if via.contains(&Via::Git) {
+                match self.probe_git() {
+                    GitReach::Answers => {}
+                    // Not GitHub answering: the operations that meet the refusal count it.
+                    GitReach::Refused => answered = false,
+                    GitReach::OutOfReach => {
+                        let why = Unanswered::NoConnection;
+                        self.failed(
+                            ErrorKey::GithubUnreachable,
+                            Failure {
+                                event: json!({"event": "service-unreachable", "operation": "checking that origin answers",
+                                              "error": "origin does not answer", "why": why}),
+                                cause: unanswered_cause(why, None),
+                                via: Some(Via::Git),
+                                reason: None,
+                            },
+                        )?;
+                        answered = false;
+                    }
+                }
             }
             self.errors.github_clear = answered;
         }

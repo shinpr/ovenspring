@@ -18,7 +18,8 @@ pub struct RepoId {
 }
 
 impl RepoId {
-    /// Reads `owner/name` from a GitHub remote URL (HTTPS, SSH, or scp-like).
+    /// Reads `owner/name` from a GitHub remote URL (HTTPS, SSH, or scp-like). Plain HTTP is not
+    /// read: the factory's Git commands would send the token over it.
     pub fn from_remote(url: &str) -> Option<RepoId> {
         let url = url.trim();
         // An HTTPS remote may name its user (`https://user@github.com/...`).
@@ -30,8 +31,7 @@ impl RepoId {
         let rest = https_with_user
             .or_else(|| url.strip_prefix("git@github.com:"))
             .or_else(|| url.strip_prefix("ssh://git@github.com/"))
-            .or_else(|| url.strip_prefix("https://github.com/"))
-            .or_else(|| url.strip_prefix("http://github.com/"))?;
+            .or_else(|| url.strip_prefix("https://github.com/"))?;
         let rest = rest.trim_end_matches('/');
         let rest = rest.strip_suffix(".git").unwrap_or(rest);
         let (owner, name) = rest.split_once('/')?;
@@ -961,6 +961,11 @@ mod tests {
             None
         );
         assert_eq!(RepoId::from_remote("https://github.com/acme"), None);
+        assert_eq!(
+            RepoId::from_remote("http://github.com/acme/storefront.git"),
+            None,
+            "plain HTTP would carry the token unencrypted"
+        );
     }
 
     #[test]

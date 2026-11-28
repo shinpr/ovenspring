@@ -32,7 +32,9 @@ use ovenspring_daemon::owner::{DecisionRecord, DecisionStatus};
 use ovenspring_daemon::records;
 use ovenspring_integrations::channel::{DecisionKind, MessageRef};
 use ovenspring_server::Context;
-use ovenspring_server::setup::{GitHubAccount, SetupChecks, SlackSetup, TrackerSetup};
+use ovenspring_server::setup::{
+    GitHubAccount, GitHubConnection, SetupChecks, SlackSetup, TrackerSetup,
+};
 use ovenspring_store::Store;
 use serde_json::{Value, json};
 use support::dashboard::Dashboard;
@@ -61,11 +63,14 @@ impl SetupChecks for Checks {
     fn slack(&self, _: &SlackSetup) -> Result<String, String> {
         self.answer("slack", "Connected to channel C0123456789, as Kai Moreno.")
     }
-    fn github(&self, _: &Path, _: Option<&str>, _: &str) -> Result<GitHubAccount, String> {
+    fn github(&self, repo: &Path, _: Option<&str>, _: &str) -> Result<GitHubConnection, String> {
         self.answer("github", "Signed in as kai.")
-            .map(|_| GitHubAccount {
-                login: "kai".into(),
-                from_gh: false,
+            .map(|_| GitHubConnection {
+                account: GitHubAccount {
+                    login: "kai".into(),
+                    from_gh: false,
+                },
+                remote: git(repo, &["remote", "get-url", "origin"]),
             })
     }
 }
@@ -837,7 +842,7 @@ fn run_the_product_writes_commands_only_once_they_start_then_the_goal_finishes_s
     let env = Env::new();
     env.configure("[app]\n");
     let dash = Dashboard::with_checks(&env, Checks { refuse: None });
-    dash.hold_github_token("test-token");
+    dash.connect_github("test-token", env.origin.to_str().unwrap());
     assert_eq!(dash.get("/api/v1/setup").json()["step"], "run");
 
     let broken = dash.put(
@@ -1505,7 +1510,7 @@ fn app_guard_and_review_settings_are_saved_to_the_configuration() {
     let env = Env::new();
     env.configure("");
     let dash = Dashboard::with_checks(&env, Checks { refuse: None });
-    dash.hold_github_token("test-token");
+    dash.connect_github("test-token", env.origin.to_str().unwrap());
 
     let broken = dash.put(
         "/api/v1/settings/app",

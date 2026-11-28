@@ -7,7 +7,9 @@ use ovenspring_integrations::github::{self, GitHub as _, GitHubApi, RepoId};
 use ovenspring_integrations::http::Ureq;
 use ovenspring_integrations::tracker::Tracker as _;
 use ovenspring_integrations::tracker::linear::Linear;
-use ovenspring_server::setup::{GitHubAccount, SetupChecks, SlackSetup, TrackerSetup};
+use ovenspring_server::setup::{
+    GitHubAccount, GitHubConnection, SetupChecks, SlackSetup, TrackerSetup,
+};
 
 pub struct Checks;
 
@@ -81,7 +83,7 @@ impl SetupChecks for Checks {
         repo: &Path,
         token: Option<&str>,
         base_branch: &str,
-    ) -> Result<GitHubAccount, String> {
+    ) -> Result<GitHubConnection, String> {
         let (api, from_gh) = github_api(repo, token)?;
         let login = api
             .viewer()
@@ -89,7 +91,10 @@ impl SetupChecks for Checks {
             .login;
         api.branch_head(base_branch.trim())
             .map_err(|e| format!("GitHub has no branch `{}` here ({e}).", base_branch.trim()))?;
-        Ok(GitHubAccount { login, from_gh })
+        Ok(GitHubConnection {
+            account: GitHubAccount { login, from_gh },
+            remote: api.git_remote().url.to_owned(),
+        })
     }
 }
 

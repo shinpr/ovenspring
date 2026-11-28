@@ -365,8 +365,9 @@ fn check_connection(
                 held.github.token.as_deref(),
                 &config.repo.base_branch,
             )
-            .and_then(|account| {
-                crate::setup::record_account(context, &account).map(|()| account.login)
+            .and_then(|connection| {
+                crate::setup::record_connection(&context.store, &connection)
+                    .map(|()| connection.account.login)
             }),
         SettingsSection::Tracker => {
             let tracker = match config.tracker.kind {
@@ -438,7 +439,7 @@ mod tests {
     use std::sync::Arc;
 
     use super::*;
-    use crate::setup::{GitHubAccount, SetupChecks, SlackSetup, TrackerSetup};
+    use crate::setup::{GitHubAccount, GitHubConnection, SetupChecks, SlackSetup, TrackerSetup};
 
     struct ConnectedChecks;
 
@@ -461,10 +462,13 @@ mod tests {
             _repo: &Path,
             _token: Option<&str>,
             _base_branch: &str,
-        ) -> Result<GitHubAccount, String> {
-            Ok(GitHubAccount {
-                login: "owner".into(),
-                from_gh: false,
+        ) -> Result<GitHubConnection, String> {
+            Ok(GitHubConnection {
+                account: GitHubAccount {
+                    login: "owner".into(),
+                    from_gh: false,
+                },
+                remote: "https://github.com/acme/storefront.git".into(),
             })
         }
     }
@@ -491,7 +495,7 @@ mod tests {
             _repo: &Path,
             _token: Option<&str>,
             _base_branch: &str,
-        ) -> Result<GitHubAccount, String> {
+        ) -> Result<GitHubConnection, String> {
             Err("GitHub refused".into())
         }
     }

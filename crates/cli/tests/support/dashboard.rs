@@ -3,7 +3,9 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use ovenspring_server::setup::{GitHubAccount, SetupChecks, SlackSetup, TrackerSetup};
+use ovenspring_server::setup::{
+    GitHubAccount, GitHubConnection, SetupChecks, SlackSetup, TrackerSetup,
+};
 use ovenspring_server::{Context, Server};
 use ovenspring_store::Store;
 use serde_json::Value;
@@ -27,7 +29,7 @@ impl SetupChecks for NoChecks {
     fn slack(&self, _: &SlackSetup) -> Result<String, String> {
         Err("not checked".into())
     }
-    fn github(&self, _: &Path, _: Option<&str>, _: &str) -> Result<GitHubAccount, String> {
+    fn github(&self, _: &Path, _: Option<&str>, _: &str) -> Result<GitHubConnection, String> {
         Err("not checked".into())
     }
 }
@@ -70,12 +72,23 @@ impl Dashboard {
         ovenspring_store::credentials::write(&self.credentials, &held).unwrap();
     }
 
-    /// Stores `token` as the GitHub token setup entered, which the base fetch of Run the product
-    /// authenticates with.
-    pub fn hold_github_token(&self, token: &str) {
+    /// Stores `token` as the GitHub token setup entered and records a passed GitHub check made for
+    /// `remote`: the token and the only repository the base fetch of Run the product uses.
+    pub fn connect_github(&self, token: &str, remote: &str) {
         let mut held = ovenspring_store::credentials::read(&self.credentials).unwrap();
         held.github.token = Some(token.to_owned());
         ovenspring_store::credentials::write(&self.credentials, &held).unwrap();
+        ovenspring_server::setup::record_connection(
+            &self.store,
+            &GitHubConnection {
+                account: GitHubAccount {
+                    login: "kai".into(),
+                    from_gh: false,
+                },
+                remote: remote.to_owned(),
+            },
+        )
+        .unwrap();
     }
 
     pub fn get(&self, path: &str) -> Response {

@@ -24,7 +24,7 @@ use std::sync::Arc;
 use ovenspring_core::item::Status;
 use ovenspring_integrations::github::CheckState;
 use ovenspring_server::Context;
-use ovenspring_server::setup::{GitHubAccount, SetupChecks, SlackSetup, TrackerSetup};
+use ovenspring_server::setup::{GitHubConnection, SetupChecks, SlackSetup, TrackerSetup};
 use ovenspring_store::Store;
 use serde_json::json;
 use support::fake_github::FakeGitHub;
@@ -454,7 +454,7 @@ impl SetupChecks for Unchecked {
     fn slack(&self, _: &SlackSetup) -> Result<String, String> {
         Err("not checked here".into())
     }
-    fn github(&self, _: &Path, _: Option<&str>, _: &str) -> Result<GitHubAccount, String> {
+    fn github(&self, _: &Path, _: Option<&str>, _: &str) -> Result<GitHubConnection, String> {
         Err("not checked here".into())
     }
 }

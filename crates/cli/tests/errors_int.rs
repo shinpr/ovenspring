@@ -541,6 +541,50 @@ fn github_stays_one_open_error_until_every_failing_way_answers_by_git() {
     stays_open_until_it_answers(&env, &slack, &mut d, || bring_origin_back(&env));
 }
 
+// AC: GH-34 AC5 "... it shall clear once that probe answers." A refused probe is not an answer.
+// Behavior: GitHub is out of reach by Git -> `origin` is changed to another repository, so the
+//     probe is refused locally -> the open error stays open with no recovery notice.
+#[test]
+fn an_origin_changed_during_a_git_outage_does_not_clear_it() {
+    let env = Env::new();
+    env.configure("");
+    env.script_agents(&Value::Object(support::scripts::straight("ACME-123")));
+    let gh = passing_github(&env);
+    let slack = SlackStub::default();
+    let mut d = started(&env, on_slack(&gh, &slack, None));
+    d.begin_issue("ACME-123", "Export", vec![]).unwrap();
+    take_origin_away(&env);
+    run_until(
+        &mut d,
+        60,
+        |_| {},
+        |_| failures(&env, "github-unreachable") >= 1,
+    );
+    let elsewhere = env.dir.path().join("elsewhere.git");
+    git(
+        env.dir.path(),
+        &["init", "-q", "--bare", elsewhere.to_str().unwrap()],
+    );
+    git(
+        &env.repo,
+        &["remote", "set-url", "origin", elsewhere.to_str().unwrap()],
+    );
+
+    for _ in 0..3 {
+        d.tick().unwrap();
+    }
+
+    assert_eq!(starts(&env, "github-unreachable").len(), 1);
+    assert_eq!(cleared(&env, "github-unreachable"), 0);
+    assert!(
+        notices(&slack, "github-unreachable")
+            .iter()
+            .all(|n| !n.ends_with("/cleared")),
+        "{:?}",
+        notices(&slack, "github-unreachable")
+    );
+}
+
 // AC: GH-34 AC5 "When a factory Git command fails while `origin` passes the check in AC4 and its
 //     token-authenticated probe also fails, ... it shall be retried as `github-unreachable` with
 //     `via: git`, and it shall clear once that probe answers." (docs/design/github-git-identity-design.md
@@ -549,7 +593,7 @@ fn github_stays_one_open_error_until_every_failing_way_answers_by_git() {
 //     pass's pre-push fetch succeeds, Git aborts the push without sending anything, and the probe
 //     after it fails -> the hook is removed and the repository brought back.
 // @lane: integration
-// @dependency: daemon, flow, stops (`git_out_of_reach`), real Git push and hook, FakeGitHub
+// @dependency: daemon, flow, stops (`probe_git`), real Git push and hook, FakeGitHub
 #[test]
 fn a_push_that_fails_after_its_fetch_succeeded_opens_github_unreachable_on_that_pass() {
     let env = Env::new();
