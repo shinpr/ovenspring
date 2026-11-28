@@ -1873,9 +1873,9 @@ fn the_version_answer_offers_a_newer_release_then_a_restart_once_it_is_installed
 // @dependency: dashboard server, `events::page`, store
 /// A year of `events.jsonl` at about 360 lines a day.
 const YEAR_OF_LINES: usize = 130_000;
-/// How much longer the unoptimized build `cargo test` makes takes to serve the page than the
-/// release build the owner runs: every line at `from=0` took 0.18 s in release and 2.0 s
-/// unoptimized on one machine, and 5.1 s unoptimized on a shared CI runner.
+/// The poll bounds the release build the owner runs; the unoptimized build `cargo test` makes was
+/// measured about ten times slower. A factor below that ratio still fails before the release build
+/// would miss a poll, while leaving room for a shared CI runner's variance.
 const UNOPTIMIZED_ALLOWANCE: u32 = if cfg!(debug_assertions) { 4 } else { 1 };
 
 #[test]
