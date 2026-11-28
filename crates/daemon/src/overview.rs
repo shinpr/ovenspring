@@ -196,6 +196,8 @@ pub struct Position {
     pub task: Option<TaskCount>,
     /// What the lead is finding a way past.
     pub problem: Option<Cause>,
+    /// The reviews whose findings the lead is addressing.
+    pub feedback: Vec<Step>,
     /// In progress while the factory is paused.
     pub on_hold: bool,
     /// When the issue entered its current activity (in progress only).
@@ -575,6 +577,7 @@ pub(crate) fn position(record: &IssueRecord, around: &Around<'_>) -> Position {
         } else {
             None
         },
+        feedback: if in_progress { flow.feedback() } else { vec![] },
         on_hold: paused && in_progress,
         since: in_progress.then(|| times.since(key, flow)).flatten(),
         wait: (section == Section::WaitingToStart).then(|| wait(record, all)),
@@ -688,5 +691,46 @@ mod tests {
         assert_eq!(section(&Stage::ReadyForOwner, false), Section::You);
         assert_eq!(section(&Stage::Merged, true), Section::Done);
         assert_eq!(section(&Stage::Queued, false), Section::WaitingToStart);
+    }
+
+    fn served(stage: Stage) -> serde_json::Value {
+        let mut record = IssueRecord::new("ACME-1", "Export orders", vec![]);
+        record.flow.stage = stage;
+        let around = Around {
+            issues: &[],
+            pending: &[],
+            paused: false,
+            times: Times {
+                events: vec![],
+                launches: vec![],
+            },
+        };
+        serde_json::to_value(position(&record, &around)).unwrap()
+    }
+
+    #[test]
+    fn an_unsettled_review_is_served_as_the_lead_addressing_that_reviews_feedback() {
+        let unsettled = Cause::Unsettled {
+            step: Step::DesignReview,
+        };
+        let now = served(Stage::Exception {
+            cause: unsettled.clone(),
+            resume: None,
+        });
+        assert_eq!(now["section"], "in-progress");
+        assert_eq!(
+            now["problem"],
+            serde_json::json!({"cause": "unsettled", "step": "design-review"})
+        );
+        assert_eq!(now["feedback"], serde_json::json!(["design-review"]));
+        assert_eq!(now["activity"], serde_json::Value::Null);
+
+        let asking = served(Stage::LeadAsking {
+            cause: unsettled,
+            resume: None,
+        });
+        assert_eq!(asking["section"], "you");
+        assert_eq!(asking["problem"], serde_json::Value::Null);
+        assert_eq!(asking["feedback"], serde_json::json!([]));
     }
 }

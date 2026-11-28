@@ -27,6 +27,7 @@ const place: Position = {
   wait: null,
   ended: null,
   endedAt: null,
+  feedback: [],
 }
 
 const row = (key: string, title: string, now: Partial<Position>): IssueRow => ({
@@ -107,6 +108,20 @@ export const problem: Overview = {
         })
       : i
   ),
+}
+
+/** One issue's design review ended with findings outstanding, and the lead addresses them. */
+export const addressingFeedback: Overview = {
+  ...working,
+  issues: [
+    ...issues,
+    row('ACME-148', 'Save a search to run it again', {
+      phase: 'design',
+      problem: { cause: 'unsettled', step: 'design-review' },
+      feedback: ['design-review'],
+      since: '2026-11-21T14:12:00Z',
+    }),
+  ],
 }
 
 export const paused: Overview = {

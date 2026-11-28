@@ -24,8 +24,8 @@ use std::process::Stdio;
 use std::sync::Arc;
 
 use ovenspring_core::config::{Cli, Config, MergeBy, Role, TrackerKind};
-use ovenspring_core::flow::Stage;
-use ovenspring_core::output::SprintPlanOutput;
+use ovenspring_core::flow::{Cause, Stage};
+use ovenspring_core::output::{Review, SprintPlanOutput};
 use ovenspring_core::sprint::{SprintStage, SprintState};
 use ovenspring_daemon::issues::IssueRecord;
 use ovenspring_daemon::owner::{DecisionRecord, DecisionStatus};
@@ -1916,4 +1916,69 @@ fn the_events_page_answers_within_a_poll_over_a_year_of_lines() {
             "{path} took {took:?}, longer than the page's poll (x{UNOPTIMIZED_ALLOWANCE} unoptimized)"
         );
     }
+}
+
+// AC: "While an issue is in progress with `Stage::Exception { cause: Unsettled { step }, .. }`,
+//     its Position shall have `problem` set to that cause ... and `feedback` set to the reviews
+//     with outstanding findings ... A security-only round gives `\"feedback\":[\"security-review\"]`"
+//     — docs/design/review-feedback-progress-design.md § Acceptance Criteria > Addressing feedback.
+// Behavior: the state directory holds an issue of the running sprint in an unsettled code/security
+//     round whose only finding under correction is the security review's -> `GET /api/v1/overview`.
+// Observable result: the issue is in progress with the unsettled cause as its problem, the
+//     security review as its feedback, and no activity. This boundary proves the variant and the
+//     round state survive the store's write and read and reach the HTTP response; the
+//     classification and the other sections are the flow and overview unit tests'.
+// @lane: integration
+// @dependency: dashboard server, store, overview
+#[test]
+fn an_unsettled_security_round_is_served_with_the_security_review_as_its_feedback() {
+    let env = Env::new();
+    let dash = Dashboard::with_checks(&env, Checks { refuse: None });
+    dash.store
+        .write_record(
+            "sprint.json",
+            &SprintState {
+                id: "20261128-0900".into(),
+                stage: SprintStage::Running,
+                plan: None,
+                review: None,
+                agreements_pr: None,
+                agreements_url: None,
+                agreements_need_approval: false,
+                agreements_pushed_at: None,
+                started_at: Some("2026-11-28T09:00:00Z".into()),
+                ended_at: None,
+                failed: None,
+                failure: None,
+                resume: None,
+            },
+        )
+        .unwrap();
+    let mut r = IssueRecord::new("ACME-170", "Title of ACME-170", vec![]);
+    r.sprint = Some("20261128-0900".into());
+    r.flow.stage = Stage::Exception {
+        cause: Cause::Unsettled {
+            step: Step::CodeReview,
+        },
+        resume: None,
+    };
+    r.flow.round.correcting = [Review::SecurityReview].into();
+    dash.store.write_record("issues/ACME-170.json", &r).unwrap();
+
+    let o = dash.get("/api/v1/overview").json();
+
+    let issue = o["issues"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|i| i["key"] == "ACME-170")
+        .unwrap();
+    let now = &issue["now"];
+    assert_eq!(now["section"], "in-progress");
+    assert_eq!(
+        now["problem"],
+        json!({"cause": "unsettled", "step": "code-review"})
+    );
+    assert_eq!(now["feedback"], json!(["security-review"]));
+    assert_eq!(now["activity"], Value::Null);
 }

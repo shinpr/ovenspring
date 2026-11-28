@@ -1402,7 +1402,12 @@ fn exception_request(record: &IssueRecord) -> String {
         Some(Cause::Push) => format!(
             "the repository refused the push of {key}'s branch, and the quality runs could not correct what it reported"
         ),
-        Some(cause @ (Cause::Step { .. } | Cause::Operation { .. } | Cause::PullClosed)) => {
+        Some(
+            cause @ (Cause::Step { .. }
+            | Cause::Unsettled { .. }
+            | Cause::Operation { .. }
+            | Cause::PullClosed),
+        ) => {
             format!("{cause} of {key} could not go on")
         }
         None => format!("a step of {key} could not go on"),

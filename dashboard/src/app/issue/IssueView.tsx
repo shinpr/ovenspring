@@ -14,6 +14,7 @@ import {
   activityWords,
   asSentence,
   ENDING,
+  failure,
   nextInPhase,
   PHASE,
   phaseHolds,
@@ -22,6 +23,7 @@ import {
   ROLE,
   SCALE,
   STEP_NAME,
+  statusRun,
 } from '../../lib/vocabulary.ts'
 import appStyles from '../App.module.css'
 import styles from './Issue.module.css'
@@ -53,10 +55,11 @@ interface Follow {
 
 function inProgress(issue: IssueDetail, now: Date, { running, onOpenRun }: Follow): ReactNode {
   const p = issue.now
-  if (p.problem !== null) {
+  const problem = failure(p)
+  if (problem !== null) {
     return (
       <span className={styles['fail']}>
-        The lead is handling a problem: {problemWords(p.problem)}
+        The lead is handling a problem: {problemWords(problem)}
       </span>
     )
   }
@@ -328,6 +331,9 @@ export function IssueView({ issue, runs, now, onOpenRun, onDownload, onCancel }:
   const [canceling, setCanceling] = useState(false)
   // An issue that ended held still has work the owner can stop; any other end has none.
   const cancelable = issue.now.ended === null || issue.now.ended === 'held'
+  // The page names and follows only a run under way.
+  const named = statusRun(issue.now, runs)
+  const running = named?.result === 'running' ? named : undefined
   return (
     <>
       <Breadcrumb>{issue.key}</Breadcrumb>
@@ -365,11 +371,7 @@ export function IssueView({ issue, runs, now, onOpenRun, onDownload, onCancel }:
           onCancel={onCancel}
         />
       )}
-      <NowLine
-        issue={issue}
-        now={now}
-        follow={{ running: runs.find((r) => r.result === 'running'), onOpenRun }}
-      />
+      <NowLine issue={issue} now={now} follow={{ running, onOpenRun }} />
       <div className={styles['region']}>
         <Group title="Path">
           <ol className={styles['path']}>
