@@ -20,6 +20,7 @@ export const inReview: IssueDetail = {
     wait: null,
     ended: null,
     endedAt: null,
+    feedback: [],
   },
   decision: null,
   canceled: null,
@@ -184,3 +185,96 @@ export const ended: EndedSprint[] = [
     uncosted: 12,
   },
 ]
+
+/**
+ * ACME-148 after its design review ended with findings still outstanding: the lead addresses
+ * them. Its runs are newest first in each situation below.
+ */
+export const addressing: IssueDetail = {
+  ...inReview,
+  key: 'ACME-148',
+  title: 'Save a search to run it again',
+  tracker: 'https://linear.app/acme/issue/ACME-148',
+  pullRequest: null,
+  now: {
+    ...inReview.now,
+    phase: 'design',
+    activity: null,
+    problem: { cause: 'unsettled', step: 'design-review' },
+    feedback: ['design-review'],
+    since: '2026-11-21T14:12:00Z',
+  },
+  findings: [],
+}
+
+const designReviewed = run(
+  '20261121-135000-design-review-ACME-148.1',
+  '2026-11-21T13:50:00Z',
+  '2026-11-21T14:11:00Z',
+  { issue: 'ACME-148', step: 'design-review', phase: 'design', result: 'findings' }
+)
+
+/** The lead's exception run, under way. */
+export const addressingRun = run(
+  '20261121-141200-exception-ACME-148.1',
+  '2026-11-21T14:12:00Z',
+  null,
+  {
+    issue: 'ACME-148',
+    role: 'lead',
+    step: 'exception',
+    phase: null,
+    cli: 'claude',
+  }
+)
+
+/** The lead addresses the feedback in its running exception run. */
+export const addressingRuns: LaunchRow[] = [addressingRun, designReviewed]
+
+/**
+ * The lead's current run has not started: the next review started between the two reads, an
+ * earlier exception run ended by asking the owner, and the review it followed ended.
+ */
+export const notStartedRuns: LaunchRow[] = [
+  run('20261121-141800-design-review-ACME-148.2', '2026-11-21T14:18:00Z', null, {
+    issue: 'ACME-148',
+    step: 'design-review',
+    phase: 'design',
+  }),
+  {
+    ...addressingRun,
+    id: '20261121-141200-exception-ACME-148.2',
+    endedAt: '2026-11-21T14:15:00Z',
+    result: 'done',
+  },
+  designReviewed,
+]
+
+/** The lead retried, and the next design review is under way. */
+export const reviewing: IssueDetail = {
+  ...addressing,
+  now: {
+    ...addressing.now,
+    activity: 'reviewing-the-design',
+    problem: null,
+    feedback: [],
+    since: '2026-11-21T14:18:00Z',
+  },
+}
+
+export const reviewingRuns: LaunchRow[] = notStartedRuns.slice(0, 2)
+
+/** The design review could not run. */
+export const reviewFailed: IssueDetail = {
+  ...addressing,
+  now: { ...addressing.now, problem: { cause: 'step', step: 'design-review' }, feedback: [] },
+}
+
+/** A run's detail as the server answers it. */
+export const detailOf = (row: LaunchRow): LaunchDetail => ({
+  ...row,
+  model: null,
+  effort: null,
+  failure: null,
+  messages: [],
+})

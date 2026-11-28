@@ -270,7 +270,7 @@ impl IssueState {
             return self.phase_at(stage);
         }
         match cause {
-            Cause::Step { step } => Some(self.phase_of(*step)),
+            Cause::Step { step } | Cause::Unsettled { step } => Some(self.phase_of(*step)),
             // The issue had not started: a dependency it waited for was lost.
             Cause::DependencyLost => Some(Phase::Requirements),
             Cause::PullClosed | Cause::Push | Cause::Operation { .. } => Some(Phase::Merge),
@@ -396,6 +396,31 @@ impl IssueState {
             | Check::AdrReview
             | Check::PlanReview => None,
         }
+    }
+
+    /// The reviews whose findings remain while the lead takes an unsettled review loop: for a
+    /// review round, those it would recheck (the ones under correction, else the ones that
+    /// maintained an applied finding), code review before security review; for a check, the
+    /// check itself. Empty in every other stage.
+    pub fn feedback(&self) -> Vec<Step> {
+        let Stage::Exception {
+            cause: Cause::Unsettled { step },
+            ..
+        } = &self.stage
+        else {
+            return vec![];
+        };
+        if *step != Step::CodeReview {
+            return vec![*step];
+        }
+        let reviews = if self.round.correcting.is_empty() {
+            &self.round.maintained
+        } else {
+            &self.round.correcting
+        };
+        let mut steps: Vec<Step> = reviews.iter().map(|review| review.step()).collect();
+        steps.dedup();
+        steps
     }
 
     /// The task being implemented, counted from one, and how many there are; none for a change

@@ -59,7 +59,7 @@ words: string, };
 /**
  * What the lead's `exception` finds a way past.
  */
-export type Cause = { "cause": "step", step: Step, } | { "cause": "dependency-lost" } | { "cause": "pull-closed" } | { "cause": "push" } | { "cause": "operation", operation: string, };
+export type Cause = { "cause": "step", step: Step, } | { "cause": "unsettled", step: Step, } | { "cause": "dependency-lost" } | { "cause": "pull-closed" } | { "cause": "push" } | { "cause": "operation", operation: string, };
 
 export type Cli = "claude" | "codex" | "opencode";
 
@@ -476,6 +476,10 @@ next: Following | null,
  * What the lead is finding a way past.
  */
 problem: Cause | null, 
+/**
+ * The reviews whose findings the lead is addressing.
+ */
+feedback: Array<Step>, 
 /**
  * In progress while the factory is paused.
  */

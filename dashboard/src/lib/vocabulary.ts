@@ -80,15 +80,55 @@ const FACTORYS_OWN: ReadonlySet<Activity> = new Set<Activity>([
   'blocked-on-git-hub',
 ])
 
-/** Whether an agent is at work in this activity, so its run can be followed. */
-export function agentAtWork(activity: Activity | null): boolean {
-  return activity !== null && !FACTORYS_OWN.has(activity)
+/** A cause the lead is finding a way past because something could not go on. */
+export type Failure = Exclude<Cause, { cause: 'unsettled' }>
+
+/**
+ * What the lead is finding a way past as a failure, or null. Reviews whose findings remain are
+ * the lead's ordinary work, not a failure.
+ */
+export function failure(now: Position): Failure | null {
+  return now.problem === null || now.problem.cause === 'unsettled' ? null : now.problem
+}
+
+/** Whether an agent is at work, so its run can be followed. */
+export function agentAtWork(now: Position): boolean {
+  if (now.problem?.cause === 'unsettled') {
+    return true
+  }
+  return now.activity !== null && !FACTORYS_OWN.has(now.activity)
+}
+
+/** The run the status names. */
+export function statusRun(now: Position, runs: readonly LaunchRow[]): LaunchRow | undefined {
+  if (now.problem?.cause === 'unsettled') {
+    // Only the lead's exception run addresses the feedback; until it starts, no run is named.
+    return runs.find((r) => r.result === 'running' && r.step === 'exception')
+  }
+  // The run under way; a run that ended just now is the one its activity named.
+  return runs.find((r) => r.result === 'running') ?? runs[0]
+}
+
+/** A step's name as it reads in running text: "design review", "PRD review". */
+function inText(step: Step): string {
+  const name = STEP_NAME[step]
+  return /^(PRD|UI) /.test(name) ? name : `${name.charAt(0).toLowerCase()}${name.slice(1)}`
+}
+
+/** The reviews as one phrase: "design review", "code and security review". */
+function reviewNames(steps: readonly Step[]): string {
+  const names = steps.map(inText)
+  const last = names.pop() ?? ''
+  return [...names.map((n) => n.replace(/ review$/, '')), last].join(' and ')
 }
 
 /** What an issue in progress is doing, in three words or fewer. */
 export function activityWords(now: Position): string {
   if (now.task !== null) {
     return `Task ${now.task.number} of ${now.task.of}`
+  }
+  if (now.problem?.cause === 'unsettled') {
+    return `Addressing ${reviewNames(now.feedback)} feedback`
   }
   return now.activity === null ? '' : ACTIVITY[now.activity]
 }
@@ -108,7 +148,7 @@ export const ASK: Record<Ask, string> = {
 }
 
 /** What the lead is finding a way past, after "Problem: ". */
-export function problemWords(cause: Cause): string {
+export function problemWords(cause: Failure): string {
   switch (cause.cause) {
     case 'step':
       return `${STEP_NAME[cause.step]} stopped`
@@ -561,10 +601,10 @@ function errorKey(line: EventLine): ErrorKey | undefined {
   if (line.error !== null) {
     return line.error.key
   }
-  const failure = line.fields['failure']
+  const recorded = line.fields['failure']
   const key =
-    typeof failure === 'object' && failure !== null && !Array.isArray(failure)
-      ? failure['key']
+    typeof recorded === 'object' && recorded !== null && !Array.isArray(recorded)
+      ? recorded['key']
       : undefined
   return ERROR_KEYS.find((k) => k === key)
 }

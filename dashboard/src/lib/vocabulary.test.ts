@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest'
-import type { ErrorNow, EventLine, LaunchRow } from '../api/types.gen.ts'
-import { errorName, eventSentence, plain, runSentence } from './vocabulary.ts'
+import type { ErrorNow, EventLine, LaunchRow, Position, Step } from '../api/types.gen.ts'
+import {
+  activityWords,
+  errorName,
+  eventSentence,
+  plain,
+  runSentence,
+  statusRun,
+} from './vocabulary.ts'
 
 const none: LaunchRow['detail'] = {
   round: null,
@@ -354,5 +361,72 @@ describe('errorName', () => {
     ['GitHub out of reach', 'github-unreachable', "Can't reach GitHub"],
   ] as const)('names %s', (_, key, expected) => {
     expect(errorName(going(key))).toBe(expected)
+  })
+})
+
+const inProgress: Position = {
+  section: 'in-progress',
+  phase: 'design',
+  activity: null,
+  task: null,
+  next: null,
+  problem: null,
+  onHold: false,
+  since: '2026-11-21T14:12:00Z',
+  wait: null,
+  ended: null,
+  endedAt: null,
+  feedback: [],
+}
+
+const unsettled = (feedback: Step[]): Position => ({
+  ...inProgress,
+  problem: { cause: 'unsettled', step: feedback[0] ?? 'design-review' },
+  feedback,
+})
+
+describe('activityWords for reviews whose findings the lead addresses', () => {
+  it.each<[Step[], string]>([
+    [['design-review'], 'Addressing design review feedback'],
+    [['prd-review'], 'Addressing PRD review feedback'],
+    [['ui-spec-review'], 'Addressing UI Spec review feedback'],
+    [['design-verify'], 'Addressing design check feedback'],
+    [['security-review'], 'Addressing security review feedback'],
+    [['code-review', 'security-review'], 'Addressing code and security review feedback'],
+  ])('%j reads "%s"', (feedback, words) => {
+    expect(activityWords(unsettled(feedback))).toBe(words)
+  })
+})
+
+describe('statusRun', () => {
+  const review = run({ id: 'review.2', step: 'design-review', result: 'running', endedAt: null })
+  const lead = run({
+    id: 'exception.2',
+    role: 'lead',
+    step: 'exception',
+    result: 'running',
+    endedAt: null,
+  })
+  const asked = run({ id: 'exception.1', role: 'lead', step: 'exception' })
+  const reviewed = run({ id: 'review.1', step: 'design-review', result: 'findings' })
+
+  it("names the lead's running exception run for reviews whose findings remain", () => {
+    expect(statusRun(unsettled(['design-review']), [review, lead, reviewed])?.id).toBe(
+      'exception.2'
+    )
+  })
+
+  it("names no run while only a review runs before the lead's run starts", () => {
+    expect(statusRun(unsettled(['design-review']), [review, asked, reviewed])).toBeUndefined()
+  })
+
+  it("names no run while every run has ended, the lead's earlier one newest", () => {
+    expect(statusRun(unsettled(['design-review']), [asked, reviewed])).toBeUndefined()
+  })
+
+  it('names the running run of any other status, else the newest', () => {
+    const now: Position = { ...inProgress, activity: 'reviewing-the-design' }
+    expect(statusRun(now, [asked, review, reviewed])?.id).toBe('review.2')
+    expect(statusRun(now, [asked, reviewed])?.id).toBe('exception.1')
   })
 })

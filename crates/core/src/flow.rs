@@ -201,6 +201,9 @@ impl fmt::Display for CommitPoint {
 pub enum Cause {
     /// A step could not finish.
     Step { step: Step },
+    /// Reviews still had findings when their loop ended: an applied finding maintained twice, or
+    /// the owner's round limit.
+    Unsettled { step: Step },
     /// An issue this one depends on was held or dropped.
     DependencyLost,
     /// Someone closed the pull request without merging it.
@@ -215,7 +218,7 @@ pub enum Cause {
 impl fmt::Display for Cause {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Cause::Step { step } => step.fmt(f),
+            Cause::Step { step } | Cause::Unsettled { step } => step.fmt(f),
             Cause::DependencyLost => f.write_str("an issue it depends on"),
             Cause::PullClosed => f.write_str("its pull request"),
             Cause::Push => f.write_str("the push"),
@@ -1279,7 +1282,7 @@ fn checked(s: &mut IssueState, step: Step, result: CheckResult) -> Vec<Action> {
         CheckResult::MaintainedApply => {
             s.attempts += 1;
             if s.attempts >= 2 {
-                return step_failed(s, step);
+                return exception(s, Cause::Unsettled { step });
             }
             correct(s, check)
         }
@@ -1322,7 +1325,7 @@ fn recheck(s: &mut IssueState, limits: Limits) -> Vec<Action> {
     };
     s.review_round += 1;
     if limits.review_rounds.is_some_and(|l| s.review_round > l) {
-        return step_failed(s, check.step());
+        return exception(s, Cause::Unsettled { step: check.step() });
     }
     run(s, check.step())
 }
@@ -1471,7 +1474,12 @@ fn recheck_round(s: &mut IssueState, limits: Limits) -> Vec<Action> {
     s.round.number += 1;
     s.round.rerun_check = !s.round.passed.is_empty();
     if limits.review_rounds.is_some_and(|l| s.round.number > l) {
-        return step_failed(s, Step::CodeReview);
+        return exception(
+            s,
+            Cause::Unsettled {
+                step: Step::CodeReview,
+            },
+        );
     }
     file_rechecks(s)
 }
@@ -1561,7 +1569,12 @@ fn round_progress(s: &mut IssueState) -> Vec<Action> {
     if !s.round.maintained.is_empty() {
         s.round.kept += 1;
         if s.round.kept >= 2 {
-            return step_failed(s, Step::CodeReview);
+            return exception(
+                s,
+                Cause::Unsettled {
+                    step: Step::CodeReview,
+                },
+            );
         }
         return [vec![ended], run(s, Step::ReviewResponse)].concat();
     }
@@ -1707,6 +1720,9 @@ fn retry(s: &mut IssueState, failed: &Cause) -> Vec<Action> {
         }
         Cause::Step {
             step: step @ (Step::RerunCheck | Step::CodeReview | Step::SecurityReview),
+        }
+        | Cause::Unsettled {
+            step: step @ (Step::RerunCheck | Step::CodeReview | Step::SecurityReview),
         } => {
             s.round.rerun_check |= *step == Step::RerunCheck;
             if s.round.correcting.is_empty() && *step != Step::RerunCheck {
@@ -1727,7 +1743,7 @@ fn retry(s: &mut IssueState, failed: &Cause) -> Vec<Action> {
             s.round.kept = 0;
             file_rechecks(s)
         }
-        Cause::Step { step } => {
+        Cause::Step { step } | Cause::Unsettled { step } => {
             if *step == Step::FixCi {
                 s.fix_ci_round = 0;
             }
@@ -2557,7 +2573,7 @@ mod tests {
 
     #[test]
     fn an_applied_finding_maintained_through_two_corrections_goes_to_the_lead() {
-        drive(
+        let s = drive(
             at(running("design")),
             vec![
                 (document("design"), vec!["design-review"]),
@@ -2580,6 +2596,91 @@ mod tests {
                 ),
             ],
             Limits::default(),
+        );
+        assert_unsettled(&s, "design-review", &["design-review"]);
+    }
+
+    /// The lead has the issue because reviews still had findings, which `feedback` names.
+    fn assert_unsettled(s: &IssueState, step: &str, feedback: &[&str]) {
+        assert_eq!(
+            s.stage,
+            Stage::Exception {
+                cause: Cause::Unsettled {
+                    step: step_named(step),
+                },
+                resume: None,
+            }
+        );
+        assert_eq!(
+            s.feedback(),
+            feedback.iter().map(|f| step_named(f)).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn a_document_review_past_the_owners_round_limit_goes_to_the_lead() {
+        let s = drive(
+            at(running("design")),
+            vec![
+                (document("design"), vec!["design-review"]),
+                (doc_issues("design-review"), vec!["design"]),
+                (
+                    revised("design", &json!([apply("I001", None)])),
+                    vec!["exception"],
+                ),
+            ],
+            Limits {
+                review_rounds: Some(0),
+                fix_ci_rounds: None,
+            },
+        );
+        assert_unsettled(&s, "design-review", &["design-review"]);
+    }
+
+    #[test]
+    fn a_blocked_check_still_goes_to_the_lead_as_a_step_that_could_not_finish() {
+        let s = drive(
+            at(running("decompose")),
+            vec![
+                (planned(1, 1), vec!["implement"]),
+                (implemented(true), vec!["test-review"]),
+                (
+                    done(
+                        "test-review",
+                        json!({"status": "blocked", "testFiles": [], "reviewBasis": "skeleton"}),
+                    ),
+                    vec!["exception"],
+                ),
+            ],
+            Limits::default(),
+        );
+        assert_eq!(
+            s.stage,
+            Stage::Exception {
+                cause: Cause::Step {
+                    step: step_named("test-review"),
+                },
+                resume: None,
+            }
+        );
+        assert_eq!(s.feedback(), []);
+    }
+
+    #[test]
+    fn an_exception_saved_before_reviews_could_be_unsettled_loads_as_a_step_that_could_not_finish()
+    {
+        let stage: Stage = serde_json::from_value(json!(
+            {"cause": {"cause": "step", "step": "design-review"}, "resume": null, "stage": "exception"}
+        ))
+        .unwrap();
+        assert_eq!(
+            stage,
+            Stage::Exception {
+                cause: Cause::Step {
+                    step: Step::DesignReview,
+                },
+                resume: None,
+            }
         );
     }
 
@@ -3044,14 +3145,28 @@ mod tests {
                     vec![],
                 ),
                 (reviewed("code-review/1", code_pass()), vec!["exception"]),
-                (
-                    done(
-                        "exception",
-                        json!({"action": "retry", "note": "the reviewer's CLI was signed out"}),
-                    ),
-                    vec!["security-review"],
-                ),
             ],
+            Limits::default(),
+        );
+        assert_eq!(
+            s.stage,
+            Stage::Exception {
+                cause: Cause::Step {
+                    step: step_named("security-review"),
+                },
+                resume: None,
+            }
+        );
+        assert_eq!(s.feedback(), []);
+        let s = drive(
+            s,
+            vec![(
+                done(
+                    "exception",
+                    json!({"action": "retry", "note": "the reviewer's CLI was signed out"}),
+                ),
+                vec!["security-review"],
+            )],
             Limits::default(),
         );
         assert_eq!(s.stage, Stage::Reviewing);
@@ -3332,15 +3447,38 @@ mod tests {
             },
         );
         assert_eq!(names(&actions), ["commit after quality", "exception"]);
-        assert_eq!(
-            s.stage,
-            Stage::Exception {
-                cause: Cause::Step {
-                    step: step_named("code-review"),
+        assert_unsettled(&s, "code-review", &["code-review"]);
+    }
+
+    #[test]
+    fn a_round_past_the_owners_limit_names_the_reviews_whose_findings_are_under_correction() {
+        let limit = Limits {
+            review_rounds: Some(2),
+            fix_ci_rounds: None,
+        };
+        for (correcting, feedback) in [
+            (vec![Review::SecurityReview], vec!["security-review"]),
+            (
+                vec![
+                    Review::CodeReview { unit: 1 },
+                    Review::CodeReview { unit: 2 },
+                    Review::SecurityReview,
+                ],
+                vec!["code-review", "security-review"],
+            ),
+        ] {
+            let corrected = IssueState {
+                correction: Some(Correction::Round),
+                round: Round {
+                    number: 2,
+                    correcting: correcting.into_iter().collect(),
+                    ..Round::default()
                 },
-                resume: None,
-            }
-        );
+                ..at(running("quality"))
+            };
+            let (s, _) = step(&corrected, &quality("pass"), limit);
+            assert_unsettled(&s, "code-review", &feedback);
+        }
     }
 
     #[test]
@@ -3496,15 +3634,46 @@ mod tests {
             ],
             Limits::default(),
         );
-        assert_eq!(
-            s.stage,
-            Stage::Exception {
-                cause: Cause::Step {
-                    step: step_named("code-review"),
-                },
-                resume: None,
-            }
+        assert_unsettled(&s, "code-review", &["code-review"]);
+    }
+
+    #[test]
+    fn a_security_finding_kept_twice_is_the_security_reviews_feedback_and_retry_rechecks_it() {
+        let kept = || {
+            reviewed(
+                "security-review",
+                json!({"status": "pass", "summary": "s", "findings": [],
+                       "prior_feedback_reconciliation":
+                       [{"id": "S001", "prior_disposition": "apply", "status": "maintained", "evidence": "e"}]}),
+            )
+        };
+        let corrected = || answered(&json!([apply("S001", Some("security-review"))]));
+        let s = drive(
+            at(running("quality")),
+            vec![
+                (quality("pass"), ROUND.to_vec()),
+                (reviewed("code-review/1", code_pass()), vec![]),
+                (kept(), vec!["round 1 ended", "review-response"]),
+                (corrected(), vec!["quality"]),
+                (
+                    quality("pass"),
+                    vec!["commit after quality", "security-review", "rerun-check"],
+                ),
+                (done("rerun-check", json!({"rerun": []})), vec![]),
+                (kept(), vec!["exception"]),
+            ],
+            Limits::default(),
         );
+        assert_unsettled(&s, "code-review", &["security-review"]);
+        let s = drive(
+            s,
+            vec![(
+                done("exception", json!({"action": "retry", "note": "n"})),
+                vec!["security-review"],
+            )],
+            Limits::default(),
+        );
+        assert_eq!(s.stage, Stage::Reviewing);
     }
 
     #[test]
