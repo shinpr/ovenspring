@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { api } from '../../api/client.ts'
 import { Contact } from '../../components/Contact/Contact.tsx'
+import { statusRun } from '../../lib/vocabulary.ts'
 import { RunDrawer } from '../RunDrawer.tsx'
 import { useShell } from '../Shell.tsx'
 import { NowView } from './NowView.tsx'
@@ -18,13 +19,13 @@ export function NowPage() {
         now={new Date()}
         lostAt={overview.failed ? overview.answeredAt : undefined}
         onFollow={(key) => {
+          const row = overview.data?.issues.find((i) => i.key === key)
+          if (row === undefined) {
+            return
+          }
           api
             .launches({ issue: key })
-            .then((rows) => {
-              // The run under way; a run that ended just now is the one its activity named.
-              const running = rows.find((r) => r.result === 'running') ?? rows[0]
-              setRun(running?.id)
-            })
+            .then((rows) => setRun(statusRun(row.now, rows)?.id))
             .catch(() => undefined)
         }}
       />

@@ -127,7 +127,7 @@ Five, the same for every issue: **Requirements**, **Design**, **Build**, **Revie
 | Build | Task n of m (Implementing for a small issue) · Reviewing tests · Quality checks · Committing |
 | Review | Reviews running · Judging findings · Rechecking |
 | Merge | Pushing · Waiting for CI · Fixing CI · Resolving a conflict · Waiting for bots · Waiting for a GitHub review · Blocked by GitHub · Checking merge |
-| Any | ▲ Problem: <cause> (the lead's exception; cause: "<step name> stopped", such as "Code review stopped", "dependency dropped", "PR closed", "push refused", "<operation> failing") · On hold (paused) |
+| Any | Addressing <review> feedback (the lead's exception after reviews ended with findings outstanding, in normal styling; the reviews as they read in running text, such as "Addressing design review feedback", "Addressing security review feedback", "Addressing code and security review feedback") · ▲ Problem: <cause> (the lead's exception for anything that could not go on; cause: "<step name> stopped", such as "Code review stopped", "dependency dropped", "PR closed", "push refused", "<operation> failing") · On hold (paused) |
 
 ### Waiting for you (actions)
 
@@ -260,7 +260,7 @@ One grid for every section of S-01: key (mono, muted) · title · phase · statu
 | Section | Phase | Status | Meta | Interaction | Evidence |
 |---------|-------|--------|------|-------------|----------|
 | Waiting for you | - | ● <action> ↗ (accent, opens the Slack message in a new tab, or the pull request for Merge on GitHub and Approve on GitHub); "not in Slack yet" (muted) when undelivered; sprint decisions have no key and are titled by the sprint's purpose; the agreements pull request the owner merges is titled "Working agreements and knowledge" | - | Key and title → S-02 | AC-029, AC-030, AC-049 |
-| In progress | Phase word (muted) | Activity; ▲ Problem: <cause> in `color-fail`; On hold (paused) muted | Duration | Activity with a running run → D-01; key and title → S-02 | AC-043 |
+| In progress | Phase word (muted) | Activity; "Addressing <review> feedback" in normal styling while the lead addresses outstanding review findings; ▲ Problem: <cause> in `color-fail`; On hold (paused) muted | Duration | Activity with a running run → D-01 (for "Addressing <review> feedback", the lead's running run only; none before it starts); key and title → S-02 | AC-043 |
 | Waiting to start | - | Reason (muted), a dependency's key links to it | - | → S-02 | AC-030 |
 | Done | - | Outcome (Merged in text colour, the others muted) | Clock time, with the date for an earlier day | → S-02 | AC-041 |
 
@@ -270,7 +270,7 @@ Empty sections: "Nothing is in progress." and "No issue has ended yet."; Waiting
 
 | State | Display | Evidence |
 |-------|---------|----------|
-| In progress | "<Who> <activity sentence> · for <duration>" and "follow" when a run is under way; "GitHub won't merge it yet." and "See why on the pull request ↗" while GitHub blocks the merge; "The lead is handling a problem: <cause>" (`color-fail`) during an exception; "· on hold while the factory is paused" while paused | AC-044 |
+| In progress | "<Who> <activity sentence> · for <duration>" and "follow" when a run is under way; "GitHub won't merge it yet." and "See why on the pull request ↗" while GitHub blocks the merge; "Lead is addressing <review> feedback · for <duration>" and "follow" while the lead addresses outstanding review findings in its running run, or "Addressing <review> feedback · for <duration>" with no one named and no "follow" before that run starts (normal styling); "The lead is handling a problem: <cause>" (`color-fail`) during any other exception; "· on hold while the factory is paused" while paused | AC-044 |
 | Waiting for you | "Waiting for you: <action>" and "Answer in Slack ↗", or "Open the pull request ↗" for Merge on GitHub | AC-049 |
 | Waiting to start | The reason: "Starts after <KEY> merges." ("Starts after <KEY> and <KEY> merge." for several), or "Starts when <KEY> (or one of <KEYS>) ends, because Settings limits how many issues run at once." with Settings linked | AC-030 |
 | Done | "<Outcome> at <clock>.", with ": <the owner's words>" when the owner canceled it with words | AC-041 |

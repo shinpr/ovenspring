@@ -7,6 +7,7 @@ import {
   activityWords,
   agentAtWork,
   ENDING,
+  failure,
   PHASE,
   problemWords,
 } from '../../lib/vocabulary.ts'
@@ -92,15 +93,16 @@ function progressStatus({ issue, onFollow }: IssueProps): ReactNode {
   if (p.onHold) {
     return <span className={styles['muted']}>On hold (paused)</span>
   }
-  if (p.problem !== null) {
+  const problem = failure(p)
+  if (problem !== null) {
     return (
       <span className={styles['problem']}>
-        <span aria-hidden="true">▲ </span>Problem: {problemWords(p.problem)}
+        <span aria-hidden="true">▲ </span>Problem: {problemWords(problem)}
       </span>
     )
   }
   const words = activityWords(p)
-  return agentAtWork(p.activity) && onFollow !== undefined ? (
+  return agentAtWork(p) && onFollow !== undefined ? (
     <button type="button" className={styles['follow']} onClick={() => onFollow(issue.key)}>
       {words}
     </button>
