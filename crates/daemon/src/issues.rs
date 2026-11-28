@@ -91,13 +91,16 @@ pub struct IssueRecord {
     pub canceled: Option<String>,
 }
 
-/// The worktree's trees around an executor's change. `before` is the tree when its launch was
-/// placed, moved past what a merge from the branch brought in while it was open; `after` is the
-/// tree when it ended, `None` while it is open (a blocked executor's retry continues it).
+/// The worktree's trees around an executor's change. A tree that could not be recorded is `None`,
+/// so the change's test review is given no trees rather than another executor's.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct Change {
-    pub before: String,
-    pub after: Option<String>,
+#[serde(rename_all = "kebab-case")]
+pub enum Change {
+    /// From the executor's launch until it completes (a blocked executor's retry continues it):
+    /// the tree when its launch was placed, moved past what a merge from the branch brought in.
+    Open { before: Option<String> },
+    /// The completed change: its start and the tree when it ended.
+    Ended { trees: Option<(String, String)> },
 }
 
 /// A reply owed to a judged pull request comment. An applied comment is answered with the first
@@ -994,12 +997,14 @@ impl Daemon {
                     r.summaries.extend(e.change_summary.iter().cloned());
                     // A correction's tree too, so a test review after it is given what it changed.
                     // An incomplete result keeps the change open: its retry continues the change.
+                    if let Some(Change::Open { before }) = &r.change
+                        && e.status == ExecutorStatus::Completed
+                    {
+                        r.change = Some(Change::Ended {
+                            trees: before.clone().zip(tree.clone()),
+                        });
+                    }
                     if let Some(tree) = tree {
-                        if let Some(change) = r.change.as_mut()
-                            && e.status == ExecutorStatus::Completed
-                        {
-                            change.after = Some(tree.clone());
-                        }
                         r.trees.push((task, tree));
                     }
                 })?;
@@ -1107,21 +1112,12 @@ impl Daemon {
         let Some(record) = self.issue(key)? else {
             return Ok(()); // An item filed outside the issue flow has no change to record.
         };
-        if record.change.is_some_and(|c| c.after.is_none()) {
+        if matches!(record.change, Some(Change::Open { .. })) {
             return Ok(());
         }
-        let Some(before) = self.tree_of(key) else {
-            // An earlier change's endpoints would describe another executor's work: the test
-            // review falls back to the recorded trees.
-            return self.update_issue(key, |r| r.change = None).map(drop);
-        };
-        self.update_issue(key, |r| {
-            r.change = Some(Change {
-                before,
-                after: None,
-            });
-        })?;
-        Ok(())
+        let before = self.tree_of(key);
+        self.update_issue(key, |r| r.change = Some(Change::Open { before }))
+            .map(drop)
     }
 
     /// Runs `merge`, a merge from the branch into the issue's worktree. While a change is open,
@@ -1132,11 +1128,10 @@ impl Daemon {
         key: &str,
         merge: impl FnOnce() -> Result<bool, DaemonError>,
     ) -> Result<bool, DaemonError> {
-        let open = self
-            .issue(key)?
-            .and_then(|r| r.change)
-            .filter(|c| c.after.is_none());
-        let Some(change) = open else {
+        let Some(Change::Open {
+            before: Some(start),
+        }) = self.issue(key)?.and_then(|r| r.change)
+        else {
             return merge();
         };
         let pre = self.tree_of(key);
@@ -1150,12 +1145,12 @@ impl Daemon {
         }
         let moved = self
             .tree_index(key)
-            .and_then(|trees| trees.moved_start(&change.before, &pre, &post));
-        if let Some(before) = moved {
+            .and_then(|trees| trees.moved_start(&start, &pre, &post));
+        if let Some(moved) = moved {
             self.update_issue(key, |r| {
-                if let Some(c) = r.change.as_mut() {
-                    c.before = before;
-                }
+                r.change = Some(Change::Open {
+                    before: Some(moved),
+                });
             })?;
         }
         Ok(merged)

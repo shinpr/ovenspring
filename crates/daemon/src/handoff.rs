@@ -712,16 +712,17 @@ impl Ctx<'_> {
 
 /// The trees a test review compares: the recorded change's start and end, or, for a change an
 /// earlier version launched, the last two recorded trees (`fallback` before the only one). A
-/// change whose end could not be recorded gives none: the recorded trees would describe an
-/// earlier executor's work.
+/// change still open, or one whose start or end could not be recorded, gives none: the recorded
+/// trees would describe an earlier executor's work.
 fn recorded_change(record: &IssueRecord, fallback: &str) -> Option<(String, String)> {
-    if let Some(Change { before, after }) = &record.change {
-        return after.clone().map(|after| (before.clone(), after));
-    }
-    match record.trees.as_slice() {
-        [.., (_, before), (_, after)] => Some((before.clone(), after.clone())),
-        [(_, after)] => Some((fallback.to_owned(), after.clone())),
-        [] => None,
+    match &record.change {
+        Some(Change::Ended { trees }) => trees.clone(),
+        Some(Change::Open { .. }) => None,
+        None => match record.trees.as_slice() {
+            [.., (_, before), (_, after)] => Some((before.clone(), after.clone())),
+            [(_, after)] => Some((fallback.to_owned(), after.clone())),
+            [] => None,
+        },
     }
 }
 
@@ -799,10 +800,12 @@ mod tests {
         );
     }
 
-    // Behavior: the earlier task's change ended, the next executor's change opened, and its end
-    //     could not be recorded -> its test review is given no trees, not the earlier task's.
+    // Behavior: an earlier task's trees are recorded; the next executor's change is still open,
+    //     or ended with its start or end unrecorded -> its test review is given no trees, not the
+    //     earlier task's. A record without a change (launched by an earlier version) falls back to
+    //     the last two trees.
     #[test]
-    fn an_open_change_gives_no_trees_and_a_record_without_one_falls_back_to_the_last_two() {
+    fn only_a_change_ended_with_both_trees_gives_trees_and_a_record_without_one_falls_back() {
         let mut record = IssueRecord::new("ACME-1", "Export orders", vec![]);
         record.trees = vec![(Some(0), "t0".into()), (Some(0), "t1".into())];
         assert_eq!(
@@ -810,10 +813,23 @@ mod tests {
             Some(("t0".to_owned(), "t1".to_owned()))
         );
 
-        record.change = Some(Change {
-            before: "t1".into(),
-            after: None,
+        for unrecorded in [
+            Change::Open {
+                before: Some("t1".into()),
+            },
+            Change::Open { before: None },
+            Change::Ended { trees: None },
+        ] {
+            record.change = Some(unrecorded);
+            assert_eq!(recorded_change(&record, "base"), None);
+        }
+
+        record.change = Some(Change::Ended {
+            trees: Some(("t1".into(), "t2".into())),
         });
-        assert_eq!(recorded_change(&record, "base"), None);
+        assert_eq!(
+            recorded_change(&record, "base"),
+            Some(("t1".to_owned(), "t2".to_owned()))
+        );
     }
 }

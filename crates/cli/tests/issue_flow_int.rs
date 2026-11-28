@@ -1625,6 +1625,72 @@ fn two_tasks_redone_script(key: &str) -> Value {
     Value::Object(script)
 }
 
+// AC: GH-52 (correction-under-way design AC6): "A `test-review` item's `diffBase` shall be the
+//     worktree's tree when the latest `implement` or `review-response` started ... A path changed
+//     in the worktree before that executor started is not listed."
+// Behavior: task 1's change is recorded and its test review runs -> the daemon can no longer write
+//     trees -> task 2's `implement` starts and ends with neither tree recorded -> its test review
+//     is given no `diffHead` and no `changedFiles`, not task 1's recorded trees.
+// @lane: integration
+// @dependency: daemon, handoff, store, real git, fake agent
+#[test]
+fn a_test_review_whose_change_could_not_be_recorded_is_given_no_earlier_change() {
+    let env = Env::new();
+    env.configure(CONFIG);
+    env.add_branch("develop");
+    let key = "ACME-154";
+    let mut script = designed(key, &[], &[("1", ""), ("2", "1")]);
+    let tested = |task: &str| {
+        json!({"change": {"path": format!("tests/{key}-{task}_int.rs"), "content": "asserts\n"},
+               "output": {"status": "completed", "taskName": task, "changeSummary": format!("Test task {task}"),
+                          "requiresTestReview": true}})
+    };
+    script.insert(
+        format!("implement@{key}"),
+        json!([tested("1"), tested("2")]),
+    );
+    script.insert(
+        format!("test-review@{key}"),
+        json!([{"output": {"status": "pass", "testFiles": [format!("tests/{key}-1_int.rs")],
+                           "reviewBasis": "task-verification"}},
+               {"hang": true}]),
+    );
+    env.script_agents(&Value::Object(script));
+    let mut d = daemon(
+        &env,
+        services(
+            Arc::new(always_passing(&env, requiring_test())),
+            Arc::new(RecordingChannel::default()),
+            Arc::new(RecordingTracker::default()),
+        ),
+    );
+    d.begin_issue(key, "Export", vec![]).unwrap();
+
+    let trees = env.state().join("trees");
+    run_until(
+        &mut d,
+        90,
+        |d| {
+            let flow = d.issue(key).unwrap().unwrap().flow;
+            if flow.stage == Stage::running(Step::TestReview) && flow.task == 0 && trees.is_dir() {
+                // A file where the trees' index directory belongs: every later tree fails.
+                std::fs::remove_dir_all(&trees).unwrap();
+                std::fs::write(&trees, "").unwrap();
+            }
+        },
+        |d| {
+            let flow = d.issue(key).unwrap().unwrap().flow;
+            flow.stage == Stage::running(Step::TestReview) && flow.task == 1
+        },
+    );
+
+    let text = active_item(&d, Step::TestReview);
+    assert!(trees.is_file(), "the trees stayed unwritable");
+    for absent in ["diffHead: ", "changedFiles: "] {
+        assert!(!text.contains(&format!("\n{absent}")), "{text}");
+    }
+}
+
 // AC: GH-52 (correction-under-way design AC2): "When a planned task's test review raised findings
 //     that were corrected and then passed, and the next task's `implement` asks for a test review,
 //     the system shall file that test review without `previous_review`, `change_to_review` or
