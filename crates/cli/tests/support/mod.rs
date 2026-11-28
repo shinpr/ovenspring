@@ -11,6 +11,7 @@
 
 pub mod dashboard;
 pub mod fake_github;
+pub mod git_http;
 pub mod http;
 pub mod recording;
 pub mod scripts;

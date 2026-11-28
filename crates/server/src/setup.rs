@@ -428,13 +428,17 @@ pub(crate) fn settle_app(
     if started == Some(&app) {
         return Ok(app);
     }
-    let base = worktree::ensure_detached(
-        &context.repo,
-        &context.store,
-        worktree::BASE,
-        &config.repo.base_branch,
-    )
-    .map_err(|e| AppRefused::Failed(e.to_string()))?;
+    let base = fetch_base(context, &config.repo.base_branch)
+        .and_then(|()| {
+            worktree::ensure_detached(
+                &context.repo,
+                &context.store,
+                worktree::BASE,
+                &config.repo.base_branch,
+            )
+            .map_err(|e| e.to_string())
+        })
+        .map_err(AppRefused::Failed)?;
     match product_run::check(context.store.root(), &base, &app) {
         RunCheck::Started { .. } => Ok(app),
         RunCheck::Failed { output } => Err(AppRefused::Invalid(BTreeMap::from([(
@@ -442,6 +446,23 @@ pub(crate) fn settle_app(
             output,
         )]))),
     }
+}
+
+/// Fetches `base` from `origin` with the GitHub token the factory pushes with, before the daemon
+/// that holds its connection may run.
+fn fetch_base(context: &Context, base: &str) -> Result<(), String> {
+    let url = worktree::git(&context.repo, &["remote", "get-url", "origin"])
+        .map_err(|e| e.to_string())?;
+    let stored = credentials::read(&context.credentials).map_err(|e| e.to_string())?;
+    let token = ovenspring_integrations::github::selected_token(stored.github.token)
+        .ok_or("No GitHub token is set up to fetch the base branch with.")?;
+    let remote = ovenspring_integrations::github::GitRemote {
+        url: &url,
+        token: &token,
+    };
+    worktree::git_remote(&context.repo, &remote, &["fetch", "-q", "origin", base])
+        .map(|_| ())
+        .map_err(|e| e.to_string())
 }
 
 /// A value the owner typed, or `None` when the field was left empty.

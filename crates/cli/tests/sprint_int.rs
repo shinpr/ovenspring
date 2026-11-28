@@ -30,6 +30,7 @@ use ovenspring_integrations::tracker::TrackerIssue;
 use serde_json::{Map, Value, json};
 use support::dashboard::Dashboard;
 use support::fake_github::FakeGitHub;
+use support::git_http::GitHttp;
 use support::recording::RecordingTracker;
 use support::recording::{RecordingChannel, Sent};
 use support::scripts::{always_passing, implement_run, requiring_test, stage, straight};
@@ -1311,6 +1312,7 @@ fn agreements_failing_their_check() -> (
     Env,
     Daemon,
     Arc<FakeGitHub>,
+    GitHttp,
     Arc<RecordingChannel>,
     Arc<std::sync::atomic::AtomicBool>,
 ) {
@@ -1327,7 +1329,9 @@ fn agreements_failing_their_check() -> (
     prepare(&env, "", &script);
     let fixed = Arc::new(std::sync::atomic::AtomicBool::new(false));
     let passing = fixed.clone();
-    let gh = Arc::new(FakeGitHub::new(
+    let fixture = GitHttp::serve(&env.origin);
+    git(&env.repo, &["remote", "set-url", "origin", &fixture.url]);
+    let mut gh = FakeGitHub::new(
         env.origin.clone(),
         requiring_test(),
         Box::new(move |_| {
@@ -1338,7 +1342,9 @@ fn agreements_failing_their_check() -> (
             };
             vec![("test".to_owned(), state)]
         }),
-    ));
+    );
+    fixture.url.clone_into(&mut gh.remote);
+    let gh = Arc::new(gh);
     let tracker = Arc::new(RecordingTracker::default());
     *tracker.issues.lock().unwrap() = vec![issue("ACME-120", &[]), issue("ACME-126", &[])];
     let channel = Arc::new(RecordingChannel::default());
@@ -1371,24 +1377,26 @@ fn agreements_failing_their_check() -> (
             .iter()
             .any(|x| x.kind == DecisionKind::Recovery && x.issue.is_none())
     });
-    (env, d, gh, channel, fixed)
+    (env, d, gh, fixture, channel, fixed)
 }
 
 // AC: docs/design/factory-core-design.md § Acceptance Criteria > Observation, exceptions and
 //     recovery: "If the agreements pull request's checks fail, then the system shall file
 //     `exception` for the lead on the sprint (AC-062)"; "When an owner approves M-09 ... or when an
 //     owner presses Resolved, it shall clear the stop, read the current state and run the stopped
-//     operation again (AC-064)". Sprint states: "The agreements commit takes the repository's git
-//     identity, as every commit the factory makes".
-// Behavior: the review is approved and the agreements pull request is opened -> its required
-//     check fails in a way no agent can fix -> the sprint stops and the lead's `exception` proposes
-//     a recovery (M-09) -> the owner fixes the check and presses Resolved -> the factory merges the
-//     agreements and the next sprint starts.
+//     operation again (AC-064)". § Commits: "Every commit the factory creates, including ... the
+//     agreements commit, is authored and committed as the configured GitHub token's account";
+//     every factory Git command that talks to `origin` "authenticates with the same token".
+// Behavior: the review is approved and the agreements pull request is opened, its commit made as
+//     the token's account and pushed with the token to an `origin` that refuses any other
+//     credential -> its required check fails in a way no agent can fix -> the sprint stops and the
+//     lead's `exception` proposes a recovery (M-09) -> the owner fixes the check and presses
+//     Resolved -> the factory merges the agreements and the next sprint starts.
 // @lane: integration
-// @dependency: daemon, sprint flow, gate, owner channel, fake agent, FakeGitHub
+// @dependency: daemon, sprint flow, gate, owner channel, fake agent, FakeGitHub, GitHttp fixture
 #[test]
 fn a_failed_check_on_the_agreements_reaches_the_lead_and_the_next_sprint_starts_once_resolved() {
-    let (env, mut d, gh, channel, fixed) = agreements_failing_their_check();
+    let (env, mut d, gh, fixture, channel, fixed) = agreements_failing_their_check();
     assert_eq!(
         d.sprint().unwrap().unwrap().stage,
         SprintStage::Asking {
@@ -1413,8 +1421,17 @@ fn a_failed_check_on_the_agreements_reaches_the_lead_and_the_next_sprint_starts_
         ],
     );
     assert_eq!(
-        git(&env.origin, &["log", "-1", "--format=%an <%ae>", &branch]),
-        "Storefront Dev <dev@storefront.test>"
+        git(
+            &env.origin,
+            &["log", "-1", "--format=%an <%ae> | %cn <%ce>", &branch]
+        ),
+        "factory-bot <12345678+factory-bot@users.noreply.github.com> | \
+         factory-bot <12345678+factory-bot@users.noreply.github.com>"
+    );
+    assert!(
+        fixture.accepted().iter().any(|s| s == "git-receive-pack"),
+        "{:?}",
+        fixture.accepted()
     );
 
     fixed.store(true, std::sync::atomic::Ordering::SeqCst);
@@ -1463,7 +1480,7 @@ fn a_failed_check_on_the_agreements_reaches_the_lead_and_the_next_sprint_starts_
 // @dependency: daemon, sprint flow, owner channel, recovery
 #[test]
 fn an_approved_sprint_recovery_runs_even_when_origin_cannot_be_fetched() {
-    let (env, mut d, _gh, channel, _fixed) = agreements_failing_their_check();
+    let (env, mut d, _gh, _fixture, channel, _fixed) = agreements_failing_their_check();
     let origin = git(&env.repo, &["remote", "get-url", "origin"]);
     git(
         &env.repo,

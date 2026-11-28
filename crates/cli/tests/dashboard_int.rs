@@ -837,6 +837,7 @@ fn run_the_product_writes_commands_only_once_they_start_then_the_goal_finishes_s
     let env = Env::new();
     env.configure("[app]\n");
     let dash = Dashboard::with_checks(&env, Checks { refuse: None });
+    dash.hold_github_token("test-token");
     assert_eq!(dash.get("/api/v1/setup").json()["step"], "run");
 
     let broken = dash.put(
@@ -1504,6 +1505,7 @@ fn app_guard_and_review_settings_are_saved_to_the_configuration() {
     let env = Env::new();
     env.configure("");
     let dash = Dashboard::with_checks(&env, Checks { refuse: None });
+    dash.hold_github_token("test-token");
 
     let broken = dash.put(
         "/api/v1/settings/app",

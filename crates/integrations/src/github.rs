@@ -13,6 +13,8 @@ use crate::http::{HttpError, Method, Request, Response, Transport, check};
 pub struct RepoId {
     pub owner: String,
     pub name: String,
+    /// The remote URL `owner/name` was read from, which the factory's Git commands may reach.
+    pub remote: String,
 }
 
 impl RepoId {
@@ -36,6 +38,7 @@ impl RepoId {
         (!owner.is_empty() && !name.is_empty() && !name.contains('/')).then(|| RepoId {
             owner: owner.to_owned(),
             name: name.to_owned(),
+            remote: url.to_owned(),
         })
     }
 }
@@ -194,9 +197,51 @@ pub enum MergeOutcome {
     },
 }
 
+/// The account the token belongs to.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Account {
+    pub login: String,
+    pub id: u64,
+}
+
+impl Account {
+    /// The noreply address GitHub links to this account, used as the factory's commit email.
+    pub fn email(&self) -> String {
+        format!("{}+{}@users.noreply.github.com", self.id, self.login)
+    }
+}
+
+/// Where the factory's Git commands may reach and the token they authenticate with: the remote
+/// URL the connection's `RepoId` was read from, and the token the API sends.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub struct GitRemote<'a> {
+    pub url: &'a str,
+    pub token: &'a str,
+}
+
+/// The token of the signed-in `gh`, when there is one.
+pub fn gh_token() -> Option<String> {
+    let out = std::process::Command::new("gh")
+        .args(["auth", "token"])
+        .output()
+        .ok()?;
+    out.status
+        .success()
+        .then(|| String::from_utf8_lossy(&out.stdout).trim().to_owned())
+        .filter(|t| !t.is_empty())
+}
+
+/// The GitHub token the factory uses: the one setup stored or, when none was entered, the token
+/// of the signed-in `gh`.
+pub fn selected_token(stored: Option<String>) -> Option<String> {
+    stored.or_else(gh_token)
+}
+
 pub trait GitHub {
-    /// The login of the account the token belongs to.
-    fn viewer(&self) -> Result<String, HttpError>;
+    /// The account the token belongs to.
+    fn viewer(&self) -> Result<Account, HttpError>;
+    /// The connected `origin` URL and the token, for the factory's Git commands. No I/O.
+    fn git_remote(&self) -> GitRemote<'_>;
     fn pull_for_branch(&self, branch: &str) -> Result<Option<Pull>, HttpError>;
     fn pull(&self, number: u64) -> Result<Pull, HttpError>;
     fn open_pull(&self, new: &NewPull<'_>) -> Result<Pull, HttpError>;
@@ -342,9 +387,19 @@ impl<T: Transport> GitHubApi<T> {
 }
 
 impl<T: Transport> GitHub for GitHubApi<T> {
-    fn viewer(&self) -> Result<String, HttpError> {
-        let user: RawUser = self.get(format!("{}/user", self.api))?;
-        Ok(user.login)
+    fn viewer(&self) -> Result<Account, HttpError> {
+        let viewer: RawViewer = self.get(format!("{}/user", self.api))?;
+        Ok(Account {
+            login: viewer.login,
+            id: viewer.id,
+        })
+    }
+
+    fn git_remote(&self) -> GitRemote<'_> {
+        GitRemote {
+            url: &self.repo.remote,
+            token: &self.token,
+        }
     }
 
     fn pull_for_branch(&self, branch: &str) -> Result<Option<Pull>, HttpError> {
@@ -569,6 +624,12 @@ fn encode(s: &str) -> String {
         }
     }
     out
+}
+
+#[derive(Deserialize)]
+struct RawViewer {
+    login: String,
+    id: u64,
 }
 
 #[derive(Deserialize)]
@@ -889,7 +950,8 @@ mod tests {
                 RepoId::from_remote(url),
                 Some(RepoId {
                     owner: "acme".into(),
-                    name: "storefront".into()
+                    name: "storefront".into(),
+                    remote: url.into(),
                 }),
                 "{url}"
             );

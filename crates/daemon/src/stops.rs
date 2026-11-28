@@ -11,7 +11,7 @@ use ovenspring_core::sprint::SprintFact;
 use ovenspring_integrations::http::Unanswered;
 
 use crate::errors::{ErrorKey, Failure, Via, out_of_reach, unanswered_cause};
-use crate::worktree::git;
+use crate::worktree::{connected, git_remote};
 use crate::{Daemon, DaemonError};
 
 /// The operation that stopped an issue, and what it last answered.
@@ -154,12 +154,12 @@ impl Daemon {
     }
 
     /// A failure that is the service's or the network's, not the factory's: no connection, a
-    /// timeout, 429 or 5xx from an API, or a git command when `origin` cannot be reached; with
+    /// timeout, 429 or 5xx from an API, or a git command when GitHub's Git endpoint cannot be reached; with
     /// its cause and the way to GitHub that failed.
     fn unreachable(&self, e: &DaemonError) -> Option<(Unanswered, String, Via)> {
         match e {
             DaemonError::GitHub(e) => out_of_reach(e).map(|(why, cause)| (why, cause, Via::Api)),
-            DaemonError::Git(_) => (!self.origin_answers()).then(|| {
+            DaemonError::Git(_) => self.git_out_of_reach().then(|| {
                 let why = Unanswered::NoConnection;
                 (why, unanswered_cause(why, None), Via::Git)
             }),
@@ -170,13 +170,30 @@ impl Daemon {
         }
     }
 
-    /// Whether the repository's `origin` answers git.
-    pub(crate) fn origin_answers(&self) -> bool {
-        git(
-            &self.paths.repo,
-            &["ls-remote", "-q", "--exit-code", "origin", "HEAD"],
-        )
-        .is_ok()
+    /// Whether a failed Git command is GitHub's Git endpoint out of reach rather than the
+    /// factory's or the token's own failure. Not when no GitHub connection is configured, when
+    /// `origin` is refused locally (it no longer leads to the connected repository), or when
+    /// `origin` answers the token. Otherwise GitHub's API decides: a refusal there means the token
+    /// is refused, which retrying does not mend.
+    pub(crate) fn git_out_of_reach(&self) -> bool {
+        let Ok(github) = self.github() else {
+            return false;
+        };
+        let remote = github.git_remote();
+        if connected(&self.paths.repo, &remote).is_err()
+            || git_remote(
+                &self.paths.repo,
+                &remote,
+                &["ls-remote", "-q", "--exit-code", "origin", "HEAD"],
+            )
+            .is_ok()
+        {
+            return false;
+        }
+        match github.viewer() {
+            Ok(_) => true,
+            Err(e) => out_of_reach(&e).is_some(),
+        }
     }
 
     /// Stops the issue on `operation`: its open work ends, the record names what failed, and the

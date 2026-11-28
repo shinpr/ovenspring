@@ -331,11 +331,7 @@ fn github_api(repo: &Path, held: &Credentials) -> (Option<Arc<GitHubApi<Ureq>>>,
         return (None, None);
     };
     let using_gh_token = held.github.token.is_none();
-    let Some(token) = held
-        .github
-        .token
-        .clone()
-        .or_else(crate::setup_checks::gh_token)
+    let Some(token) = ovenspring_integrations::github::selected_token(held.github.token.clone())
     else {
         return (None, None);
     };

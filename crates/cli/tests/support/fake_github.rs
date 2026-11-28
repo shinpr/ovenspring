@@ -8,8 +8,9 @@ use std::process::Command;
 use std::sync::Mutex;
 
 use ovenspring_integrations::github::{
-    BranchRules, Check, CheckState, Comment, CommentKind, GitHub, MergeOutcome, MergeState,
-    NewPull, Permission, Pull, PullState, Review, ReviewDecision, ReviewState, Standing,
+    Account, BranchRules, Check, CheckState, Comment, CommentKind, GitHub, GitRemote, MergeOutcome,
+    MergeState, NewPull, Permission, Pull, PullState, Review, ReviewDecision, ReviewState,
+    Standing,
 };
 use ovenspring_integrations::http::{HttpError, Unanswered};
 
@@ -45,7 +46,10 @@ struct State {
 
 pub struct FakeGitHub {
     origin: PathBuf,
+    /// The token owner's login; the account's id is always 12345678.
     pub viewer: String,
+    /// The connected `origin` URL `git_remote()` returns: the `origin` path given to `new`.
+    pub remote: String,
     pub rules: BranchRules,
     /// Approving reviews a rule requires; GitHub reports the shortfall as the review decision.
     pub approvals_required: usize,
@@ -69,6 +73,8 @@ pub struct FakeGitHub {
     pub failing_pull_reads: std::sync::atomic::AtomicBool,
     /// While set, replying to a comment is refused (HTTP 403).
     pub refuse_replies: std::sync::atomic::AtomicBool,
+    /// While set, reading the token's account is refused (HTTP 401), as for a revoked token.
+    pub refuse_viewer: std::sync::atomic::AtomicBool,
     /// While set, reading the pull request of this branch is refused (HTTP 403).
     pub refuse_pull_of: Mutex<Option<String>>,
     /// While set, deleting a branch is refused (HTTP 403).
@@ -96,6 +102,7 @@ fn bare(origin: &PathBuf, args: &[&str]) -> Result<String, String> {
 impl FakeGitHub {
     pub fn new(origin: PathBuf, rules: BranchRules, checks: CheckScript) -> FakeGitHub {
         FakeGitHub {
+            remote: origin.to_string_lossy().into_owned(),
             origin,
             viewer: "factory-bot".into(),
             rules,
@@ -110,6 +117,7 @@ impl FakeGitHub {
             unreachable: std::sync::atomic::AtomicBool::new(false),
             failing_pull_reads: std::sync::atomic::AtomicBool::new(false),
             refuse_replies: std::sync::atomic::AtomicBool::new(false),
+            refuse_viewer: std::sync::atomic::AtomicBool::new(false),
             refuse_pull_of: Mutex::new(None),
             refuse_branch_deletes: std::sync::atomic::AtomicBool::new(false),
             stale_head: Mutex::new(None),
@@ -287,9 +295,27 @@ impl FakeGitHub {
 }
 
 impl GitHub for FakeGitHub {
-    fn viewer(&self) -> Result<String, HttpError> {
+    fn viewer(&self) -> Result<Account, HttpError> {
         self.reachable()?;
-        Ok(self.viewer.clone())
+        if self.refuse_viewer.load(std::sync::atomic::Ordering::SeqCst) {
+            return Err(HttpError::Status {
+                method: "GET",
+                url: "https://api.github.test/user".into(),
+                status: 401,
+                message: "Bad credentials".into(),
+            });
+        }
+        Ok(Account {
+            login: self.viewer.clone(),
+            id: 12_345_678,
+        })
+    }
+
+    fn git_remote(&self) -> GitRemote<'_> {
+        GitRemote {
+            url: &self.remote,
+            token: "test-token",
+        }
     }
 
     fn pull_for_branch(&self, branch: &str) -> Result<Option<Pull>, HttpError> {

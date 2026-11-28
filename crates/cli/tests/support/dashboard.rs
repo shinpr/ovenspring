@@ -70,6 +70,14 @@ impl Dashboard {
         ovenspring_store::credentials::write(&self.credentials, &held).unwrap();
     }
 
+    /// Stores `token` as the GitHub token setup entered, which the base fetch of Run the product
+    /// authenticates with.
+    pub fn hold_github_token(&self, token: &str) {
+        let mut held = ovenspring_store::credentials::read(&self.credentials).unwrap();
+        held.github.token = Some(token.to_owned());
+        ovenspring_store::credentials::write(&self.credentials, &held).unwrap();
+    }
+
     pub fn get(&self, path: &str) -> Response {
         request(self.server.addr, &format!("GET {path}"), None)
     }

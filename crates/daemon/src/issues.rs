@@ -18,7 +18,7 @@ use ovenspring_store::{StoreError, item_name};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
-use crate::worktree::git;
+use crate::worktree::{git, git_as};
 use crate::{Daemon, DaemonError};
 
 /// What the daemon keeps about an issue: the flow's state and what the daemon's own actions need.
@@ -1111,8 +1111,9 @@ impl Daemon {
                 return Ok(committed);
             }
             Ok(_) => {
+                let account = self.github()?.viewer()?;
                 let message = commit_message(&record, after, &self.config.repo.base_branch);
-                git(&worktree, &["commit", "-q", "-m", &message])
+                git_as(&worktree, &account, &["commit", "-q", "-m", &message])
                     .and_then(|_| git(&worktree, &["rev-parse", "HEAD"]))
             }
             Err(e) => Err(e),

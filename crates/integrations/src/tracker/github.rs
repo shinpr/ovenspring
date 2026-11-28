@@ -131,7 +131,7 @@ impl<T: Transport> Tracker for GitHubApi<T> {
     }
 
     fn start(&self, key: &str) -> Result<(), HttpError> {
-        let me = crate::github::GitHub::viewer(self)?;
+        let me = crate::github::GitHub::viewer(self)?.login;
         let url = self.repo_url(&format!("/issues/{}/assignees", number(key)?));
         self.call(
             Method::Post,

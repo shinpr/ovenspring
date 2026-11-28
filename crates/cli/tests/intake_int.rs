@@ -20,9 +20,11 @@ use ovenspring_core::sprint::SprintStage;
 use ovenspring_core::step::Step;
 use ovenspring_daemon::owner::DecisionStatus;
 use ovenspring_integrations::channel::{Button, ChannelEvent, DecisionKind};
+use ovenspring_integrations::github::BranchRules;
 use ovenspring_integrations::tracker::{TrackerComment, TrackerIssue};
 use serde_json::json;
 use support::recording::{RecordingChannel, RecordingTracker};
+use support::scripts::always_passing;
 use support::{Env, daemon, daemon_timed, item as new_item};
 
 // AC: "If the command's reason contains a credential the daemon held at any moment from the
@@ -387,7 +389,10 @@ fn an_issue_admitted_during_proposing_is_published_afterward_and_triggers_one_pr
     let channel = Arc::new(RecordingChannel::default());
     let mut timing = support::QUICK;
     timing.tracker_poll = std::time::Duration::from_secs(60);
-    let mut daemon = daemon_timed(&env, services(tracker, channel, Vec::new()), timing);
+    let mut services = services(tracker, channel, Vec::new());
+    // The sprint plan launches in the base checkout, which is fetched with the GitHub connection.
+    services.github = Some(Arc::new(always_passing(&env, BranchRules::default())));
+    let mut daemon = daemon_timed(&env, services, timing);
     let proposal = set_proposing(&daemon, None);
 
     daemon.tick().unwrap();

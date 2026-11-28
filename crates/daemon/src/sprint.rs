@@ -23,7 +23,7 @@ use serde_json::json;
 use crate::issues::IssueRecord;
 use crate::owner::{DecisionRecord, DecisionStatus, Proposal};
 use crate::pulls::{Gated, OwnerApprovals, Subject};
-use crate::worktree::git;
+use crate::worktree::{git, git_as, git_remote};
 use crate::{Daemon, DaemonError, records};
 
 impl Daemon {
@@ -509,10 +509,11 @@ impl Daemon {
         }
         // A retry after a failure further on finds the change already committed.
         let staged = git(&worktree, &["diff", "--cached", "--quiet"]).is_err();
-        // The repository's own git identity, as every commit the factory makes.
         if staged {
-            git(
+            let account = self.github()?.viewer()?;
+            git_as(
                 &worktree,
+                &account,
                 &[
                     "commit",
                     "-q",
@@ -735,8 +736,9 @@ impl Daemon {
             })?;
             return Ok(false);
         }
-        git(
+        git_remote(
             worktree,
+            &self.github()?.git_remote(),
             &["push", "-q", "origin", &format!("HEAD:refs/heads/{branch}")],
         )?;
         Ok(true)
