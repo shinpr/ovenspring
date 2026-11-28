@@ -539,7 +539,18 @@ mod tests {
         let connected = bare(&dir.path().join("a.git"));
         let other = bare(&dir.path().join("b.git"));
         let repo = repository(dir.path(), &other);
-        git(&repo, &["push", "-q", &other, "HEAD:refs/heads/elsewhere"]).unwrap();
+        // The other repository takes the branch itself: a push from `repo` to origin's URL can
+        // also write `refs/remotes/origin/elsewhere`, the ref the act must never create.
+        git(
+            Path::new(&other),
+            &[
+                "fetch",
+                "-q",
+                repo.to_str().unwrap(),
+                "main:refs/heads/elsewhere",
+            ],
+        )
+        .unwrap();
 
         let error = git_remote(
             &repo,
