@@ -177,6 +177,19 @@ pub fn record_connection(store: &Store, connection: &GitHubConnection) -> Result
         .map_err(|e| e.to_string())
 }
 
+/// The GitHub check Connect and Settings › General run: the service check, then `origin`'s URL as
+/// the factory's Git commands would take it, so no connection their first fetch refuses is
+/// reported as passed or recorded.
+pub(crate) fn check_github(
+    context: &Context,
+    token: Option<&str>,
+    base_branch: &str,
+) -> Result<GitHubConnection, String> {
+    let connection = context.checks.github(&context.repo, token, base_branch)?;
+    worktree::usable_remote(&connection.remote)?;
+    Ok(connection)
+}
+
 fn connection(context: &Context) -> Option<GitHubConnection> {
     context.store.read_record(GITHUB_ACCOUNT).ok().flatten()
 }
@@ -316,9 +329,7 @@ pub(crate) fn check(
     let (section, result) = match block {
         SetupCheck::Github { token, base_branch } => (
             "github",
-            context
-                .checks
-                .github(&context.repo, entered(token.as_deref()), base_branch.trim())
+            check_github(context, entered(token.as_deref()), base_branch.trim())
                 .map(|c| c.account.found()),
         ),
         SetupCheck::Tracker {
@@ -360,9 +371,7 @@ pub(crate) fn save(context: &Context, request: &SetupRequest) -> Result<SetupSta
         return Err(SetupRefused::Invalid(BTreeMap::from([(key, message)])));
     }
     let github = entered(request.github.token.as_deref());
-    let connection = context
-        .checks
-        .github(&context.repo, github, &request.repo.base_branch);
+    let connection = check_github(context, github, &request.repo.base_branch);
     let found = [
         (
             "github",
@@ -383,13 +392,11 @@ pub(crate) fn save(context: &Context, request: &SetupRequest) -> Result<SetupSta
         .into_iter()
         .filter_map(|(section, result)| result.err().map(|why| (section.to_owned(), why)))
         .collect();
-    if !errors.is_empty() {
-        return Err(SetupRefused::Invalid(errors));
-    }
-    if let Ok(connection) = &connection {
-        record_connection(&context.store, connection).map_err(SetupRefused::Failed)?;
-    }
-    write(context, request, &config).map_err(SetupRefused::Failed)?;
+    let connection = match connection {
+        Ok(connection) if errors.is_empty() => connection,
+        _ => return Err(SetupRefused::Invalid(errors)),
+    };
+    write(context, request, &config, &connection).map_err(SetupRefused::Failed)?;
     state(context).map_err(|e| SetupRefused::Failed(e.to_string()))
 }
 
@@ -414,7 +421,8 @@ pub(crate) fn save_run(context: &Context, request: RunRequest) -> Result<SetupSt
 
 /// `[app]` from the owner's answer. Commands are started once in the base branch's worktree,
 /// unless they are `started` already; they are refused under `check` when the product did not
-/// answer.
+/// answer, and under `request` when the base could not be fetched, which the owner fixes (a
+/// changed `origin`, a missing token or connection, an unreachable GitHub).
 pub(crate) fn settle_app(
     context: &Context,
     config: &Config,
@@ -451,17 +459,15 @@ pub(crate) fn settle_app(
     if started == Some(&app) {
         return Ok(app);
     }
-    let base = fetch_base(context, &config.repo.base_branch)
-        .and_then(|()| {
-            worktree::ensure_detached(
-                &context.repo,
-                &context.store,
-                worktree::BASE,
-                &config.repo.base_branch,
-            )
-            .map_err(|e| e.to_string())
-        })
-        .map_err(AppRefused::Failed)?;
+    fetch_base(context, &config.repo.base_branch)
+        .map_err(|why| AppRefused::Invalid(BTreeMap::from([("request".to_owned(), why)])))?;
+    let base = worktree::ensure_detached(
+        &context.repo,
+        &context.store,
+        worktree::BASE,
+        &config.repo.base_branch,
+    )
+    .map_err(|e| AppRefused::Failed(e.to_string()))?;
     match product_run::check(context.store.root(), &base, &app) {
         RunCheck::Started { .. } => Ok(app),
         RunCheck::Failed { output } => Err(AppRefused::Invalid(BTreeMap::from([(
@@ -534,9 +540,15 @@ fn config_of(request: &SetupRequest) -> Config {
     }
 }
 
-/// Writes the credentials first and the configuration last: the daemon starts once the
-/// configuration exists, by which time everything it reads is in place.
-fn write(context: &Context, request: &SetupRequest, config: &Config) -> Result<(), String> {
+/// Writes the credentials first, then the connection checked with them, and the configuration
+/// last: the daemon starts once the configuration exists, by which time everything it reads is in
+/// place, and a failed write never leaves a recorded destination beside a token not checked for it.
+fn write(
+    context: &Context,
+    request: &SetupRequest,
+    config: &Config,
+    connection: &GitHubConnection,
+) -> Result<(), String> {
     let held = Credentials {
         slack: credentials::Slack {
             bot_token: Some(request.slack.bot_token.trim().to_owned()),
@@ -553,6 +565,7 @@ fn write(context: &Context, request: &SetupRequest, config: &Config) -> Result<(
         },
     };
     credentials::write(&context.credentials, &held).map_err(|e| e.to_string())?;
+    record_connection(&context.store, connection)?;
     let dir = context.repo.join(".ovenspring");
     std::fs::create_dir_all(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
     write_config(&context.repo, config)

@@ -1538,6 +1538,121 @@ fn app_guard_and_review_settings_are_saved_to_the_configuration() {
     assert_eq!(config.review.bots, ["ai-reviewer[bot]"]);
 }
 
+/// The GitHub connection the last passed check recorded, as stored.
+fn recorded_connection(dash: &Dashboard) -> Option<String> {
+    std::fs::read_to_string(dash.store.root().join("github-account.json")).ok()
+}
+
+fn general_with_token(token: Option<&str>) -> Value {
+    json!({"baseBranch": "main", "mergeBy": "factory", "held": {}, "githubToken": token,
+           "personReviews": {}, "agreementsPath": "docs/factory/agreements",
+           "knowledgePath": "docs/knowledge"})
+}
+
+// AC: docs/design/github-git-identity-design.md AC4 and § Implementation Path Mapping
+//     (`SetupChecks::github`): the factory's Git commands refuse an SSH `origin` and one whose URL
+//     carries a password, so Connect and Settings › General refuse to record such a connection.
+// Behavior: a recorded connection -> `origin` set to an SSH URL, then to an HTTPS URL with a
+//     password -> the Connect check, the Settings › General save and, on a repository not yet
+//     set up, Connect's save are refused.
+// Cases (reported distinctly): (a) SSH: the refusal asks for an HTTPS origin; (b) password: the
+//     refusal shows it as `***`; in both, the recorded connection is the one before, Connect's
+//     save records none and writes no configuration, and neither the response nor the record
+//     carries the password.
+// @lane: integration
+// @dependency: dashboard server, setup and settings saves, connection record
+#[test]
+fn an_origin_the_factorys_git_would_refuse_is_refused_before_the_connection_is_recorded() {
+    let env = Env::new();
+    env.configure("");
+    let dash = Dashboard::with_checks(&env, Checks { refuse: None });
+    dash.connect_github("test-token", env.origin.to_str().unwrap());
+    let before = recorded_connection(&dash);
+
+    for (origin, expected) in [
+        ("git@github.com:acme/storefront.git", "HTTPS"),
+        (
+            "https://kai:hunter2@github.com/acme/storefront.git",
+            "kai:***@github.com",
+        ),
+    ] {
+        git(&env.repo, &["remote", "set-url", "origin", origin]);
+
+        let checked = dash.post(
+            "/api/v1/setup/check",
+            &json!({"section": "github", "token": null, "baseBranch": "main"}),
+        );
+        let saved = dash.put("/api/v1/settings/general", &general_with_token(None));
+        let fresh = Env::new();
+        git(&fresh.repo, &["remote", "set-url", "origin", origin]);
+        let connect = Dashboard::with_checks(&fresh, Checks { refuse: None });
+        let first_save = connect.put("/api/v1/setup", &setup_request());
+
+        for response in [&checked, &saved, &first_save] {
+            assert_eq!(response.status, 400, "{origin}: {}", response.body);
+            assert!(
+                response.body.contains(expected),
+                "{origin}: {}",
+                response.body
+            );
+            assert!(!response.body.contains("hunter2"), "{}", response.body);
+        }
+        assert_eq!(recorded_connection(&dash), before, "{origin}");
+        assert_eq!(recorded_connection(&connect), None, "{origin}");
+        assert!(!fresh.repo.join(".ovenspring/config.toml").exists());
+    }
+}
+
+// AC: docs/design/github-git-identity-design.md § Selected Design item 5: the dashboard's base
+//     fetch reaches only the URL the last passed GitHub check recorded, with the stored token.
+// Behavior: the credentials file cannot be replaced -> a save whose GitHub check passed for a new
+//     `origin` and token fails -> the destination and token the next base fetch would use are
+//     still the pair checked before.
+// Cases (reported distinctly): (a) Settings › General keeps the recorded URL and the stored
+//     token; (b) Connect records no connection.
+// @lane: integration
+// @dependency: dashboard server, setup and settings saves, connection record, credentials file
+#[test]
+fn a_save_whose_credentials_cannot_be_written_leaves_the_connection_it_had() {
+    let env = Env::new();
+    env.configure("");
+    let dash = Dashboard::with_checks(&env, Checks { refuse: None });
+    dash.connect_github("old-token", env.origin.to_str().unwrap());
+    let before = recorded_connection(&dash);
+    let elsewhere = env.dir.path().join("elsewhere.git");
+    git(
+        env.dir.path(),
+        &["init", "-q", "--bare", elsewhere.to_str().unwrap()],
+    );
+    git(
+        &env.repo,
+        &["remote", "set-url", "origin", elsewhere.to_str().unwrap()],
+    );
+    std::fs::create_dir_all(dash.credentials.with_extension("toml.new")).unwrap();
+
+    let saved = dash.put(
+        "/api/v1/settings/general",
+        &general_with_token(Some("new-token")),
+    );
+
+    assert_eq!(saved.status, 500, "{}", saved.body);
+    assert_eq!(recorded_connection(&dash), before);
+    let held = ovenspring_store::credentials::read(&dash.credentials).unwrap();
+    assert_eq!(held.github.token.as_deref(), Some("old-token"));
+
+    let fresh = Env::new();
+    let connect = Dashboard::with_checks(&fresh, Checks { refuse: None });
+    std::fs::create_dir_all(connect.credentials.with_extension("toml.new")).unwrap();
+    let mut request = setup_request();
+    request["github"]["token"] = json!("new-token");
+
+    let failed = connect.put("/api/v1/setup", &request);
+
+    assert_eq!(failed.status, 500, "{}", failed.body);
+    assert_eq!(recorded_connection(&connect), None);
+    assert!(!fresh.repo.join(".ovenspring/config.toml").exists());
+}
+
 // AC: PRD AC-069 (the owner names kinds of change a person reviews) and AC-070 (the working
 //     agreements and knowledge folders follow the repository's layout), both set in Settings.
 // Behavior: `PUT /api/v1/settings/general` with a kind of change and the folders -> the

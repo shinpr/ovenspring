@@ -323,8 +323,8 @@ fn saving_how_the_product_runs_fetches_the_base_with_the_configured_token() {
 }
 
 // Both save routes reach the base through the same fetch; this one goes through Settings. A
-// command that fails its check shows whether the fetch before it ran: a refused fetch is a 500,
-// and a fetch that passed lets the check answer 400.
+// command that fails its check shows whether the fetch before it ran: a refused fetch is refused
+// under `request`, and a fetch that passed lets the check refuse under `check`.
 #[test]
 fn a_save_after_origin_changed_since_the_github_check_is_refused_before_any_contact() {
     let env = Env::new();
@@ -338,11 +338,26 @@ fn a_save_after_origin_changed_since_the_github_check_is_refused_before_any_cont
 
     let saved = dash.put("/api/v1/settings/app", &failing);
 
-    assert_eq!(saved.status, 500, "{}", saved.body);
-    assert!(fixture.authorizations().is_empty() && fixture.accepted().is_empty());
+    assert_eq!(saved.status, 400, "{}", saved.body);
+    let why = &saved.json()["errors"]["request"];
+    let why = why.as_str().unwrap_or_else(|| panic!("{}", saved.body));
+    assert!(
+        why.contains(&fixture.url) && why.contains(connected),
+        "{why}"
+    );
+    assert_eq!(
+        fixture.requests(),
+        0,
+        "the replacement endpoint was contacted"
+    );
     git(&env.repo, &["remote", "set-url", "origin", connected]);
     let restored = dash.put("/api/v1/settings/app", &failing);
     assert_eq!(restored.status, 400, "control: {}", restored.body);
+    assert!(
+        restored.json()["errors"]["check"].is_string(),
+        "control: {}",
+        restored.body
+    );
 }
 
 #[test]

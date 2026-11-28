@@ -16,6 +16,7 @@ pub const TEST_TOKEN_AUTHORIZATION: &str = "Basic eC1hY2Nlc3MtdG9rZW46dGVzdC10b2
 
 #[derive(Default)]
 struct Seen {
+    requests: usize,
     authorizations: Vec<String>,
     accepted: Vec<String>,
 }
@@ -45,6 +46,12 @@ impl GitHttp {
             url: format!("http://127.0.0.1:{port}/{name}"),
             seen,
         }
+    }
+
+    /// How many requests arrived, counted as each connection opens, before it is read or checked
+    /// for the token.
+    pub fn requests(&self) -> usize {
+        self.seen.lock().unwrap().requests
     }
 
     /// Every `Authorization` field received, in order, each of a request's fields separately;
@@ -88,6 +95,7 @@ impl Request {
 }
 
 fn answer(stream: TcpStream, root: &Path, seen: &Mutex<Seen>) {
+    seen.lock().unwrap().requests += 1;
     let mut reader = BufReader::new(stream.try_clone().unwrap());
     let Some(request) = read_request(&mut reader) else {
         return;

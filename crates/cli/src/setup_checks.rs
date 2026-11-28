@@ -24,7 +24,8 @@ fn github_api(repo: &Path, token: Option<&str>) -> Result<(GitHubApi<Ureq>, bool
         let remote = ovenspring_daemon::worktree::git(repo, &["remote", "get-url", "origin"])
             .unwrap_or_default();
         format!(
-            "This repository's `origin` ({remote}) is not a GitHub address the factory reads: it takes git@github.com:owner/name or https://github.com/owner/name."
+            "This repository's `origin` ({}) is not a GitHub address the factory reads: it takes https://github.com/owner/name.",
+            ovenspring_daemon::worktree::redacted(&remote)
         )
     })?;
     let from_gh = token.is_none();

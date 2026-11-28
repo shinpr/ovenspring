@@ -272,22 +272,7 @@ fn admit(
     args: &[&str],
 ) -> Result<(), GitError> {
     let connected = redacted(remote.url);
-    if remote.url.starts_with("ssh://") || remote.url.starts_with("git@github.com:") {
-        return Err(refusal(
-            args,
-            format!(
-                "origin {connected} uses SSH; the factory reaches GitHub only over HTTPS with its token"
-            ),
-        ));
-    }
-    if has_password(remote.url) {
-        return Err(refusal(
-            args,
-            format!(
-                "origin {connected} carries a password, which Git would send instead of the GitHub token"
-            ),
-        ));
-    }
+    usable_remote(remote.url).map_err(|why| refusal(args, why))?;
     for listing in [
         &["remote", "get-url", "--all", "origin"][..],
         &["remote", "get-url", "--push", "--all", "origin"][..],
@@ -309,6 +294,25 @@ fn admit(
     Ok(())
 }
 
+/// Refuses a GitHub URL the factory's Git commands cannot reach with the token alone: an SSH one,
+/// or one carrying a password, which Git would send instead of the token. The reason names the
+/// URL with any password as `***`. Setup refuses such an `origin` before it records a connection,
+/// and the connection guard before every remote command.
+pub fn usable_remote(url: &str) -> Result<(), String> {
+    let shown = redacted(url);
+    if url.starts_with("ssh://") || url.starts_with("git@github.com:") {
+        return Err(format!(
+            "origin {shown} uses SSH; the factory's Git commands reach GitHub only over HTTPS with its token, so set origin to the repository's HTTPS address (https://github.com/owner/name)"
+        ));
+    }
+    if has_password(url) {
+        return Err(format!(
+            "origin {shown} carries a password, which Git would send instead of the GitHub token; remove it from origin's URL"
+        ));
+    }
+    Ok(())
+}
+
 /// The user part of `scheme://user:password@host/...`, when the URL has one.
 fn user_info(url: &str) -> Option<(usize, &str)> {
     let start = url.find("://")? + 3;
@@ -322,8 +326,8 @@ fn has_password(url: &str) -> bool {
     user_info(url).is_some_and(|(_, user)| user.contains(':'))
 }
 
-/// `url` with any password replaced by `***`, for messages that are recorded.
-fn redacted(url: &str) -> String {
+/// `url` with any password replaced by `***`, for messages that are recorded or shown.
+pub fn redacted(url: &str) -> String {
     match user_info(url) {
         Some((start, user)) => match user.find(':') {
             Some(colon) => {
