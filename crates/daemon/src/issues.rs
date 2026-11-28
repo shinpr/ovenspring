@@ -750,7 +750,7 @@ impl Daemon {
                 None => format!("Implement {key} within its requirements."),
             },
             Step::TestReview => format!(
-                "Review the integration and E2E tests {key}'s change added or updated{round}."
+                "Review the changes {key}'s change made to integration and E2E tests{round}."
             ),
             Step::Quality => {
                 format!("Run the quality checks on {key}'s change and fix what fails.")

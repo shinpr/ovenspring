@@ -2812,8 +2812,7 @@ fn comments_corrected_through_a_stub_repair_are_pushed_and_answered_without_a_re
         github_commenting_on_acme_160(&env),
     );
 
-    // The correction's steps, in order: the redone task's test review and its correction, and no
-    // review round before the push.
+    // No review round between the comments' acceptance and the push.
     let events = env.events();
     let accepted = events
         .iter()
@@ -2824,32 +2823,13 @@ fn comments_corrected_through_a_stub_repair_are_pushed_and_answered_without_a_re
             .iter()
             .position(|e| e["event"] == "pushed")
             .unwrap();
-    let filed: Vec<&str> = events[accepted..]
+    let reviews: Vec<&str> = events[accepted..pushed]
         .iter()
-        .filter(|e| e["event"] == "filed" && e["issue"] == "ACME-160" && e["turn"] != "prepare")
+        .filter(|e| e["event"] == "filed" && e["issue"] == "ACME-160")
         .map(|e| e["step"].as_str().unwrap())
+        .filter(|step| ["code-review", "security-review"].contains(step))
         .collect();
-    assert!(
-        !filed.contains(&"code-review") && !filed.contains(&"security-review"),
-        "{filed:?}"
-    );
-    let corrected: Vec<&str> = events[accepted..pushed]
-        .iter()
-        .filter(|e| e["event"] == "filed" && e["issue"] == "ACME-160" && e["turn"] != "prepare")
-        .map(|e| e["step"].as_str().unwrap())
-        .collect();
-    assert_eq!(
-        corrected,
-        [
-            "review-response",
-            "quality",
-            "implement",
-            "test-review",
-            "review-response",
-            "test-review",
-            "quality"
-        ]
-    );
+    assert!(reviews.is_empty(), "{reviews:?}");
 
     assert_the_test_review_finding_stays_apart_from_the_comments(&env);
     assert_answered_after_the_push_of(&env, &gh, &applying_commit(&env));

@@ -1350,23 +1350,19 @@ pub(crate) enum JudgmentRoute {
     Answer,
 }
 
-/// The receiver judges the open check's findings when one is open, otherwise the outer
-/// correction's; none when nothing is being corrected.
+/// What follows the receiver's judgment of the findings it was handed, which are those of
+/// [`IssueState::corrected`]; none when nothing is being corrected.
 pub(crate) fn judgment_route(s: &IssueState, applied: bool) -> Option<JudgmentRoute> {
-    if let Some(check) = s.check {
-        return Some(if check == Check::DesignSync || !applied {
-            JudgmentRoute::Cleared(check)
-        } else {
-            JudgmentRoute::Recheck(check)
-        });
-    }
     let author = matches!(s.stage, Stage::Running { step } if step.document().is_some());
-    Some(match (s.correction?, applied) {
-        (Correction::Round, true) if author => JudgmentRoute::DesignChecks,
-        (Correction::Round, false) if author => JudgmentRoute::Rechecks,
-        (Correction::Round, false) => JudgmentRoute::Converged,
-        (Correction::PrComments, false) => JudgmentRoute::Answer,
-        (Correction::Round | Correction::PrComments, true) => JudgmentRoute::Quality,
+    Some(match (s.corrected()?, applied) {
+        (Corrected::Check(Check::DesignSync), _) => JudgmentRoute::Cleared(Check::DesignSync),
+        (Corrected::Check(check), false) => JudgmentRoute::Cleared(check),
+        (Corrected::Check(check), true) => JudgmentRoute::Recheck(check),
+        (Corrected::Round, true) if author => JudgmentRoute::DesignChecks,
+        (Corrected::Round, false) if author => JudgmentRoute::Rechecks,
+        (Corrected::Round, false) => JudgmentRoute::Converged,
+        (Corrected::PrComments, false) => JudgmentRoute::Answer,
+        (Corrected::Round | Corrected::PrComments, true) => JudgmentRoute::Quality,
     })
 }
 
@@ -1374,7 +1370,7 @@ pub(crate) fn judgment_route(s: &IssueState, applied: bool) -> Option<JudgmentRo
 fn judged(s: &mut IssueState, dispositions: &[FindingDisposition], limits: Limits) -> Vec<Action> {
     // A receiver that judged none of the open check's findings was handed none: the check's run
     // could not report (a blocked first review the lead sent back), so its review is still owed.
-    let unreported = s.check.is_some() && dispositions.is_empty();
+    let unreported = matches!(s.corrected(), Some(Corrected::Check(_))) && dispositions.is_empty();
     let Some(route) = judgment_route(s, unreported || output::applies(dispositions)) else {
         return vec![];
     };
@@ -2875,6 +2871,52 @@ mod tests {
         fields.insert("origin".into(), origin);
         fields.insert("after".into(), after);
         serde_json::from_value(saved).unwrap()
+    }
+
+    #[test]
+    fn an_issue_saved_by_the_previous_version_loads_with_its_correction_and_check() {
+        // Written by hand in the previous version's format, so a field this version adds cannot
+        // slip into the record unnoticed.
+        let saved = json!({
+            "key": "ACME-1",
+            "stage": {"stage": "running", "step": "test-review"},
+            "scale": null,
+            "documents": {"ui_spec": false, "adr": false, "prd_approved": false},
+            "approvals": [],
+            "tasks": [{"path": "tasks/plan-task-01.md"}],
+            "task": 0,
+            "redo": [0],
+            "redoing": true,
+            "units": 1,
+            "origin": "test-review",
+            "check": "test-review",
+            "after": {"correction": "pr-comments"},
+            "attempts": 0,
+            "refused": null,
+            "round": {"number": 1, "pending": [], "queued": [], "rerun_check": false,
+                "findings": [], "maintained": [], "passed": [], "correcting": [],
+                "stuck": null, "kept": 0},
+            "review_round": 1,
+            "fix_ci_round": 0,
+            "pr": 62
+        });
+        let read: IssueState = serde_json::from_value(saved).unwrap();
+        assert_eq!(
+            (
+                read.stage,
+                read.correction,
+                read.check,
+                read.redoing,
+                read.pr
+            ),
+            (
+                running("test-review"),
+                Some(Correction::PrComments),
+                Some(Check::TestReview),
+                true,
+                Some(62)
+            )
+        );
     }
 
     #[test]
