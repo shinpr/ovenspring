@@ -38,7 +38,9 @@ export const InReview: Story = {
     await userEvent.click(within(path).getByRole('button', { name: 'follow' }))
     await expect(args.onOpenRun).toHaveBeenCalledWith(runs[0]?.id)
     await expect(
-      within(path).getByText(/^Next: the quality checks, then the reviews check again/)
+      within(path).getByText(
+        'Next: the quality checks, then the reviews check again, if a correction is applied; otherwise the push.'
+      )
     ).toBeVisible()
     await expect(canvas.getByText('Medium')).toBeVisible()
     await expect(canvas.getByText('3 findings: 2 applied, 1 being judged.')).toBeVisible()
@@ -73,7 +75,7 @@ export const WaitingForYou: Story = {
   args: {
     issue: {
       ...inReview,
-      now: { ...inReview.now, section: 'you', activity: null, since: null },
+      now: { ...inReview.now, section: 'you', activity: null, next: null, since: null },
       decision: {
         issue: inReview.key,
         ask: 'approve-merge',
@@ -113,6 +115,7 @@ export const WaitingForAnIssueToEnd: Story = {
         section: 'waiting-to-start',
         phase: null,
         activity: null,
+        next: null,
         since: null,
         wait: { reason: 'place', heldBy: ['ACME-142', 'ACME-144'] },
       },
@@ -179,6 +182,7 @@ export const WaitingForADependency: Story = {
         section: 'waiting-to-start',
         phase: null,
         activity: null,
+        next: null,
         since: null,
         wait: { reason: 'after', keys: ['ACME-142'] },
       },
@@ -207,6 +211,37 @@ export const SmallChange: Story = {
   },
 }
 
+/** The last task's test review with no task to redo: the quality checks follow, not the remaining tasks. */
+export const LastTaskTestReview: Story = {
+  args: {
+    issue: {
+      ...inReview,
+      now: {
+        ...inReview.now,
+        phase: 'build',
+        activity: 'reviewing-tests',
+        next: { follows: 'quality-checks', ifApplied: null },
+      },
+      path: inReview.path.map((p) => {
+        switch (p.phase) {
+          case 'build':
+            return { ...p, state: 'now', endedAt: null }
+          case 'review':
+          case 'merge':
+            return { ...p, state: 'ahead', startedAt: null, endedAt: null }
+          default:
+            return p
+        }
+      }),
+    },
+  },
+  play: async ({ canvasElement }) => {
+    const path = within(canvasElement).getByRole('region', { name: 'Path' })
+    await expect(within(path).getByText('Next: the quality checks.')).toBeVisible()
+    await expect(within(path).queryByText(/the remaining tasks/)).toBeNull()
+  },
+}
+
 const lead = (id: string, step: LaunchRow['step'], change: Partial<LaunchRow> = {}): LaunchRow => {
   const [base] = runs
   if (base === undefined) {
@@ -230,7 +265,7 @@ export const PreparationTurns: Story = {
   args: {
     issue: {
       ...inReview,
-      now: { ...inReview.now, phase: 'design', activity: 'writing-the-design' },
+      now: { ...inReview.now, phase: 'design', activity: 'writing-the-design', next: null },
       path: inReview.path.map((p) => {
         switch (p.phase) {
           case 'requirements':

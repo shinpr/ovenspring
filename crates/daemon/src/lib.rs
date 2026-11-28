@@ -48,6 +48,7 @@ use ovenspring_agents::guard::GuardRules;
 use ovenspring_agents::prompt::{self, PromptContext};
 use ovenspring_core::config::{Cli, Config};
 use ovenspring_core::item::{Item, Status};
+use ovenspring_core::step::Step;
 use ovenspring_integrations::channel::Channel;
 use ovenspring_integrations::github::GitHub;
 use ovenspring_integrations::http::HttpError;
@@ -633,7 +634,9 @@ impl Daemon {
             return Ok(());
         };
         if record.flow.pr.is_some()
-            && !pulls::merge_from_origin(cwd, self.github()?, &[&record.branch()])?
+            && !self.merged_into(issue, || {
+                pulls::merge_from_origin(cwd, self.github()?, &[&record.branch()])
+            })?
         {
             self.event(&json!({"event": "head-conflict", "issue": issue}))?;
         }
@@ -641,11 +644,16 @@ impl Daemon {
     }
 
     /// Where the item's launch runs, ready for it: the issue's worktree with what was pushed to
-    /// its branch, or the base's.
+    /// its branch, or the base's. An executor's change starts from the worktree as placed.
     fn place_for(&self, item: &Item, cli: Cli) -> Result<PathBuf, DaemonError> {
         self.codex_readable(cli)?;
         let cwd = self.checkout_for(item.front.issue.as_deref())?;
         self.bring_in_pushed(item, &cwd)?;
+        if let (Some(issue), Step::Implement | Step::ReviewResponse) =
+            (&item.front.issue, item.front.step)
+        {
+            self.open_change(issue)?;
+        }
         Ok(cwd)
     }
 

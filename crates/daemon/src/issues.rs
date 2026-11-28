@@ -62,6 +62,9 @@ pub struct IssueRecord {
     /// correction's, are the difference from the tree before it.
     #[serde(default)]
     pub trees: Vec<(Option<usize>, String)>,
+    /// The latest `implement` or `review-response` change: what a test review after it reviews.
+    #[serde(default)]
+    pub change: Option<Change>,
     /// The `changeSummary` of each implementation since the last commit, for its message.
     #[serde(default)]
     pub summaries: Vec<String>,
@@ -86,6 +89,15 @@ pub struct IssueRecord {
     /// Why the owner canceled the issue, as the tracker is told.
     #[serde(default)]
     pub canceled: Option<String>,
+}
+
+/// The worktree's trees around an executor's change. `before` is the tree when its launch was
+/// placed, moved past what a merge from the branch brought in while it was open; `after` is the
+/// tree when it ended, `None` while it is open (a blocked executor's retry continues it).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Change {
+    pub before: String,
+    pub after: Option<String>,
 }
 
 /// A reply owed to a judged pull request comment. An applied comment is answered with the first
@@ -138,6 +150,7 @@ impl IssueRecord {
             recovery_log: None,
             resume: None,
             canceled: None,
+            change: None,
         }
     }
 
@@ -437,7 +450,7 @@ impl Daemon {
     /// correction: each entry `review-response` receives, none when the round converged.
     fn record_review_round(&self, key: &str, number: u32) -> Result<(), DaemonError> {
         let record = self.record_of(key)?;
-        let findings = if record.flow.origin == Some(ovenspring_core::flow::Origin::Round) {
+        let findings = if record.flow.correction == Some(ovenspring_core::flow::Correction::Round) {
             crate::handoff::handed(&record).len()
         } else {
             0
@@ -607,7 +620,7 @@ impl Daemon {
         if JUDGING.contains(&step) {
             refs.extend(record.outputs.values().cloned());
         }
-        if record.flow.origin == Some(ovenspring_core::flow::Origin::PrComments)
+        if record.flow.corrected() == Some(ovenspring_core::flow::Corrected::PrComments)
             && step == Step::ReviewResponse
         {
             refs.extend(record.comments_source.iter().cloned());
@@ -748,7 +761,8 @@ impl Daemon {
                 "Judge whether {key}'s correction changed the evidence the reviews that passed relied on."
             ),
             Step::ReviewResponse
-                if record.flow.origin == Some(ovenspring_core::flow::Origin::PrComments) =>
+                if record.flow.corrected()
+                    == Some(ovenspring_core::flow::Corrected::PrComments) =>
             {
                 format!(
                     "Judge the new comments on {key}'s pull request {}, each as a finding, and correct the implementation for those you apply.",
@@ -857,7 +871,7 @@ impl Daemon {
                 && !matches!(&fact, Fact::Done {output, ..}
                 if output.check_result() != Some(ovenspring_core::output::CheckResult::Blocked));
             if item.front.status == Status::Done && !failed_check {
-                let key = crate::handoff::kept_under(r.flow.origin, step, unit);
+                let key = crate::handoff::kept_under(r.flow.corrected(), step, unit);
                 let found = fs::read_to_string(&item.front.out)
                     .ok()
                     .and_then(|t| serde_json::from_str(&t).ok())
@@ -867,7 +881,7 @@ impl Daemon {
                 }
                 r.outputs.insert(key, item.front.out.clone());
                 if step == Step::ReviewResponse
-                    && r.flow.origin == Some(ovenspring_core::flow::Origin::PrComments)
+                    && r.flow.corrected() == Some(ovenspring_core::flow::Corrected::PrComments)
                 {
                     r.owe_replies();
                 }
@@ -980,6 +994,9 @@ impl Daemon {
                     r.summaries.extend(e.change_summary.iter().cloned());
                     // A correction's tree too, so a test review after it is given what it changed.
                     if let Some(tree) = tree {
+                        if let Some(change) = r.change.as_mut() {
+                            change.after = Some(tree.clone());
+                        }
                         r.trees.push((task, tree));
                     }
                 })?;
@@ -1034,6 +1051,7 @@ impl Daemon {
         self.update_issue(key, |r| {
             r.units.clone_from(&units);
             r.trees = tree.map(|t| vec![(None, t)]).unwrap_or_default();
+            r.change = None;
         })?;
         Ok(Fact::Planned { tasks, units })
     }
@@ -1065,29 +1083,77 @@ impl Daemon {
         })
     }
 
-    /// The worktree's tree as it stands, without committing: every file `git add -A` would take,
-    /// written through a temporary index.
+    /// The worktree's tree as it stands, without committing: every file `git add -A` would take.
     fn tree_of(&self, key: &str) -> Option<String> {
-        let worktree = self.worktree_of(key);
+        self.tree_index(key)?.tree()
+    }
+
+    /// The issue's worktree with the temporary index its trees are written through.
+    fn tree_index(&self, key: &str) -> Option<TreeIndex> {
         let index = self.store.root().join(format!("trees/{key}.index"));
-        if let Some(dir) = index.parent() {
-            fs::create_dir_all(dir).ok()?;
-        }
-        let _ = fs::remove_file(&index);
-        let run = |args: &[&str]| {
-            std::process::Command::new("git")
-                .args(args)
-                .current_dir(&worktree)
-                .env("GIT_INDEX_FILE", &index)
-                .output()
-                .ok()
-                .filter(|o| o.status.success())
-                .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_owned())
+        fs::create_dir_all(index.parent()?).ok()?;
+        Some(TreeIndex {
+            worktree: self.worktree_of(key),
+            index,
+        })
+    }
+
+    /// An executor's launch on the issue opens its change at the worktree as placed, unless an
+    /// earlier attempt's change is still open.
+    pub(crate) fn open_change(&self, key: &str) -> Result<(), DaemonError> {
+        let Some(record) = self.issue(key)? else {
+            return Ok(()); // An item filed outside the issue flow has no change to record.
         };
-        run(&["add", "-A"])?;
-        let tree = run(&["write-tree"]);
-        let _ = fs::remove_file(&index);
-        tree
+        if record.change.is_some_and(|c| c.after.is_none()) {
+            return Ok(());
+        }
+        let Some(before) = self.tree_of(key) else {
+            return Ok(()); // The test review falls back to the recorded trees.
+        };
+        self.update_issue(key, |r| {
+            r.change = Some(Change {
+                before,
+                after: None,
+            });
+        })?;
+        Ok(())
+    }
+
+    /// Runs `merge`, a merge from the branch into the issue's worktree. While a change is open,
+    /// what the merge brought in is moved into the change's start, so it is not listed as the
+    /// change's own.
+    pub(crate) fn merged_into(
+        &self,
+        key: &str,
+        merge: impl FnOnce() -> Result<bool, DaemonError>,
+    ) -> Result<bool, DaemonError> {
+        let open = self
+            .issue(key)?
+            .and_then(|r| r.change)
+            .filter(|c| c.after.is_none());
+        let Some(change) = open else {
+            return merge();
+        };
+        let pre = self.tree_of(key);
+        let merged = merge()?;
+        let post = self.tree_of(key);
+        let (Some(pre), Some(post)) = (pre, post) else {
+            return Ok(merged);
+        };
+        if pre == post {
+            return Ok(merged);
+        }
+        let moved = self
+            .tree_index(key)
+            .and_then(|trees| trees.moved_start(&change.before, &pre, &post));
+        if let Some(before) = moved {
+            self.update_issue(key, |r| {
+                if let Some(c) = r.change.as_mut() {
+                    c.before = before;
+                }
+            })?;
+        }
+        Ok(merged)
     }
 
     /// Commits the worktree at one of the flow's fixed points, with a message composed from the
@@ -1408,4 +1474,121 @@ fn exception_request(record: &IssueRecord) -> String {
         None => format!("a step of {key} could not go on"),
     };
     format!("Find why {what}, and choose the way forward.{failed_recovery}")
+}
+
+/// An issue's worktree written through a temporary index, so trees are recorded without touching
+/// the worktree's own index.
+struct TreeIndex {
+    worktree: PathBuf,
+    index: PathBuf,
+}
+
+impl TreeIndex {
+    /// Runs `git` against the temporary index, with `input` on its standard input: its trimmed
+    /// output when it succeeds.
+    fn git(&self, args: &[&str], input: &str) -> Option<String> {
+        use std::io::Write as _;
+        use std::process::{Command, Stdio};
+
+        let mut child = Command::new("git")
+            .args(args)
+            .current_dir(&self.worktree)
+            .env("GIT_INDEX_FILE", &self.index)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()
+            .ok()?;
+        let mut stdin = child.stdin.take()?;
+        stdin.write_all(input.as_bytes()).ok()?;
+        drop(stdin);
+        let out = child.wait_with_output().ok()?;
+        out.status
+            .success()
+            .then(|| String::from_utf8_lossy(&out.stdout).trim().to_owned())
+    }
+
+    /// Runs `write` on a fresh temporary index, which is removed afterwards.
+    fn written(&self, write: impl FnOnce() -> Option<String>) -> Option<String> {
+        let _ = fs::remove_file(&self.index);
+        let tree = write();
+        let _ = fs::remove_file(&self.index);
+        tree
+    }
+
+    /// The worktree's tree: every file `git add -A` would take.
+    fn tree(&self) -> Option<String> {
+        self.written(|| {
+            self.git(&["add", "-A"], "")?;
+            self.git(&["write-tree"], "")
+        })
+    }
+
+    /// The start of a change that a merge moved from `pre` to `post` while it was open: `post`,
+    /// with each path the change had already changed (between `before` and `pre`) set back to its
+    /// version at `before`. What the merge brought in is then part of the start, and the change's
+    /// own edits are not. `None` when Git fails.
+    fn moved_start(&self, before: &str, pre: &str, post: &str) -> Option<String> {
+        self.written(|| {
+            self.git(&["read-tree", post], "")?;
+            let changed = self.git(&["diff-tree", "-r", "--no-renames", "-z", before, pre], "")?;
+            // Each entry is `:<old mode> <new mode> <old blob> <new blob> <status>` and its path;
+            // the old mode is 000000 for a path the change added, which removes it.
+            let fields: Vec<&str> = changed.split('\0').filter(|f| !f.is_empty()).collect();
+            let mut info = String::new();
+            for entry in fields.chunks(2) {
+                let [meta, path] = entry else {
+                    return None;
+                };
+                let mut meta = meta.trim_start_matches(':').split(' ');
+                let (mode, _, blob) = (meta.next()?, meta.next()?, meta.next()?);
+                let _ = write!(info, "{mode} {blob}\t{path}\0");
+            }
+            self.git(&["update-index", "-z", "--index-info"], &info)?;
+            self.git(&["write-tree"], "")
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fs;
+
+    use super::TreeIndex;
+
+    // Behavior: a change open across a merge (a blocked attempt, then its retry) -> its moved
+    //     start lists both attempts' edits, additions and deletions, and not the merged path.
+    #[test]
+    fn moved_start_keeps_both_attempts_and_leaves_out_what_the_merge_brought_in() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo = dir.path().join("repo");
+        crate::worktree::git(dir.path(), &["init", "-q", repo.to_str().unwrap()]).unwrap();
+        let trees = TreeIndex {
+            worktree: repo.clone(),
+            index: dir.path().join("trees.index"),
+        };
+        for file in ["edited", "removed", "keep"] {
+            fs::write(repo.join(file), "start\n").unwrap();
+        }
+        let before = trees.tree().unwrap();
+
+        fs::write(repo.join("edited"), "first attempt\n").unwrap();
+        fs::write(repo.join("added"), "first attempt\n").unwrap();
+        fs::remove_file(repo.join("removed")).unwrap();
+        let pre = trees.tree().unwrap();
+        fs::write(repo.join("pushed"), "merged from the branch\n").unwrap();
+        let post = trees.tree().unwrap();
+        fs::write(repo.join("keep"), "second attempt\n").unwrap();
+        let after = trees.tree().unwrap();
+
+        let start = trees.moved_start(&before, &pre, &post).unwrap();
+        let listed =
+            crate::worktree::git(&repo, &["diff-tree", "-r", "--name-only", &start, &after])
+                .unwrap();
+        assert_eq!(
+            listed.lines().collect::<Vec<_>>(),
+            ["added", "edited", "keep", "removed"]
+        );
+        assert!(!trees.index.exists());
+    }
 }

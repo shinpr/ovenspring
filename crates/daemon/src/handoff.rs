@@ -5,7 +5,7 @@
 
 use std::path::Path;
 
-use ovenspring_core::flow::{Filing, Origin};
+use ovenspring_core::flow::{Corrected, Filing};
 use ovenspring_core::output::{
     CheckResult, CorrectionOwner, Disposition, FindingDisposition, PrototypeOutput, Review,
     StepOutput, output_key,
@@ -13,7 +13,7 @@ use ovenspring_core::output::{
 use ovenspring_core::step::{Check, Document, Step};
 use serde_json::{Value, json};
 
-use crate::issues::IssueRecord;
+use crate::issues::{Change, IssueRecord};
 
 /// An input entry: a value written in place, or a JSON handoff written to a file the entry names.
 pub(crate) enum Entry {
@@ -30,11 +30,12 @@ pub(crate) const COMMENTS: &str = "comments";
 /// after the correction and the comment replies read the correction's judgment after it.
 pub(crate) const TEST_REVIEW_JUDGMENT: &str = "test-review-judgment";
 
-/// The output key a finished step's output is kept under, given the origin of the correction it
-/// ran in.
-pub(crate) fn kept_under(origin: Option<Origin>, step: Step, unit: Option<usize>) -> String {
-    match (step, origin) {
-        (Step::ReviewResponse, Some(Origin::TestReview)) => TEST_REVIEW_JUDGMENT.to_owned(),
+/// The output key a finished step's output is kept under, given whose findings it received.
+pub(crate) fn kept_under(corrected: Option<Corrected>, step: Step, unit: Option<usize>) -> String {
+    match (step, corrected) {
+        (Step::ReviewResponse, Some(Corrected::Check(Check::TestReview))) => {
+            TEST_REVIEW_JUDGMENT.to_owned()
+        }
         _ => output_key(step, unit),
     }
 }
@@ -221,15 +222,16 @@ fn correction_ref(record: &IssueRecord) -> String {
 /// The checks whose findings the current correction answers, by output key.
 fn corrected_checks(record: &IssueRecord) -> Vec<String> {
     let flow = &record.flow;
-    match flow.origin {
-        Some(Origin::Round) => flow
+    match flow.corrected() {
+        Some(Corrected::Round) => flow
             .round
             .findings
             .union(&flow.round.maintained)
             .map(|r| String::from(*r))
             .collect(),
-        Some(Origin::PrComments) => vec![COMMENTS.to_owned()],
-        _ => flow.check.iter().map(|c| c.step().to_string()).collect(),
+        Some(Corrected::PrComments) => vec![COMMENTS.to_owned()],
+        Some(Corrected::Check(check)) => vec![check.step().to_string()],
+        None => vec![],
     }
 }
 
@@ -258,7 +260,7 @@ fn maintained_findings(record: &IssueRecord, key: &str) -> Option<Vec<Value>> {
 /// reconciliation entry. A round's findings name their review, since its code reviews number
 /// their findings alike.
 pub(crate) fn handed(record: &IssueRecord) -> Vec<(String, Value)> {
-    let round = record.flow.origin == Some(Origin::Round);
+    let round = record.flow.corrected() == Some(Corrected::Round);
     let mut out = Vec::new();
     for key in corrected_checks(record) {
         let found = maintained_findings(record, &key)
@@ -277,17 +279,17 @@ pub(crate) fn handed(record: &IssueRecord) -> Vec<(String, Value)> {
 /// returned it with the executor's judgment: the quality run's correction scope, or the Design
 /// Doc's author's share of a round.
 fn executor_applied(record: &IssueRecord, owner: CorrectionOwner) -> Value {
-    let check = record.flow.check.map(|c| c.step().to_string());
+    let corrected = record.flow.corrected();
     let keys: Vec<String> = record.findings.keys().cloned().collect();
     let out: Vec<Value> = judgments(record, Step::ReviewResponse, Step::ReviewResponse.as_str())
         .into_iter()
         .filter(|d| d.disposition == Disposition::Apply)
         .filter(|d| d.owner.unwrap_or(CorrectionOwner::Executor) == owner)
         .map(|d| {
-            let key = match (d.review, record.flow.origin) {
+            let key = match (d.review, corrected) {
                 (Some(review), _) => Some(String::from(review)),
-                (None, Some(Origin::PrComments)) => Some(COMMENTS.to_owned()),
-                (None, Some(Origin::Round)) => keys
+                (None, Some(Corrected::PrComments)) => Some(COMMENTS.to_owned()),
+                (None, Some(Corrected::Round)) => keys
                     .iter()
                     .find(|k| {
                         Review::try_from((*k).clone()).is_ok()
@@ -298,7 +300,8 @@ fn executor_applied(record: &IssueRecord, owner: CorrectionOwner) -> Value {
                             })
                     })
                     .cloned(),
-                (None, _) => check.clone(),
+                (None, Some(Corrected::Check(check))) => Some(check.step().to_string()),
+                (None, None) => None,
             };
             let mut f = key.map_or_else(|| json!({"id": d.id}), |k| finding(record, &k, &d.id));
             if let Some(obj) = f.as_object_mut() {
@@ -378,7 +381,7 @@ impl Ctx<'_> {
     fn author_findings(&self) -> Option<Entry> {
         let r = self.record;
         r.flow.correcting().then(|| {
-            Entry::Json(if r.flow.origin == Some(Origin::Round) {
+            Entry::Json(if r.flow.corrected() == Some(Corrected::Round) {
                 executor_applied(r, CorrectionOwner::Author)
             } else {
                 correction_findings(r)
@@ -504,7 +507,7 @@ impl Ctx<'_> {
                 "correction_findings",
                 Some(Entry::Json(correction_findings(r))),
             ));
-        } else if step == Step::Quality && r.flow.origin.is_some() {
+        } else if step == Step::Quality && r.flow.correction.is_some() {
             v.push((
                 "correction_findings",
                 Some(Entry::Json(executor_applied(r, CorrectionOwner::Executor))),
@@ -550,17 +553,24 @@ impl Ctx<'_> {
     /// integration-test-reviewer's entries.
     fn test_review(&self) -> Entries {
         let r = self.record;
-        let base = r
+        let fallback = r
             .last_commit
             .clone()
             .unwrap_or_else(|| format!("origin/{}", self.base));
-        let changed = changed_files(r, self.worktree, &base);
+        let (base, head, changed) = match recorded_change(r, &fallback) {
+            Some((before, after)) => {
+                let changed = changed_between(self.worktree, &before, &after);
+                (before, Some(after), changed)
+            }
+            None => (fallback, None, vec![]),
+        };
         vec![
             (
                 "changedFiles",
                 (!changed.is_empty()).then(|| text(changed.join(", "))),
             ),
             ("diffBase", Some(text(base))),
+            ("diffHead", head.map(text)),
             (
                 "taskFile",
                 self.filing
@@ -576,8 +586,8 @@ impl Ctx<'_> {
     fn review_scope(&self, v: &mut Entries) {
         let step = self.filing.step;
         let r = self.record;
-        if step == Step::TestReview && r.flow.origin != Some(Origin::TestReview) {
-            return; // A new task's tests are a different review subject.
+        if step == Step::TestReview && self.filing.round <= Some(1) {
+            return; // A test review's first run has a new subject: a task or a correction.
         }
         let key = output_key(step, self.filing.unit);
         let Some(previous) = r.outputs.get(&key) else {
@@ -703,12 +713,25 @@ impl Ctx<'_> {
 /// The files the last task changed: test-review picks the integration and E2E tests among them by
 /// the repository's own conventions, which no fixed file name pattern covers.
 /// A task is measured from the tree before it; a change with no task files, from `diff_base`.
-fn changed_files(record: &IssueRecord, worktree: &Path, diff_base: &str) -> Vec<String> {
-    let (before, after) = match record.trees.as_slice() {
-        [.., (_, before), (_, after)] => (before.as_str(), after),
-        [(_, after)] => (diff_base, after),
-        [] => return vec![],
-    };
+/// The trees a test review compares: the recorded change's start and end, or, for a change an
+/// earlier version launched, the last two recorded trees (`fallback` before the only one).
+fn recorded_change(record: &IssueRecord, fallback: &str) -> Option<(String, String)> {
+    if let Some(Change {
+        before,
+        after: Some(after),
+    }) = &record.change
+    {
+        return Some((before.clone(), after.clone()));
+    }
+    match record.trees.as_slice() {
+        [.., (_, before), (_, after)] => Some((before.clone(), after.clone())),
+        [(_, after)] => Some((fallback.to_owned(), after.clone())),
+        [] => None,
+    }
+}
+
+/// The paths that differ between two trees.
+fn changed_between(worktree: &Path, before: &str, after: &str) -> Vec<String> {
     crate::worktree::git(
         worktree,
         &["diff-tree", "-r", "-z", "--name-only", before, after],
@@ -722,7 +745,7 @@ fn changed_files(record: &IssueRecord, worktree: &Path, diff_base: &str) -> Vec<
 
 #[cfg(test)]
 mod tests {
-    use ovenspring_core::flow::Origin;
+    use ovenspring_core::flow::Correction;
     use ovenspring_core::output::Review;
     use serde_json::json;
 
@@ -747,7 +770,7 @@ mod tests {
         )
         .unwrap();
         let mut record = IssueRecord::new("ACME-1", "Export orders", vec![]);
-        record.flow.origin = Some(Origin::Round);
+        record.flow.correction = Some(Correction::Round);
         record.flow.round.findings = [
             Review::CodeReview { unit: 1 },
             Review::CodeReview { unit: 2 },

@@ -5,7 +5,7 @@
 use ovenspring_core::config::{Config, MergeBy, TrackerKind};
 use ovenspring_core::flow::{Cause, IssueState, Stage};
 use ovenspring_core::output::{Decision, StepOutput};
-use ovenspring_core::phase::{Activity, Phase};
+use ovenspring_core::phase::{Activity, Following, Phase};
 use ovenspring_core::sprint::SprintStage;
 use ovenspring_core::step::Step;
 use ovenspring_integrations::channel::DecisionKind;
@@ -194,6 +194,8 @@ pub struct Position {
     pub activity: Option<Activity>,
     /// The task being implemented, when the change has task files.
     pub task: Option<TaskCount>,
+    /// What follows the running step, when the issue's state decides it (in progress only).
+    pub next: Option<Following>,
     /// What the lead is finding a way past.
     pub problem: Option<Cause>,
     /// In progress while the factory is paused.
@@ -568,6 +570,7 @@ pub(crate) fn position(record: &IssueRecord, around: &Around<'_>) -> Position {
             .task_of()
             .filter(|_| in_progress)
             .map(|(number, of)| TaskCount { number, of }),
+        next: flow.following().filter(|_| in_progress),
         problem: if let Stage::Exception { cause, .. } = &flow.stage
             && in_progress
         {

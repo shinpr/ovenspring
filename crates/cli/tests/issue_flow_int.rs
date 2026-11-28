@@ -19,6 +19,7 @@ use std::sync::Arc;
 
 use ovenspring_core::flow::{Cause, Stage, Step};
 use ovenspring_core::output::Disposition;
+use ovenspring_core::phase::{Following, Upcoming};
 use ovenspring_integrations::channel::{Button, ChannelEvent, DecisionKind, NoticeKind};
 use ovenspring_integrations::github::{
     BranchRules, CheckState, CommentKind, Permission, ReviewState,
@@ -31,7 +32,7 @@ use support::recording::{RecordingChannel, Sent};
 use support::scripts::{
     always_passing, designed, filed_steps, quality_pass, requiring_test, stage, straight,
 };
-use support::{Env, QUICK, daemon, daemon_timed, git, run_until, services};
+use support::{Env, QUICK, daemon, daemon_timed, git, push_as_person, run_until, services};
 
 const CONFIG: &str = r#"
 [repo]
@@ -1465,18 +1466,27 @@ fn a_push_the_repository_refuses_is_corrected_by_quality_and_pushed_again() {
 }
 
 // AC: "`implement` ... `test-review` when `requiresTestReview`"; "`test-review`: integration-test-
-//     reviewer, given the files the task changed and choosing the integration and E2E tests among
-//     them by the repository's conventions" (factory core design, steps).
-// Behavior: ACME-150's implementation adds `tests/export_int.rs`, a Rust integration test, and
-//     asks for a test review -> the test-review item names that file among the task's changes.
+//     reviewer, given ... the tree the task or correction started from (`diffBase`) and the tree it
+//     ended at (`diffHead`), and the files that differ between them" (factory core design, steps).
+//     GH-52 (correction-under-way design AC6): "`changedFiles` shall list exactly the paths that
+//     differ between them ... A path changed in the worktree before that executor started is not
+//     listed ... A path the step added ... is listed, and `git diff --quiet <diffBase> <diffHead>
+//     -- <path>` exits 1 for it."
+// Behavior: ACME-150's `requirements` leaves an unrelated file in the worktree -> its
+//     implementation adds `tests/export_int.rs`, a Rust integration test still untracked in the
+//     worktree's index, and asks for a test review -> the test-review item names that file among
+//     the task's changes and not the unrelated one, and each named path differs between the two
+//     trees it is given.
 // @lane: integration
-// @dependency: daemon, flow, launcher, fake agent
+// @dependency: daemon, flow, launcher, real git, fake agent
 #[test]
 fn a_test_review_receives_the_tests_a_task_changed_whatever_their_naming() {
     let env = Env::new();
     env.configure(CONFIG);
     env.add_branch("develop");
     let mut script = straight("ACME-150");
+    script["requirements@ACME-150"][0]["files"] =
+        json!([{"path": "docs/ACME-150-notes.md", "content": "Written before the task.\n"}]);
     script.insert(
         "implement@ACME-150".into(),
         json!([{"change": {"path": "tests/export_int.rs", "content": "#[test] fn export() {}\n"},
@@ -1502,19 +1512,225 @@ fn a_test_review_receives_the_tests_a_task_changed_whatever_their_naming() {
         |d| stage(d, "ACME-150") == Stage::running(Step::TestReview),
     );
 
+    let worktree = env.state().join("worktrees/ACME-150");
+    assert!(worktree.join("docs/ACME-150-notes.md").exists());
+    assert_eq!(
+        git(&worktree, &["ls-files", "tests/export_int.rs"]),
+        "",
+        "the new test is untracked in the worktree's index"
+    );
+    let text = active_item(&d, Step::TestReview);
+    assert_eq!(
+        reviewed_change(&text, &worktree),
+        ["tests/export_int.rs"],
+        "{text}"
+    );
+}
+
+/// The text of the issue's active item of `step`.
+fn active_item(d: &ovenspring_daemon::Daemon, step: Step) -> String {
     let item = d
         .store()
         .active_items()
         .unwrap()
         .into_iter()
-        .find(|p| p.to_string_lossy().contains("-test-review-ACME-150"))
+        .find(|path| d.store().read_item(path).unwrap().front.step == step)
         .unwrap();
-    let text = std::fs::read_to_string(item).unwrap();
-    let line = text
-        .lines()
-        .find(|l| l.starts_with("changedFiles: "))
-        .unwrap_or_default();
-    assert!(line.contains("tests/export_int.rs"), "{text}");
+    std::fs::read_to_string(item).unwrap()
+}
+
+/// The paths a `test-review` item's `changedFiles` names, after asserting that its `diffBase` and
+/// `diffHead` are tree ids and that git, run in `worktree`, finds each path different between them.
+fn reviewed_change(item: &str, worktree: &std::path::Path) -> Vec<String> {
+    let entry = |name: &str| {
+        item.lines()
+            .find_map(|l| l.strip_prefix(&format!("{name}: ")))
+            .map(str::to_owned)
+    };
+    let tree_id = |name: &str| {
+        let id = entry(name).unwrap_or_else(|| panic!("no {name} in {item}"));
+        assert!(
+            id.len() == 40 && id.chars().all(|c| c.is_ascii_hexdigit()),
+            "{name}: {id}"
+        );
+        id
+    };
+    let (base, head) = (tree_id("diffBase"), tree_id("diffHead"));
+    let changed: Vec<String> = entry("changedFiles")
+        .unwrap_or_default()
+        .split(", ")
+        .filter(|p| !p.is_empty())
+        .map(str::to_owned)
+        .collect();
+    for path in &changed {
+        let status = std::process::Command::new("git")
+            .args(["diff", "--quiet", &base, &head, "--", path])
+            .current_dir(worktree)
+            .status()
+            .unwrap();
+        assert_eq!(status.code(), Some(1), "{path} differs between the trees");
+    }
+    changed
+}
+
+/// `key` planned as two tasks, each changing a test and asking for a test review: task 1's first
+/// test review raises a finding the executor applies, then `quality` finds a stub in both tasks'
+/// tests, and the redone task 2's test review runs until the test ends.
+fn two_tasks_redone_script(key: &str) -> Value {
+    let mut script = designed(key, &[], &[("1", ""), ("2", "1")]);
+    let test_file = |task: &str| format!("tests/{key}-{task}_int.rs");
+    let tested = |task: &str, content: &str, review: bool| {
+        json!({"change": {"path": test_file(task), "content": content},
+               "output": {"status": "completed", "taskName": task, "changeSummary": format!("Test task {task}"),
+                          "requiresTestReview": review}})
+    };
+    script.insert(
+        format!("implement@{key}"),
+        json!([
+            tested("1", "asserts\n", true),
+            tested("2", "asserts\n", true),
+            tested("1", "asserts every case\n", false),
+            tested("2", "asserts every case\n", true)
+        ]),
+    );
+    script.insert(
+        format!("test-review@{key}"),
+        json!([
+            {"output": {"status": "needs_revision", "testFiles": [test_file("1")],
+                        "reviewBasis": "task-verification", "qualityIssues": [
+                            {"id": "T001", "description": "The case asserts nothing."}]}},
+            {"output": {"status": "pass", "testFiles": [test_file("1")],
+                        "reviewBasis": "task-verification", "prior_feedback_reconciliation": [
+                            {"id": "T001", "prior_disposition": "apply", "status": "resolved", "evidence": "asserted"}]}},
+            {"output": {"status": "pass", "testFiles": [test_file("2")], "reviewBasis": "task-verification"}},
+            {"hang": true}
+        ]),
+    );
+    script.insert(
+        format!("review-response@{key}"),
+        json!([{"change": {"path": test_file("1"), "content": "asserts the total\n"},
+                "output": {"status": "completed", "taskName": "tests", "changeSummary": "Assert the total",
+                           "requiresTestReview": false, "dispositions": [
+                               {"id": "T001", "disposition": "apply", "reason": "the case must assert"}]}}]),
+    );
+    script.insert(
+        format!("quality@{key}"),
+        json!([
+            {"output": {"status": "stub_detected", "incompleteImplementations": [
+                {"file": test_file("1"), "reason": "a case is a placeholder"},
+                {"file": test_file("2"), "reason": "a case is a placeholder"}]}},
+            quality_pass()
+        ]),
+    );
+    Value::Object(script)
+}
+
+// AC: GH-52 (correction-under-way design AC2): "When a planned task's test review raised findings
+//     that were corrected and then passed, and the next task's `implement` asks for a test review,
+//     the system shall file that test review without `previous_review`, `change_to_review` or
+//     `prior_feedback`." AC5: "When a planned task's `test-review` item is filed, the system shall
+//     name that task's file as `taskFile`." AC7: "While the last task's test review runs and no
+//     redone task remains, the issue detail's `now.next` and the issue page shall name the quality
+//     checks only. While a redone task runs and another redone task remains, they shall name the
+//     remaining tasks first."
+// Behavior: ACME-153 is planned as two tasks; each `implement` changes a test file and asks for a
+//     test review -> task 1's first `test-review` returns a finding -> `review-response` applies it
+//     -> the recheck passes -> task 2's `implement` -> task 2's first `test-review` passes ->
+//     `quality` reports `stub_detected` in both tasks' files -> task 1 is redone -> task 2 is redone
+//     and asks for a test review, which runs.
+// Observable result: (a) task 1's first `test-review` item names task 1's file; task 2's first
+//     names task 2's file, and has no `previous_review: `, `change_to_review: ` or
+//     `prior_feedback: ` line; (b) while task 1's redone `implement` runs, the issue detail's
+//     `now.next` names the remaining tasks; (c) while task 2's redone `test-review` runs, it names
+//     the quality checks alone.
+// @lane: integration
+// @dependency: daemon, flow, handoff, store, real git, fake agent, FakeGitHub
+#[test]
+fn a_planned_tasks_test_review_names_its_task_and_carries_no_earlier_tasks_review() {
+    let env = Env::new();
+    env.configure(CONFIG);
+    env.add_branch("develop");
+    let key = "ACME-153";
+    env.script_agents(&two_tasks_redone_script(key));
+    let mut d = daemon(
+        &env,
+        services(
+            Arc::new(always_passing(&env, requiring_test())),
+            Arc::new(RecordingChannel::default()),
+            Arc::new(RecordingTracker::default()),
+        ),
+    );
+    d.begin_issue(key, "Export", vec![]).unwrap();
+
+    let next = |d: &ovenspring_daemon::Daemon| {
+        ovenspring_daemon::history::issue_detail(d.store(), key)
+            .unwrap()
+            .unwrap()
+            .now
+            .next
+    };
+    let mut first_redone_next = None;
+    run_until(
+        &mut d,
+        90,
+        |d| {
+            let flow = d.issue(key).unwrap().unwrap().flow;
+            if flow.stage == Stage::running(Step::Implement) && flow.redoing && flow.task == 0 {
+                first_redone_next = Some(next(d));
+            }
+        },
+        |d| {
+            let flow = d.issue(key).unwrap().unwrap().flow;
+            flow.stage == Stage::running(Step::TestReview) && flow.redoing
+        },
+    );
+
+    let task_file = |task: &str| {
+        env.state()
+            .join(format!("plans/tasks/{key}-task-{task}.md"))
+            .display()
+            .to_string()
+    };
+    let first_reviews: Vec<String> = std::fs::read_dir(env.state().join("board/archive"))
+        .unwrap()
+        .map(|e| std::fs::read_to_string(e.unwrap().path()).unwrap())
+        .filter(|t| t.contains("step: test-review\n") && t.contains("round: 1\n"))
+        .collect();
+    let of_task = |task: &str| -> Vec<&String> {
+        first_reviews
+            .iter()
+            .filter(|t| t.contains(&format!("\ntaskFile: {}\n", task_file(task))))
+            .collect()
+    };
+    assert_eq!(first_reviews.len(), 2, "{first_reviews:?}");
+    assert_eq!(of_task("1").len(), 1, "{first_reviews:?}");
+    let second = of_task("2");
+    assert_eq!(second.len(), 1, "{first_reviews:?}");
+    for earlier in [
+        "previous_review: ",
+        "change_to_review: ",
+        "prior_feedback: ",
+    ] {
+        assert!(
+            !second[0].contains(&format!("\n{earlier}")),
+            "{}",
+            second[0]
+        );
+    }
+    assert_eq!(
+        first_redone_next,
+        Some(Some(Following {
+            follows: Upcoming::RemainingTasks,
+            if_applied: None
+        }))
+    );
+    assert_eq!(
+        next(&d),
+        Some(Following {
+            follows: Upcoming::QualityChecks,
+            if_applied: None
+        })
+    );
 }
 
 // AC: "Each finding, from a reviewer or a bot, is judged before anything is changed" (AC-021);
@@ -2249,16 +2465,92 @@ fn the_reply_names_the_commit_that_applied_the_comment_after_a_refused_push() {
     assert_answered_after_the_push_of(&env, &gh, &applied);
 }
 
-// AC: GH-17: "also when other checks and corrections ran between the judgment and the push";
-//     factory core design, steps: quality's `stub_detected` sends the work back to implement.
-// Behavior: quality after the correction finds a stub -> implement completes it -> quality ->
-//     the review round passes -> the push -> each comment has its reply, naming the commit that
-//     applied it.
+// AC: GH-52 (correction-under-way design AC6): "A path changed in the worktree before that executor
+//     started is not listed. This includes a path merged from the branch between a blocked attempt
+//     and its retry, by the lead's `exception` launch or by the retried launch, while the edits of
+//     both attempts stay listed."
+// Behavior: ACME-160's comment correction, whose `quality` reports `stub_detected` -> the redone
+//     `implement` edits path A and returns `blocked` -> while it runs, a person pushes a commit
+//     adding path P to `ovenspring/ACME-160` -> the lead's `exception` launch merges it into the
+//     worktree before the lead runs, and the lead retries -> the retried `implement` edits path B
+//     and asks for a test review -> the `test-review` item names A and B, each different between
+//     its two trees, and not P.
 // @lane: integration
-// @dependency: daemon, flow, fake agent, FakeGitHub
+// @dependency: daemon, flow, handoff, real git (bare `origin` with a pushed commit), fake agent,
+//     FakeGitHub
 #[test]
-fn comments_corrected_through_a_stub_repair_and_a_review_round_are_answered() {
+fn a_retried_tasks_test_review_lists_both_attempts_and_not_what_was_merged_between_them() {
+    const A: &str = "src/ACME-160-refunds.ts";
+    const B: &str = "tests/ACME-160_int.rs";
+    const P: &str = "docs/ACME-160-person.md";
     let env = Env::new();
+    let Value::Object(mut script) = stub_repair_with_a_test_review_script() else {
+        unreachable!()
+    };
+    script.insert(
+        "implement@ACME-160".into(),
+        json!([
+            support::scripts::implement_run("src/ACME-160.ts"),
+            {"wait": true, "status": "blocked", "change": {"path": A, "content": "refunds\n"},
+             "output": {"status": "blocked", "taskName": "refunds", "changeSummary": "Started the refunds",
+                        "remainingWork": ["the refund test"], "evidence": ["the test fixture is missing"],
+                        "runnableCheck": {"result": "skipped", "reason": "no fixture"}}},
+            {"change": {"path": B, "content": "asserts refunds\n"},
+             "output": {"status": "completed", "taskName": "refunds", "changeSummary": "Test the refunds",
+                        "testsAdded": [B], "requiresTestReview": true, "newTestsPassed": true}}
+        ]),
+    );
+    script.insert(
+        "exception@ACME-160".into(),
+        json!([{"wait": true, "output": {"action": "retry", "note": "The fixture is there now."}}]),
+    );
+    script.insert("test-review@ACME-160".into(), json!([{"hang": true}]));
+    env.configure(CONFIG);
+    env.add_branch("develop");
+    env.script_agents(&Value::Object(script));
+    let gh = Arc::new(github_commenting_on_acme_160(&env));
+    let mut d = acme_160_daemon(&env, &gh);
+    d.begin_issue("ACME-160", "Order totals", vec![]).unwrap();
+    let implement_launches = || {
+        env.records()
+            .iter()
+            .filter(|r| {
+                r["prompt"]
+                    .as_str()
+                    .unwrap_or_default()
+                    .contains("-implement-ACME-160")
+            })
+            .count()
+    };
+    run_until(&mut d, 60, |_| {}, |_| implement_launches() == 2);
+
+    let pushed = push_as_person(&env, "ovenspring/ACME-160", P, "a person's note\n");
+    let root = env.fake_bin.parent().unwrap().to_path_buf();
+    std::fs::write(root.join("release-ACME-160-implement"), "").unwrap();
+    run_until(
+        &mut d,
+        60,
+        |_| {},
+        |_| root.join("pids-ACME-160-exception.json").exists(),
+    );
+    let worktree = env.state().join("worktrees/ACME-160");
+    // Fails when the lead runs on a branch without the pushed commit.
+    git(&worktree, &["merge-base", "--is-ancestor", &pushed, "HEAD"]);
+
+    std::fs::write(root.join("release-ACME-160-exception"), "").unwrap();
+    run_until(
+        &mut d,
+        60,
+        |_| {},
+        |d| stage(d, "ACME-160") == Stage::running(Step::TestReview),
+    );
+    let text = active_item(&d, Step::TestReview);
+    assert_eq!(reviewed_change(&text, &worktree), [A, B], "{text}");
+}
+
+/// ACME-160's comment correction whose `quality` finds a stub: the redone `implement` changes a
+/// test and asks for a test review, whose finding the executor applies before the recheck passes.
+fn stub_repair_with_a_test_review_script() -> Value {
     let mut script = comments_script();
     script.insert(
         "quality@ACME-160".into(),
@@ -2271,15 +2563,149 @@ fn comments_corrected_through_a_stub_repair_and_a_review_round_are_answered() {
         "implement@ACME-160".into(),
         json!([
             support::scripts::implement_run("src/ACME-160.ts"),
-            support::scripts::implement_run("src/ACME-160.ts")
+            {"change": {"path": "tests/ACME-160_int.rs", "content": "asserts refunds\n"},
+             "output": {"status": "completed", "taskName": "refunds", "changeSummary": "Complete refunds",
+                        "testsAdded": ["tests/ACME-160_int.rs"], "requiresTestReview": true,
+                        "newTestsPassed": true}}
         ]),
     );
+    script.insert(
+        "test-review@ACME-160".into(),
+        json!([
+            {"output": {"status": "needs_revision", "testFiles": ["tests/ACME-160_int.rs"],
+                        "reviewBasis": "skeleton", "qualityIssues": [
+                            {"id": "T001", "description": "The refund case asserts nothing."}]}},
+            {"output": {"status": "pass", "testFiles": ["tests/ACME-160_int.rs"], "reviewBasis": "skeleton",
+                        "prior_feedback_reconciliation": [
+                            {"id": "T001", "prior_disposition": "apply", "status": "resolved", "evidence": "asserted"}]}}
+        ]),
+    );
+    let comments_response = script["review-response@ACME-160"][0].clone();
+    script.insert(
+        "review-response@ACME-160".into(),
+        json!([
+            comments_response,
+            {"change": {"path": "tests/ACME-160_int.rs", "content": "asserts the refunded total\n"},
+             "output": {"status": "completed", "taskName": "tests", "changeSummary": "Assert the refund",
+                        "requiresTestReview": false, "dispositions": [
+                            {"id": "T001", "disposition": "apply", "reason": "the case must assert"}]}}
+        ]),
+    );
+    Value::Object(script)
+}
+
+/// The test review's finding reaches the executor apart from the comments, its recheck gets the
+/// executor's judgment of it, and both quality runs of the correction check the applied comment,
+/// not the test review's finding.
+fn assert_the_test_review_finding_stays_apart_from_the_comments(env: &Env) {
+    let ids = |handoff: &Value| -> Vec<String> {
+        handoff
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|f| f["id"].as_str().unwrap().to_owned())
+            .collect()
+    };
+    let mut judged: Vec<Vec<String>> =
+        handoffs(env, "review-response", None, "correction_findings")
+            .iter()
+            .map(ids)
+            .collect();
+    judged.sort();
+    assert_eq!(
+        judged,
+        [
+            vec!["T001".to_owned()],
+            vec!["review-comment-1".to_owned(), "review-comment-2".to_owned()],
+        ]
+    );
+    let test_reviews: Vec<String> = std::fs::read_dir(env.state().join("board/archive"))
+        .unwrap()
+        .map(|e| std::fs::read_to_string(e.unwrap().path()).unwrap())
+        .filter(|t| t.contains("step: test-review\n"))
+        .collect();
+    let (rechecks, first): (Vec<&String>, Vec<&String>) =
+        test_reviews.iter().partition(|t| t.contains("round: 2\n"));
+    assert_eq!((first.len(), rechecks.len()), (1, 1), "{test_reviews:?}");
+    assert!(!first[0].contains("\nprior_feedback: "), "{}", first[0]);
+    let prior = handoffs(env, "test-review", Some(2), "prior_feedback");
+    let entries = prior[0].as_array().expect("prior_feedback is an array");
+    assert_eq!(entries.len(), 1, "{entries:?}");
+    assert_eq!(
+        (entries[0]["id"].clone(), entries[0]["disposition"].clone()),
+        (json!("T001"), json!("apply"))
+    );
+
+    let checked: Vec<Vec<String>> = handoffs(env, "quality", None, "correction_findings")
+        .iter()
+        .map(ids)
+        .collect();
+    assert_eq!(checked, vec![vec!["review-comment-1".to_owned()]; 2]);
+}
+
+// AC: GH-52 (correction-under-way design AC1, AC3): "When a pull request comment correction's
+//     `quality` reports `stub_detected` and the redone `implement` asks for a test review, the
+//     system shall file `test-review` for that task. If that review raises findings, the executor's
+//     `review-response` shall receive them, and the next `test-review` shall receive
+//     `prior_feedback`. Once the test review passes and `quality` passes, the system shall push and
+//     answer the comments without filing `code-review` or `security-review` for that correction";
+//     GH-17: "also when other checks and corrections ran between the judgment and the push".
+// Behavior: the comments' `review-response` applies a comment -> `quality` reports
+//     `stub_detected` -> the redone `implement` changes a test file and asks for a test review ->
+//     `test-review` returns a finding -> `review-response` applies it -> the recheck passes ->
+//     `quality` passes -> commit -> push -> each comment has its reply, naming the commit that
+//     applied it.
+// @lane: integration
+// @dependency: daemon, flow, handoff, real git, fake agent, FakeGitHub
+#[test]
+fn comments_corrected_through_a_stub_repair_are_pushed_and_answered_without_a_review_round() {
+    let env = Env::new();
     let gh = run_acme_160(
         &env,
-        &Value::Object(script),
+        &stub_repair_with_a_test_review_script(),
         github_commenting_on_acme_160(&env),
     );
 
+    // The correction's steps, in order: the redone task's test review and its correction, and no
+    // review round before the push.
+    let events = env.events();
+    let accepted = events
+        .iter()
+        .position(|e| e["event"] == "comments-accepted")
+        .unwrap();
+    let pushed = accepted
+        + events[accepted..]
+            .iter()
+            .position(|e| e["event"] == "pushed")
+            .unwrap();
+    let filed: Vec<&str> = events[accepted..]
+        .iter()
+        .filter(|e| e["event"] == "filed" && e["issue"] == "ACME-160" && e["turn"] != "prepare")
+        .map(|e| e["step"].as_str().unwrap())
+        .collect();
+    assert!(
+        !filed.contains(&"code-review") && !filed.contains(&"security-review"),
+        "{filed:?}"
+    );
+    let corrected: Vec<&str> = events[accepted..pushed]
+        .iter()
+        .filter(|e| e["event"] == "filed" && e["issue"] == "ACME-160" && e["turn"] != "prepare")
+        .map(|e| e["step"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        corrected,
+        [
+            "review-response",
+            "quality",
+            "implement",
+            "test-review",
+            "review-response",
+            "test-review",
+            "quality"
+        ]
+    );
+
+    assert_the_test_review_finding_stays_apart_from_the_comments(&env);
     assert_answered_after_the_push_of(&env, &gh, &applying_commit(&env));
 }
 

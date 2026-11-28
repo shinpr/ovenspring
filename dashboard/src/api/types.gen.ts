@@ -209,6 +209,12 @@ disposition: Disposition | null, answer: string | null, };
 export type FindingSource = { "kind": "review", review: Step, round: number, } | { "kind": "comment", author: string, };
 
 /**
+ * What follows the running step once its work holds; for a judgment of findings whose applied
+ * correction leads somewhere else, also what follows if one is applied.
+ */
+export type Following = { follows: Upcoming, ifApplied: Upcoming | null, };
+
+/**
  * `general`: the base branch, who merges, what is held by path, and GitHub's token.
  */
 export type GeneralSection = { baseBranch: string, mergeBy: MergeBy, 
@@ -462,6 +468,10 @@ export type Position = { section: Section, phase: Phase | null, activity: Activi
  * The task being implemented, when the change has task files.
  */
 task: TaskCount | null, 
+/**
+ * What follows the running step, when the issue's state decides it (in progress only).
+ */
+next: Following | null, 
 /**
  * What the lead is finding a way past.
  */
@@ -800,6 +810,11 @@ apiKey: string | null, };
 export type TrackerSetup = { "kind": "linear", team: string, apiKey: string, } | { "kind": "github" };
 
 export type Unreachable = { service: Service, since: string, why: "no-connection" | "server-error" | "rate-limited", };
+
+/**
+ * What follows the running step, as the owner reads it after "Next:".
+ */
+export type Upcoming = "remaining-tasks" | "quality-checks" | "reviews" | "quality-then-rechecks" | "rechecks" | "design-then-rechecks" | "quality-then-push" | "push-and-replies" | "test-recheck" | "push" | "replies-and-gate" | "commit-again" | "push-again";
 
 /**
  * The newer version the owner can move to, and what moving takes.

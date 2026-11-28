@@ -94,7 +94,7 @@ From the requirements record (`desired-future`):
 ### Next line
 
 - [ ] **AC7** **While** the last task's test review runs and no redone task remains, the issue detail's `now.next` and the issue page shall name the quality checks only. **While** a redone task runs and another redone task remains, they shall name the remaining tasks first (FR4; GH-44 observation).
-- [ ] **AC8** **While** a pull request comment correction's `quality`, `implement` or `test-review` runs, the Next line shall name the push and the replies to the comments, not the code and security review. **While** the executor judges findings (`review-response`), the Next line shall name what follows if a correction is applied and what follows otherwise. **While** the Design Doc's author corrects an open design review or design sync inside a review round, the Next line shall name the round's rechecks, after the design's checks when the design review is open (FR4).
+- [ ] **AC8** **While** a pull request comment correction's `quality` runs, or its last redone task's `implement` or `test-review` runs, the Next line shall name the push and the replies to the comments, not the code and security review. **While** another of its redone tasks remains, the Next line shall name the remaining tasks first, as in AC7. **While** the executor judges findings (`review-response`), the Next line shall name what follows if a correction is applied and what follows otherwise. **While** the Design Doc's author corrects an open design review or design sync inside a review round, the Next line shall name the round's rechecks, after the design's checks when the design review is open (FR4).
 
 ### Saved state
 
@@ -261,7 +261,7 @@ test_review handoff ─► change ─► diffBase = before, diffHead = after, ch
 #### `following` (crates/core/src/phase.rs)
 
 - **Responsibility**: What follows the running step, as codes the dashboard words.
-- **Interface**: `pub enum Upcoming` and `pub struct Following { then: Upcoming, if_applied: Option<Upcoming> }` (Serialize, TS, kebab-case values, camelCase fields), and `IssueState::following(&self) -> Option<Following>` (Selected Design item 7).
+- **Interface**: `pub enum Upcoming` and `pub struct Following { follows: Upcoming, if_applied: Option<Upcoming> }` (Serialize, TS, kebab-case values, camelCase fields), and `IssueState::following(&self) -> Option<Following>` (Selected Design item 7). The field is `follows`, not `then`: a TypeScript object with a `then` property is treated as a promise by `await`, which the dashboard's lint (`noThenProperty`) rejects.
 - **Dependencies**: the route functions, `stage`, `refused`.
 
 #### Recorded change (crates/daemon)
@@ -315,13 +315,13 @@ test_review handoff ─► change ─► diffBase = before, diffHead = after, ch
 6. **Recorded change (FR5, FR6).** `recorded_change` returns `(change.before, change.after)` when both are recorded. For a record without them (an executor launched before the upgrade), it falls back to today's pair: the last two `trees` entries, or `(fallback, last tree)` with one entry, where `fallback` is `last_commit` or `origin/<base>`. Both endpoints still come from that one pair, so the guarantee below holds; only which files are attributed to the change stays as before the upgrade. With nothing recorded, it returns `None`. `test_review` emits `diffBase = before`, `diffHead = after` and `changedFiles = diff-tree -r --name-only before after`. Every listed path differs between the two trees by construction. Recording the start after `place_for` puts what was merged from the branch, and what `quality` or other steps changed before the executor ran, inside `before`. While a change is open, every merge into the worktree goes through `merged_into`, whichever launch or push runs it. `moved_start` puts what that merge brought in inside `before`, and keeps each path the earlier attempt changed at its start version. This includes a merge by the lead's `exception` launch between a blocked attempt and its retry. Both attempts' edits are listed, and the merged paths are not. A path that both the earlier attempt and the merge changed is listed, because the change did touch it. An agent's own edits between the attempts (a lead's fix in the worktree, for example) belong to the correction and stay attributed to the change, as the fallback does.
 
 7. **Next line (FR4).** `IssueState::following()` returns a value only for `Stage::Running { step }`. It names what follows once the running step's work holds (a check clear, an executor done with nothing left incomplete). For a judgment, where applying and declining are both valid, it names both branches. `task(s)` below maps `task_route`: `Implement(_)` → `remaining-tasks`; `Quality` → by `quality_route`: `Round` → `quality-checks`, `Rechecks` or `Design` → `quality-then-rechecks`, `Push` → `quality-then-push`.
-   - `implement`, `test-review`: `then = task(s)`.
+   - `implement`, `test-review`: `follows = task(s)`.
    - `quality`: `refused` at `Push` gives `push-again`. `refused` at another point except `Quality` gives `commit-again`. Otherwise by `quality_route`: `Round` → `reviews`; `Rechecks` → `rechecks`; `Design` → `design-then-rechecks`; `Push` → `push-and-replies`.
-   - `review-response`: `if_applied` from `judgment_route(s, true)` and `then` from `judgment_route(s, false)`. `Recheck` of `TestReview` → `test-recheck`; `Cleared` of `TestReview` → `task(s)`; `Quality` → `quality-then-rechecks` (Round) or `quality-then-push` (PrComments); `Converged` → `push`; `Answer` → `replies-and-gate`.
-   - `design` under `Round` with no open check: `if_applied = design-then-rechecks`, `then = rechecks`. `design` under `Round` correcting an open `DesignReview`: `then = design-then-rechecks` (applied, the design review checks again; not applied, `Cleared` goes to the design sync, so both branches reach the design's checks, then the round's rechecks). `design` under `Round` correcting an open `DesignSync`: `then = rechecks` (`judgment_route` gives `Cleared`, then the design-sync commit and `recheck_round`). `design-review` under `Round`: `design-then-rechecks`. `design-sync` under `Round`: `rechecks`.
+   - `review-response`: `if_applied` from `judgment_route(s, true)` and `follows` from `judgment_route(s, false)`. `Recheck` of `TestReview` → `test-recheck`; `Cleared` of `TestReview` → `task(s)`; `Quality` → `quality-then-rechecks` (Round) or `quality-then-push` (PrComments); `Converged` → `push`; `Answer` → `replies-and-gate`.
+   - `design` under `Round` with no open check: `if_applied = design-then-rechecks`, `follows = rechecks`. `design` under `Round` correcting an open `DesignReview`: `follows = design-then-rechecks` (applied, the design review checks again; not applied, `Cleared` goes to the design sync, so both branches reach the design's checks, then the round's rechecks). `design` under `Round` correcting an open `DesignSync`: `follows = rechecks` (`judgment_route` gives `Cleared`, then the design-sync commit and `recheck_round`). `design-review` under `Round`: `design-then-rechecks`. `design-sync` under `Round`: `rechecks`.
    - Otherwise `None`: the dashboard's per-activity text applies.
 
-   `Position.next = flow.following()` while in progress. `vocabulary.ts` gains `UPCOMING: Record<Upcoming, string>`. `nextInPhase(position)` returns `UPCOMING[then]` when `next` is set and has no `ifApplied`, or "`UPCOMING[ifApplied]`, if a correction is applied; otherwise `UPCOMING[then]`" when it has one. With no `next`, it returns `NEXT[activity]`. The rows `implementing`, `reviewing-tests`, `quality-checks` and `applying-findings` are removed from `NEXT`, because `following` always answers for them. Owner-facing wording, following `dashboard/CLAUDE.md`, for the implementer to keep (the line ends with a period):
+   `Position.next = flow.following()` while in progress. `vocabulary.ts` gains `UPCOMING: Record<Upcoming, string>`. `nextInPhase(position)` returns `UPCOMING[follows]` when `next` is set and has no `ifApplied`, or "`UPCOMING[ifApplied]`, if a correction is applied; otherwise `UPCOMING[follows]`" when it has one. With no `next`, it returns `NEXT[activity]`. The rows `implementing`, `reviewing-tests`, `quality-checks` and `applying-findings` are removed from `NEXT`, because `following` always answers for them. Owner-facing wording, following `dashboard/CLAUDE.md`, for the implementer to keep (the line ends with a period):
    - `remaining-tasks`: "the remaining tasks, then the quality checks"
    - `quality-checks`: "the quality checks"
    - `reviews`: "the code review and security review"
@@ -423,7 +423,7 @@ Invariants:
 ```yaml
 Contract: Position (GET /overview, GET /issues/{key} `now`)
 Output:
-  Type: next: null | {"then": Upcoming, "ifApplied": null | Upcoming}
+  Type: next: null | {"follows": Upcoming, "ifApplied": null | Upcoming}
   Upcoming: "remaining-tasks" | "quality-checks" | "reviews" | "quality-then-rechecks" | "rechecks" | "design-then-rechecks" | "quality-then-push" | "push-and-replies" | "test-recheck" | "push" | "replies-and-gate" | "commit-again" | "push-again"
   Guarantees: non-null whenever activity is implementing, reviewing-tests, quality-checks or applying-findings, and for design, design-review and design-sync steps under a round correction; null outside in-progress
 ```
@@ -439,7 +439,7 @@ Output:
 | `diffBase` | daemon → test-review item | transformed | `diffBase: <40-hex tree id>` (commit sha / `origin/<base>` only in the fallback) | the reviewer passes it to `git diff` | `factory/steps/test-review.md` |
 | `diffHead` | daemon → test-review item | new | `diffHead: <40-hex tree id>` | the reviewer passes it to `git diff` and `git show` | `factory/steps/test-review.md` |
 | `taskFile` | daemon → test-review item | preserved (now filled) | `taskFile: <absolute task path>` | read as a path | from `filing.task` (`test_review_task()`) |
-| `next` | daemon → dashboard | new | `{"then": "<kebab>", "ifApplied": "<kebab>" \| null}` or null | `types.gen.ts`; `UPCOMING[…]` | `Position` |
+| `next` | daemon → dashboard | new | `{"follows": "<kebab>", "ifApplied": "<kebab>" \| null}` or null | `types.gen.ts`; `UPCOMING[…]` | `Position` |
 
 ### State Transitions and Invariants
 
@@ -502,7 +502,7 @@ System Invariants:
 3. **Test-review inputs** (`filing`, `review_scope`, `IssueRecord.change`, `launch`, `merged_into`, `recorded_change`, `test-review.md`)
    - Verification: AC2, AC5, AC6 and AC7 in `issue_flow_int.rs`.
    - A new test uses `designed("ACME-…", &[], &[("1",""),("2","1")])`. Each `implement` asks for a test review and changes a test file. Task 1's first test review returns findings, then passes. The test asserts that task 2's first `test-review` item has a `taskFile` line naming task 2's file, and no `previous_review:`, `change_to_review:` or `prior_feedback:` line (AC2, AC5).
-   - In the same run, `quality` then reports `stub_detected` for files of both tasks. While the first redone task runs, `history::issue_detail(..).now.next` has `then = remaining-tasks`. While the last task's test review runs with no redo left, it has `then = quality-checks` (AC7).
+   - In the same run, `quality` then reports `stub_detected` for files of both tasks. While the first redone task runs, `history::issue_detail(..).now.next` has `follows = remaining-tasks`. While the last task's test review runs with no redo left, it has `follows = quality-checks` (AC7).
    - `a_test_review_receives_the_tests_a_task_changed_whatever_their_naming` gains an unrelated change made before the executor starts: a `files` entry written by a step that runs before `implement`, or a commit pushed to the branch that `bring_in_pushed` merges. Its `tests/export_int.rs` is new and untracked in the worktree's index. The test asserts that:
      - `changedFiles` names `tests/export_int.rs` and not the unrelated path;
      - for each listed path, `git diff --quiet <diffBase> <diffHead> -- <path>` exits 1 (AC6).
@@ -514,11 +514,11 @@ System Invariants:
      - the last task's test-review → `quality-checks`;
      - a redone task with another redo pending under PrComments → `remaining-tasks`;
      - quality under PrComments → `push-and-replies`;
-     - a comment `review-response` → `if_applied = quality-then-push`, `then = replies-and-gate`;
-     - a test review's `review-response` → `if_applied = test-recheck`, `then = task(s)`;
+     - a comment `review-response` → `if_applied = quality-then-push`, `follows = replies-and-gate`;
+     - a test review's `review-response` → `if_applied = test-recheck`, `follows = task(s)`;
      - `design` under Round with an open `DesignReview` → `design-then-rechecks`, and with an open `DesignSync` → `rechecks` (AC8).
 
-     Then `types.gen.ts` is regenerated. An `IssueView.stories.tsx` story asserts "Next: the quality checks." for `activity: 'reviewing-tests'` with `next: {then: 'quality-checks', ifApplied: null}` (AC7). The existing story asserting the applying-findings text gains `next: {then: 'push', ifApplied: 'quality-then-rechecks'}` and asserts both branches (AC8).
+     Then `types.gen.ts` is regenerated. An `IssueView.stories.tsx` story asserts "Next: the quality checks." for `activity: 'reviewing-tests'` with `next: {follows: 'quality-checks', ifApplied: null}` (AC7). The existing story asserting the applying-findings text gains `next: {follows: 'push', ifApplied: 'quality-then-rechecks'}` and asserts both branches (AC8).
 5. **Documents**: the merged designs that state a decision this design changes are updated in the same change, so no merged design keeps `origin`'s single slot as its rule.
 
    `docs/design/factory-core-design.md`:
@@ -528,7 +528,7 @@ System Invariants:
    - § The review round, first sentence: "After the build's `quality` the daemon files every review of the round at once". The comments' `review-response` still goes straight to `quality` (its row, AC10) and is unchanged.
    - § Phases, the correction sentence becomes: "A step run inside a correction raised after the build (the issue state's `correction`) belongs to that correction's phase: the review round's to review, the pull request comments' to merge; this covers its redone `implement`, their `test-review` and its `review-response`, and the Design Doc's checks under a round. Otherwise a correction of a check (an author run again in update mode, `review-response`, the `quality` after it) belongs to the phase of the check whose findings it answers (`check`), and a step outside any correction to its own phase. A `quality` whose commit or push was refused belongs to the point it returns to; an `exception` keeps the phase it stopped in." So an ordinary task's test review and its `review-response` run in Build, the same steps nested under a comment correction in Merge, and the Design Doc's checks under a round in Review (`phase_of`, Selected Design item 2).
 
-   `docs/design/owner-interface-design.md`, `GET /overview` row: `Position` gains `next: null | {then, ifApplied: null | then}`, the codes `Upcoming` lists, "what follows the running step; `ifApplied` when applying and declining a correction lead on differently; null outside in progress and where the activity alone decides (the dashboard's activity text applies)", contract in `crates/core/src/phase.rs` (`Following`) and `docs/design/correction-under-way-design.md` § Data Contracts, `Position.next`. `GET /issues/{key}` reuses the same `Position` for `now`, so both carry it.
+   `docs/design/owner-interface-design.md`, `GET /overview` row: `Position` gains `next: null | {follows, ifApplied: null | follows}`, the codes `Upcoming` lists, "what follows the running step; `ifApplied` when applying and declining a correction lead on differently; null outside in progress and where the activity alone decides (the dashboard's activity text applies)", contract in `crates/core/src/phase.rs` (`Following`) and `docs/design/correction-under-way-design.md` § Data Contracts, `Position.next`. `GET /issues/{key}` reuses the same `Position` for `now`, so both carry it.
 
    `docs/design/events-and-error-notices-design.md`, § Event details, Review round: "Where the round is handing findings to `ReviewResponse` (the saved state's `correction` is `Round`, with no `check` open), obtain the count from `handoff::handed`, which then returns the round's findings (`corrected()` = `Corrected::Round`): the same output keys and entries the correction receives." The rest of the paragraph stays: one per entry, zero for a round that converged directly (`round_converged` has cleared `correction` before the daemon handles `RecordReviewRound`), the same `review-round-ended {issue, round, findings}` fields, emitted once at the same boundary. This matches `issues.rs:440` in Selected Design item 2.
 

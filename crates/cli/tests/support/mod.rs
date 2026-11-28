@@ -225,6 +225,33 @@ impl Env {
     }
 }
 
+/// A person commits `path` on `branch` from the main checkout and pushes it to `origin`.
+pub fn push_as_person(env: &Env, branch: &str, path: &str, content: &str) -> String {
+    git(&env.repo, &["fetch", "-q", "origin", branch]);
+    git(&env.repo, &["checkout", "-q", "-B", "person", "FETCH_HEAD"]);
+    std::fs::create_dir_all(env.repo.join(path).parent().unwrap()).unwrap();
+    std::fs::write(env.repo.join(path), content).unwrap();
+    git(&env.repo, &["add", path]);
+    git(
+        &env.repo,
+        &[
+            "-c",
+            "user.name=dev",
+            "-c",
+            "user.email=dev@example.com",
+            "commit",
+            "-q",
+            "-m",
+            "A person's change",
+        ],
+    );
+    git(
+        &env.repo,
+        &["push", "-q", "origin", &format!("HEAD:refs/heads/{branch}")],
+    );
+    git(&env.repo, &["rev-parse", "HEAD"])
+}
+
 pub fn commit_all(repo: &Path, message: &str) {
     git(repo, &["add", "-A"]);
     git(

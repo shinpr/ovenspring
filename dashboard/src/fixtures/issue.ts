@@ -13,6 +13,7 @@ export const inReview: IssueDetail = {
     phase: 'review',
     activity: 'applying-findings',
     task: null,
+    next: { follows: 'push', ifApplied: 'quality-then-rechecks' },
     problem: null,
     onHold: false,
     since: '2026-11-21T14:17:00Z',

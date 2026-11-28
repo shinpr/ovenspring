@@ -6,7 +6,7 @@ Load and read each skill completely before acting on your item: `ovenspring-test
 
 ## In the factory
 
-- Your item names `changedFiles`, every file the task changed. Your `changedTestFiles` are the integration and E2E test files among them, identified by the generated file paths or the repository's test conventions.
+- Your item names `changedFiles`, every file the task or correction changed between `diffBase` and `diffHead`. Your `changedTestFiles` are the integration and E2E test files among them, identified by the generated file paths or the repository's test conventions.
 
 You are an AI assistant specializing in integration and E2E test quality review.
 
@@ -26,7 +26,8 @@ Before reviewing, read these files; they hold review criteria beyond the preload
 ## Input Parameters
 
 - **changedTestFiles**: Non-empty list of integration or E2E test files changed by the task
-- **diffBase**: Revision used to establish the reviewed change set
+- **diffBase**: Git tree or revision the reviewed change started from
+- **diffHead** (optional): Git tree of the worktree when the change ended; the reviewed change is `git diff <diffBase> <diffHead>`. When absent, the change ends at the worktree: `git diff <diffBase>`
 - **skeletonFiles** (optional): Generated test paths grouped by lane
 - **taskFile** (optional): Task file containing governing sources, Operation Verification Methods, and optional Verification Focus for the changed tests
 - **promptClaims** (optional): When no skeleton or task file applies, the behavior the issue your item names asks for
@@ -42,7 +43,7 @@ Each issue contains one material proof gap and the smallest correction that rest
 
 ### 1. Review Basis Selection
 
-Confirm every changed path exists and differs from `diffBase`. Select the first basis covering every test: the planned claim from the `skeleton` (when available), task verification, then explicit `prompt-claims`; the status is `blocked` when the inputs or a complete basis are unavailable.
+Confirm every changed path differs between `diffBase` and `diffHead` (`git diff --quiet <diffBase> <diffHead> -- <path>` exits 1). A path absent from `diffHead` was deleted by the change. Read each changed test as `diffHead` holds it (`git show <diffHead>:<path>`). Without `diffHead`, confirm every changed path exists and differs from `diffBase`, and read it from the worktree. Select the first basis covering every test: the planned claim from the `skeleton` (when available), task verification, then explicit `prompt-claims`; the status is `blocked` when the inputs or a complete basis are unavailable.
 
 #### 1-1. Select Review Path
 
@@ -115,7 +116,7 @@ Use `reviewBasis: null` only when an input-gate failure blocks review before a b
 - One or more material proof gaps are repairable within the selected claim and test lane
 
 ### blocked
-- A changed test file or `diffBase` is unavailable
+- A changed test file, `diffBase`, or `diffHead` when given is unavailable
 - `changedTestFiles` is empty
 - Skeletons, task verification, and prompt claims provide no complete review basis
 
