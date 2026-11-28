@@ -709,8 +709,10 @@ fn result_of(l: &Launch, all: &[Launch], item: Option<&Item>) -> RunResult {
 /// The findings handed to the step under way: a check's, the round's reviews', or the pull
 /// request's new comments.
 fn judging(record: &IssueRecord) -> Option<usize> {
-    record.flow.origin?;
-    Some(crate::handoff::handed(record).len())
+    record
+        .flow
+        .correcting()
+        .then(|| crate::handoff::handed(record).len())
 }
 
 /// The findings a check left open: what it raised and, on a re-review, the applied findings it
@@ -946,11 +948,11 @@ mod tests {
     }
 
     fn with_findings(
-        origin: ovenspring_core::flow::Origin,
+        correction: Option<ovenspring_core::flow::Correction>,
         findings: &[(&str, usize)],
     ) -> IssueRecord {
         let mut r = IssueRecord::new("ACME-1", "Title", vec![]);
-        r.flow.origin = Some(origin);
+        r.flow.correction = correction;
         for (key, n) in findings {
             r.findings.insert((*key).to_owned(), vec![Value::Null; *n]);
         }
@@ -958,14 +960,14 @@ mod tests {
     }
 
     #[test]
-    fn a_receiver_under_way_judges_the_findings_of_its_origin() {
-        use ovenspring_core::flow::Origin;
+    fn a_receiver_under_way_judges_the_findings_of_its_correction() {
+        use ovenspring_core::flow::Correction;
         use ovenspring_core::output::Review;
         use ovenspring_core::step::Check;
 
         // The security review passed this round; its findings from an earlier round are not judged.
         let mut round = with_findings(
-            Origin::Round,
+            Some(Correction::Round),
             &[
                 ("code-review/1", 3),
                 ("code-review/2", 1),
@@ -979,12 +981,14 @@ mod tests {
         .into();
         assert_eq!(judging(&round), Some(4));
 
-        let mut document =
-            with_findings(Origin::Document, &[("design-review", 2), ("prd-review", 5)]);
+        let mut document = with_findings(None, &[("design-review", 2), ("prd-review", 5)]);
         document.flow.check = Some(Check::DesignReview);
         assert_eq!(judging(&document), Some(2));
 
-        let comments = with_findings(Origin::PrComments, &[("comments", 3), ("code-review/1", 1)]);
+        let comments = with_findings(
+            Some(Correction::PrComments),
+            &[("comments", 3), ("code-review/1", 1)],
+        );
         assert_eq!(judging(&comments), Some(3));
     }
 

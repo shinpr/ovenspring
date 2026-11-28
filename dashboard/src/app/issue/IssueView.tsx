@@ -200,7 +200,7 @@ function PhaseItem({ phase, issue, runs, now, onOpenRun }: PhaseProps) {
       ))}
     </ul>
   )
-  const next = phase.state === 'now' ? nextInPhase(issue.now.activity) : undefined
+  const next = phase.state === 'now' ? nextInPhase(issue.now) : undefined
   return (
     <li className={`${styles['phase']} ${phase.state === 'now' ? styles['current'] : ''}`}>
       <div className={styles['phaseHead']}>

@@ -237,32 +237,23 @@ impl Stage {
     }
 }
 
-/// Whose findings are being corrected, and so who receives them and what rechecks.
+/// The correction raised after the build: it decides what follows its quality run, and is kept
+/// while a check inside it corrects its own findings.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
-pub enum Origin {
-    /// A document check (`prd-review`, `ui-spec-review`, `adr-review`, `design-verify`,
-    /// `design-review`, `plan-review`): its author corrects, the same check rechecks.
-    Document,
-    /// `test-review`: the executor corrects, the test review rechecks.
-    TestReview,
-    /// The post-implementation review round.
+pub enum Correction {
+    /// The post-implementation review round: its reviews recheck the correction.
     Round,
-    /// Accepted pull request comments: the executor corrects, and the pull request is pushed.
+    /// Accepted pull request comments: the correction is pushed and the comments answered.
     PrComments,
 }
 
-/// What follows a converged `test-review`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum After {
-    /// The next task, or the final quality run.
-    NextTask,
-    /// The quality run after a correction of the review round or of pull request comments.
-    /// Retained for issues saved by earlier versions: a correction no longer passes a test review.
-    Correction(Origin),
-    /// The review round, after the Design Doc its author corrected passed its own checks.
-    ReturnToRound,
+/// Whose findings the step under way receives: the open check's, or else the outer correction's.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Corrected {
+    Check(Check),
+    Round,
+    PrComments,
 }
 
 /// The post-implementation review round.
@@ -305,8 +296,10 @@ pub struct Documents {
     pub prd_approved: bool,
 }
 
-/// What the daemon keeps about an issue between facts.
+/// What the daemon keeps about an issue between facts. Read through `SavedIssueState`, which
+/// also accepts the fields earlier versions wrote.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(from = "SavedIssueState")]
 pub struct IssueState {
     pub key: String,
     pub stage: Stage,
@@ -322,12 +315,11 @@ pub struct IssueState {
     pub redoing: bool,
     /// Number of post-implementation review units (1 unless a large change is split).
     pub units: usize,
-    /// Whose findings the current correction belongs to.
-    pub origin: Option<Origin>,
+    /// The correction raised after the build, kept while a check inside it corrects its own
+    /// findings; it decides what follows its quality run.
+    pub correction: Option<Correction>,
     /// The check whose findings are being corrected (a document check or `test-review`).
     pub check: Option<Check>,
-    /// What follows a converged `test-review`.
-    pub after: Option<After>,
     /// Consecutive corrections of `check` whose applied finding its re-review maintained.
     pub attempts: u32,
     /// A refused commit or push being corrected: the commit point it returns to, and how many
@@ -339,10 +331,122 @@ pub struct IssueState {
     pub pr: Option<u64>,
 }
 
+/// `IssueState` as saved by this version or an earlier one, which recorded the correction in
+/// `origin` and what followed a test review in `after`.
+#[derive(Deserialize)]
+struct SavedIssueState {
+    key: String,
+    stage: Stage,
+    scale: Option<Scale>,
+    documents: Documents,
+    approvals: Vec<Approval>,
+    tasks: Vec<PlannedTask>,
+    task: usize,
+    redo: Vec<usize>,
+    redoing: bool,
+    units: usize,
+    correction: Option<Correction>,
+    origin: Option<SavedOrigin>,
+    after: Option<SavedAfter>,
+    check: Option<Check>,
+    attempts: u32,
+    refused: Option<(CommitPoint, u32)>,
+    round: Round,
+    review_round: u32,
+    fix_ci_round: u32,
+    pr: Option<u64>,
+}
+
+/// Whose findings an earlier version's correction belonged to. A document check's and a test
+/// review's are the open `check`.
+#[derive(Deserialize)]
+#[serde(rename_all = "kebab-case")]
+enum SavedOrigin {
+    Document,
+    TestReview,
+    Round,
+    PrComments,
+}
+
+/// What followed an earlier version's converged test review.
+#[derive(Deserialize)]
+#[serde(rename_all = "kebab-case")]
+enum SavedAfter {
+    NextTask,
+    /// The quality run of a whole correction.
+    Correction(SavedOrigin),
+    /// The round's rechecks, once its corrected Design Doc passed its own checks.
+    ReturnToRound,
+}
+
+impl SavedOrigin {
+    fn correction(&self) -> Option<Correction> {
+        match self {
+            SavedOrigin::Round => Some(Correction::Round),
+            SavedOrigin::PrComments => Some(Correction::PrComments),
+            SavedOrigin::Document | SavedOrigin::TestReview => None,
+        }
+    }
+}
+
+impl From<SavedIssueState> for IssueState {
+    fn from(saved: SavedIssueState) -> IssueState {
+        let after = match &saved.after {
+            Some(SavedAfter::Correction(origin)) => origin.correction(),
+            Some(SavedAfter::ReturnToRound) => Some(Correction::Round),
+            Some(SavedAfter::NextTask) | None => None,
+        };
+        let correction = after
+            .or_else(|| saved.origin.as_ref().and_then(SavedOrigin::correction))
+            .or(saved.correction);
+        IssueState {
+            key: saved.key,
+            stage: saved.stage,
+            scale: saved.scale,
+            documents: saved.documents,
+            approvals: saved.approvals,
+            tasks: saved.tasks,
+            task: saved.task,
+            redo: saved.redo,
+            redoing: saved.redoing,
+            units: saved.units,
+            correction,
+            check: saved.check,
+            attempts: saved.attempts,
+            refused: saved.refused,
+            round: saved.round,
+            review_round: saved.review_round,
+            fix_ci_round: saved.fix_ci_round,
+            pr: saved.pr,
+        }
+    }
+}
+
 impl IssueState {
     /// An author runs again for applied findings, or a check rechecks after a correction.
     pub fn correcting(&self) -> bool {
-        self.check.is_some() || self.origin == Some(Origin::Round)
+        self.check.is_some() || self.correction.is_some()
+    }
+
+    /// Whose findings the step under way receives: the open check's first, then the outer
+    /// correction's.
+    pub fn corrected(&self) -> Option<Corrected> {
+        match (self.check, self.correction) {
+            (Some(check), _) => Some(Corrected::Check(check)),
+            (None, Some(Correction::Round)) => Some(Corrected::Round),
+            (None, Some(Correction::PrComments)) => Some(Corrected::PrComments),
+            (None, None) => None,
+        }
+    }
+
+    /// The planned task a test review checks: the current one, unless the review covers a whole
+    /// correction (only an earlier version filed those, outside any redone task).
+    pub fn test_review_task(&self) -> Option<usize> {
+        let one_task = self.correction.is_none() || self.redoing;
+        self.tasks
+            .get(self.task)
+            .filter(|_| one_task)
+            .map(|_| self.task)
     }
 
     pub fn new(key: &str) -> IssueState {
@@ -357,9 +461,8 @@ impl IssueState {
             redo: vec![],
             redoing: false,
             units: 1,
-            origin: None,
+            correction: None,
             check: None,
-            after: None,
             attempts: 0,
             refused: None,
             round: Round::default(),
@@ -551,9 +654,13 @@ const PARALLEL_CODE_REVIEWS: usize = 3;
 
 /// The item `step` runs as in this state: its check round and task.
 pub fn filing(s: &IssueState, step: Step, unit: Option<usize>) -> Filing {
-    let task = (step == Step::Implement)
-        .then(|| s.tasks.get(s.task).map(|_| s.task))
-        .flatten();
+    let task = if step == Step::Implement {
+        s.tasks.get(s.task).map(|_| s.task)
+    } else if step == Step::TestReview {
+        s.test_review_task()
+    } else {
+        None
+    };
     Filing {
         step,
         role: step.role(),
@@ -995,7 +1102,7 @@ fn document_done(
     }
     // An author run again for applied findings: the check that raised them rechecks.
     if s.correcting() {
-        return corrected_by_author(s, &d.dispositions, limits);
+        return judged(s, &d.dispositions, limits);
     }
     // `decompose` writes no document: it ends through `Fact::Planned`, built from its task files.
     match step.document() {
@@ -1017,7 +1124,6 @@ fn executed(
         return corrected_by_executor(s, e, limits);
     }
     if test_review_follows(s, e) {
-        s.after = Some(After::NextTask);
         return check(s, Check::TestReview);
     }
     next_task_or_redo(s)
@@ -1027,7 +1133,7 @@ fn executed(
 /// round. A round's reviews recheck the tests of its correction themselves, the completion of
 /// what that correction left incomplete included.
 fn test_review_follows(s: &IssueState, e: &crate::output::ExecutorOutput) -> bool {
-    e.requires_test_review && s.origin != Some(Origin::Round)
+    e.requires_test_review && s.correction != Some(Correction::Round)
 }
 
 /// After the scope check, or after the PRD's analysis: the UI Spec, ADR and design documents.
@@ -1041,23 +1147,62 @@ fn before_design(s: &mut IssueState) -> Vec<Action> {
     }
 }
 
+/// What follows an implementation task, or the test review of one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum TaskRoute {
+    /// The task to implement next: the next task the quality run sent back, or the next planned
+    /// one.
+    Implement(usize),
+    Quality,
+}
+
+pub(crate) fn task_route(s: &IssueState) -> TaskRoute {
+    if let Some(&task) = s.redo.last() {
+        TaskRoute::Implement(task)
+    } else if !s.redoing && s.task + 1 < s.tasks.len() {
+        TaskRoute::Implement(s.task + 1)
+    } else {
+        TaskRoute::Quality
+    }
+}
+
 fn next_task_or_redo(s: &mut IssueState) -> Vec<Action> {
-    if let Some(task) = s.redo.pop() {
-        s.task = task;
-        return run(s, Step::Implement);
+    match task_route(s) {
+        TaskRoute::Implement(task) => {
+            s.redo.pop();
+            s.task = task;
+            run(s, Step::Implement)
+        }
+        TaskRoute::Quality => {
+            if s.redoing {
+                s.redoing = false;
+                s.task = s.tasks.len().saturating_sub(1);
+            }
+            run(s, Step::Quality)
+        }
     }
-    if s.redoing {
-        s.redoing = false;
-        s.task = s.tasks.len().saturating_sub(1);
-    } else if s.task + 1 < s.tasks.len() {
-        s.task += 1;
-        return run(s, Step::Implement);
+}
+
+/// What follows the commit after a passing quality run, by the correction under way.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum QualityRoute {
+    /// The Design Doc's correction a pre-upgrade round scheduled, then the round's rechecks.
+    Design,
+    /// The round's reviews recheck its correction.
+    Rechecks,
+    /// The pull request comments' correction is pushed, and the comments answered.
+    Push,
+    /// The build is complete: the review round.
+    Round,
+}
+
+pub(crate) fn quality_route(s: &IssueState) -> QualityRoute {
+    match s.correction {
+        Some(Correction::Round) if s.round.author_follows => QualityRoute::Design,
+        Some(Correction::Round) => QualityRoute::Rechecks,
+        Some(Correction::PrComments) => QualityRoute::Push,
+        None => QualityRoute::Round,
     }
-    // A round correction's origin carries its pending rechecks past the quality run.
-    if s.origin != Some(Origin::Round) {
-        s.origin = None;
-    }
-    run(s, Step::Quality)
 }
 
 /// Commits the work that passed `after`; what follows runs once the commit is made.
@@ -1091,9 +1236,9 @@ fn after_commit(s: &mut IssueState, after: CommitPoint, limits: Limits) -> Vec<A
         CommitPoint::PrdReview => await_approval(s, Approve::Prd),
         CommitPoint::UiSpecReview if s.documents.adr => run(s, Step::Adr),
         CommitPoint::UiSpecReview | CommitPoint::AdrReview => run(s, Step::Design),
-        CommitPoint::DesignSync if s.after == Some(After::ReturnToRound) => {
-            s.after = None;
-            return_to_round(s, limits)
+        // The round's corrected Design Doc passed its own checks: the round goes on.
+        CommitPoint::DesignSync if s.correction == Some(Correction::Round) => {
+            recheck_round(s, limits)
         }
         // A category a person reviews before it merges asks nothing of the design.
         CommitPoint::DesignSync
@@ -1105,18 +1250,18 @@ fn after_commit(s: &mut IssueState, after: CommitPoint, limits: Limits) -> Vec<A
             run(s, Step::TestDesign)
         }
         CommitPoint::DesignSync => await_approval(s, Approve::Design),
-        CommitPoint::Quality => match s.origin {
-            Some(Origin::Round) if s.round.author_follows => {
+        CommitPoint::Quality => match quality_route(s) {
+            QualityRoute::Design => {
                 s.round.author_follows = false;
                 run(s, Step::Design)
             }
-            Some(Origin::Round) => recheck_round(s, limits),
-            Some(Origin::PrComments) => {
-                s.origin = None;
+            QualityRoute::Rechecks => recheck_round(s, limits),
+            QualityRoute::Push => {
+                s.correction = None;
                 s.stage = Stage::Pushing;
                 vec![Action::Push]
             }
-            Some(Origin::Document | Origin::TestReview) | None => start_round(s),
+            QualityRoute::Round => start_round(s),
         },
         CommitPoint::FixCi | CommitPoint::MergeBase | CommitPoint::Push => {
             s.stage = Stage::Pushing;
@@ -1133,14 +1278,7 @@ fn checked(s: &mut IssueState, step: Step, result: CheckResult) -> Vec<Action> {
     };
     match result {
         CheckResult::Blocked => step_failed(s, step),
-        CheckResult::Findings => {
-            s.origin = Some(if check == Check::TestReview {
-                Origin::TestReview
-            } else {
-                Origin::Document
-            });
-            correct(s, check)
-        }
+        CheckResult::Findings => correct(s, check),
         CheckResult::MaintainedApply => {
             s.attempts += 1;
             if s.attempts >= 2 {
@@ -1176,13 +1314,7 @@ fn check_cleared(s: &mut IssueState, cleared: Check) -> Vec<Action> {
         // DesignVerify is retained for issues saved by earlier versions.
         Check::DesignReview | Check::DesignVerify => check(s, Check::DesignSync),
         Check::PlanReview => run(s, Step::Decompose),
-        Check::TestReview => match s.after.take() {
-            Some(After::Correction(origin)) => {
-                s.origin = Some(origin);
-                run(s, Step::Quality)
-            }
-            Some(After::NextTask | After::ReturnToRound) | None => next_task_or_redo(s),
-        },
+        Check::TestReview => next_task_or_redo(s),
     }
 }
 
@@ -1198,39 +1330,64 @@ fn recheck(s: &mut IssueState, limits: Limits) -> Vec<Action> {
     run(s, check.step())
 }
 
-/// Design sync ends with the author’s judgment. Other checks revisit applied findings.
-fn after_judgment(
-    s: &mut IssueState,
-    dispositions: &[FindingDisposition],
-    limits: Limits,
-) -> Vec<Action> {
-    match s.check {
-        Some(Check::DesignSync) => check_cleared(s, Check::DesignSync),
-        Some(check) if !output::applies(dispositions) => check_cleared(s, check),
-        _ => recheck(s, limits),
-    }
+/// What follows a receiver's judgment of the findings it was handed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum JudgmentRoute {
+    /// The open check reviews the correction again.
+    Recheck(Check),
+    /// The open check is complete: design sync ends with the author's judgment, and a check
+    /// whose findings were all declined has nothing to revisit.
+    Cleared(Check),
+    /// The quality run of the outer correction.
+    Quality,
+    /// The round's corrected Design Doc passes its own checks before the round goes on.
+    DesignChecks,
+    /// The round's reviews recheck.
+    Rechecks,
+    /// Nothing of the round is applied: it converged.
+    Converged,
+    /// Nothing of the comments is applied: they are answered, and the gate runs.
+    Answer,
 }
 
-fn corrected_by_author(
-    s: &mut IssueState,
-    dispositions: &[FindingDisposition],
-    limits: Limits,
-) -> Vec<Action> {
-    if s.origin != Some(Origin::Round) {
-        return after_judgment(s, dispositions, limits);
-    }
-    if !output::applies(dispositions) {
-        return return_to_round(s, limits);
-    }
-    // The corrected Design Doc passes its own review and design sync before the round goes on.
-    s.after = Some(After::ReturnToRound);
-    check(s, Check::DesignReview)
+/// What follows the receiver's judgment of the findings it was handed, which are those of
+/// [`IssueState::corrected`]; none when nothing is being corrected.
+pub(crate) fn judgment_route(s: &IssueState, applied: bool) -> Option<JudgmentRoute> {
+    let author = matches!(s.stage, Stage::Running { step } if step.document().is_some());
+    Some(match (s.corrected()?, applied) {
+        (Corrected::Check(Check::DesignSync), _) => JudgmentRoute::Cleared(Check::DesignSync),
+        (Corrected::Check(check), false) => JudgmentRoute::Cleared(check),
+        (Corrected::Check(check), true) => JudgmentRoute::Recheck(check),
+        (Corrected::Round, true) if author => JudgmentRoute::DesignChecks,
+        (Corrected::Round, false) if author => JudgmentRoute::Rechecks,
+        (Corrected::Round, false) => JudgmentRoute::Converged,
+        (Corrected::PrComments, false) => JudgmentRoute::Answer,
+        (Corrected::Round | Corrected::PrComments, true) => JudgmentRoute::Quality,
+    })
 }
 
-/// The round after its author correction passed the Design Doc's checks: the reviews recheck.
-fn return_to_round(s: &mut IssueState, limits: Limits) -> Vec<Action> {
-    s.origin = Some(Origin::Round);
-    recheck_round(s, limits)
+/// Applies the route of the receiver's judgment.
+fn judged(s: &mut IssueState, dispositions: &[FindingDisposition], limits: Limits) -> Vec<Action> {
+    // A receiver that judged none of the open check's findings was handed none: the check's run
+    // could not report (a blocked first review the lead sent back), so its review is still owed.
+    let unreported = matches!(s.corrected(), Some(Corrected::Check(_))) && dispositions.is_empty();
+    let Some(route) = judgment_route(s, unreported || output::applies(dispositions)) else {
+        return vec![];
+    };
+    match route {
+        JudgmentRoute::Recheck(_) => recheck(s, limits),
+        JudgmentRoute::Cleared(check) => check_cleared(s, check),
+        // Whoever raised the findings reviews the correction again, its tests included.
+        JudgmentRoute::Quality => run(s, Step::Quality),
+        JudgmentRoute::DesignChecks => check(s, Check::DesignReview),
+        JudgmentRoute::Rechecks => recheck_round(s, limits),
+        JudgmentRoute::Converged => round_converged(s),
+        JudgmentRoute::Answer => {
+            s.correction = None;
+            s.stage = Stage::Gate;
+            vec![Action::AnswerComments, Action::RunGate]
+        }
+    }
 }
 
 fn corrected_by_executor(
@@ -1238,29 +1395,19 @@ fn corrected_by_executor(
     e: &crate::output::ExecutorOutput,
     limits: Limits,
 ) -> Vec<Action> {
-    let Some(origin @ (Origin::Round | Origin::PrComments)) = s.origin else {
-        return after_judgment(s, &e.dispositions, limits);
-    };
-    // An executor launched before the upgrade could leave edits for the document author.
-    // Refile its original findings before clearing them or acknowledging PR comments.
-    if output::author_applies(&e.dispositions) {
-        return run(s, Step::ReviewResponse);
-    }
-    let applied = output::applies(&e.dispositions);
-    if origin == Origin::Round {
-        s.round.correcting = owning_reviews(&s.round, &e.dispositions);
-        s.round.findings.clear();
-        s.round.maintained.clear();
-        if !applied {
-            return round_converged(s);
+    if s.check.is_none() && s.correction.is_some() {
+        // An executor launched before the upgrade could leave edits for the document author.
+        // Refile its original findings before clearing them or acknowledging PR comments.
+        if output::author_applies(&e.dispositions) {
+            return run(s, Step::ReviewResponse);
         }
-    } else if !applied {
-        s.origin = None;
-        s.stage = Stage::Gate;
-        return vec![Action::AnswerComments, Action::RunGate];
+        if s.correction == Some(Correction::Round) {
+            s.round.correcting = owning_reviews(&s.round, &e.dispositions);
+            s.round.findings.clear();
+            s.round.maintained.clear();
+        }
     }
-    // Whoever raised the findings reviews the correction again, its tests included.
-    run(s, Step::Quality)
+    judged(s, &e.dispositions, limits)
 }
 
 /// The round's reviews that raised a finding the executor applied: they recheck after it. A
@@ -1285,7 +1432,7 @@ fn owning_reviews(round: &Round, dispositions: &[FindingDisposition]) -> BTreeSe
 /// Files every review of a fresh round: a code review per unit (three at once) and the security
 /// review.
 fn start_round(s: &mut IssueState) -> Vec<Action> {
-    s.origin = Some(Origin::Round);
+    s.correction = Some(Correction::Round);
     s.round = Round {
         number: 1,
         ..Round::default()
@@ -1431,7 +1578,7 @@ fn round_progress(s: &mut IssueState) -> Vec<Action> {
 }
 
 fn round_converged(s: &mut IssueState) -> Vec<Action> {
-    s.origin = None;
+    s.correction = None;
     s.round = Round::default();
     s.stage = Stage::Pushing;
     vec![Action::Push]
@@ -1510,7 +1657,7 @@ fn after_exception(s: &mut IssueState, action: ExceptionAction) -> Vec<Action> {
     match action {
         ExceptionAction::Retry => retry(s, &failed),
         ExceptionAction::Replan => {
-            redirect_author(s, Document::WorkPlan);
+            redirect_author(s, Document::WorkPlan, &failed);
             s.tasks.clear();
             s.redo.clear();
             s.redoing = false;
@@ -1518,7 +1665,7 @@ fn after_exception(s: &mut IssueState, action: ExceptionAction) -> Vec<Action> {
             run(s, Step::WorkPlan)
         }
         ExceptionAction::Redesign => {
-            redirect_author(s, Document::Design);
+            redirect_author(s, Document::Design, &failed);
             run(s, Step::Design)
         }
         ExceptionAction::Drop => drop_issue(s),
@@ -1533,18 +1680,29 @@ fn after_exception(s: &mut IssueState, action: ExceptionAction) -> Vec<Action> {
     }
 }
 
-/// Returning to the author of the open check carries the correction and its continuation.
-fn redirect_author(s: &mut IssueState, target: Document) {
-    if s.origin == Some(Origin::Document) && s.check.and_then(Check::document) == Some(target) {
-        s.attempts = 0;
-        s.review_round = 0;
-        return;
-    }
-    s.origin = None;
-    s.check = None;
-    s.after = None;
+/// Returning to the author of the open check carries the correction and its continuation when
+/// the check is the target's and its correction is under way: the round's Design Doc
+/// correction, whose continuation is the round's rechecks; a design sync, whose correction ends
+/// with the author's judgment; or findings that had reached the author (the author's step
+/// failed, or the check was rechecking). Otherwise the author starts over.
+fn redirect_author(s: &mut IssueState, target: Document, failed: &Cause) {
+    let check = s.check.filter(|c| c.document() == Some(target));
+    let keep = check.is_some_and(|check| {
+        s.correction == Some(Correction::Round)
+            || check == Check::DesignSync
+            || *failed
+                == (Cause::Step {
+                    step: target.step(),
+                })
+            || s.review_round > 1
+    });
     s.attempts = 0;
     s.review_round = 0;
+    if keep {
+        return;
+    }
+    s.correction = None;
+    s.check = None;
     s.round = Round::default();
 }
 
@@ -1594,7 +1752,7 @@ fn retry(s: &mut IssueState, failed: &Cause) -> Vec<Action> {
 
 /// New pull request comments go to the executor to judge, each as a finding, like a review's.
 fn judge_comments(s: &mut IssueState) -> Vec<Action> {
-    s.origin = Some(Origin::PrComments);
+    s.correction = Some(Correction::PrComments);
     run(s, Step::ReviewResponse)
 }
 
@@ -2346,7 +2504,7 @@ mod tests {
         );
         let (s, actions) = next(
             &IssueState {
-                origin: Some(Origin::Round),
+                correction: Some(Correction::Round),
                 ..at(running("review-response"))
             },
             &answered(&json!([decline("F001", "code-review/1")])),
@@ -2381,7 +2539,7 @@ mod tests {
     #[test]
     fn rerun_check_reruns_only_the_passed_reviews_it_names() {
         let s = IssueState {
-            origin: Some(Origin::Round),
+            correction: Some(Correction::Round),
             stage: Stage::Reviewing,
             round: Round {
                 rerun_check: true,
@@ -2650,6 +2808,369 @@ mod tests {
                 s = n;
             }
         }
+    }
+
+    #[test]
+    fn a_comment_correction_completed_through_a_test_reviewed_task_is_pushed_without_a_review_round()
+     {
+        let mut s = IssueState {
+            tasks: planned_tasks(2),
+            task: 1,
+            ..at(Stage::WaitingBots)
+        };
+        let steps = vec![
+            (
+                Fact::BotWaitEnded { comments: true },
+                vec!["review-response"],
+            ),
+            (
+                answered(&json!([apply("review-comment-1", None)])),
+                vec!["quality"],
+            ),
+            (quality("stub_detected"), vec![]),
+            (Fact::Stubs { tasks: vec![0] }, vec!["implement"]),
+            (implemented(true), vec!["test-review"]),
+            (
+                done(
+                    "test-review",
+                    json!({"status": "needs_revision", "testFiles": ["a.int.test.ts"],
+                    "reviewBasis": "skeleton", "qualityIssues": [{"id": "T001"}]}),
+                ),
+                vec!["review-response"],
+            ),
+            (answered(&json!([apply("T001", None)])), vec!["test-review"]),
+            (
+                done(
+                    "test-review",
+                    json!({"status": "pass", "testFiles": [], "reviewBasis": "skeleton",
+                    "prior_feedback_reconciliation": [{"id": "T001", "prior_disposition": "apply", "status": "resolved", "evidence": "e"}]}),
+                ),
+                vec!["quality"],
+            ),
+            (quality("pass"), vec!["commit after quality", "Push"]),
+        ];
+        for (i, (fact, expected)) in steps.into_iter().enumerate() {
+            let (n, actions) = step(&s, &fact, Limits::default());
+            assert_eq!(names(&actions), expected, "fact {i}: {fact:?}");
+            if matches!(n.stage, Stage::Running { .. }) {
+                assert_eq!(n.phase(), Some(crate::phase::Phase::Merge), "fact {i}");
+            }
+            s = n;
+        }
+        assert_eq!(
+            (s.stage, s.correction, s.check),
+            (Stage::Pushing, None, None)
+        );
+    }
+
+    /// A state as an earlier version saved it: `origin` and `after` in place of `correction`.
+    fn saved_by_an_earlier_version(state: &IssueState, origin: Value, after: Value) -> IssueState {
+        let mut saved = serde_json::to_value(state).unwrap();
+        let fields = saved.as_object_mut().unwrap();
+        fields.remove("correction");
+        fields.insert("origin".into(), origin);
+        fields.insert("after".into(), after);
+        serde_json::from_value(saved).unwrap()
+    }
+
+    #[test]
+    fn an_issue_saved_by_the_previous_version_loads_with_its_correction_and_check() {
+        // Written by hand in the previous version's format, so a field this version adds cannot
+        // slip into the record unnoticed.
+        let saved = json!({
+            "key": "ACME-1",
+            "stage": {"stage": "running", "step": "test-review"},
+            "scale": null,
+            "documents": {"ui_spec": false, "adr": false, "prd_approved": false},
+            "approvals": [],
+            "tasks": [{"path": "tasks/plan-task-01.md"}],
+            "task": 0,
+            "redo": [0],
+            "redoing": true,
+            "units": 1,
+            "origin": "test-review",
+            "check": "test-review",
+            "after": {"correction": "pr-comments"},
+            "attempts": 0,
+            "refused": null,
+            "round": {"number": 1, "pending": [], "queued": [], "rerun_check": false,
+                "findings": [], "maintained": [], "passed": [], "correcting": [],
+                "stuck": null, "kept": 0},
+            "review_round": 1,
+            "fix_ci_round": 0,
+            "pr": 62
+        });
+        let read: IssueState = serde_json::from_value(saved).unwrap();
+        assert_eq!(
+            (
+                read.stage,
+                read.correction,
+                read.check,
+                read.redoing,
+                read.pr
+            ),
+            (
+                running("test-review"),
+                Some(Correction::PrComments),
+                Some(Check::TestReview),
+                true,
+                Some(62)
+            )
+        );
+    }
+
+    #[test]
+    fn a_saved_correction_is_read_from_the_fields_an_earlier_version_wrote() {
+        let cases = [
+            (
+                json!("test-review"),
+                json!({"correction": "pr-comments"}),
+                Some(Correction::PrComments),
+            ),
+            (
+                json!(null),
+                json!({"correction": "round"}),
+                Some(Correction::Round),
+            ),
+            (
+                json!("document"),
+                json!("return-to-round"),
+                Some(Correction::Round),
+            ),
+            (json!("round"), json!(null), Some(Correction::Round)),
+            (
+                json!("pr-comments"),
+                json!(null),
+                Some(Correction::PrComments),
+            ),
+            (json!("document"), json!(null), None),
+            (json!("test-review"), json!("next-task"), None),
+            (json!(null), json!(null), None),
+        ];
+        let state = IssueState::new("ACME-1");
+        for (origin, after, correction) in cases {
+            let read = saved_by_an_earlier_version(&state, origin.clone(), after.clone());
+            assert_eq!(
+                read.correction, correction,
+                "origin {origin}, after {after}"
+            );
+        }
+        let written = serde_json::to_value(IssueState {
+            correction: Some(Correction::PrComments),
+            ..state
+        })
+        .unwrap();
+        assert_eq!(written["correction"], json!("pr-comments"));
+        assert!(written.get("origin").is_none() && written.get("after").is_none());
+        let read: IssueState = serde_json::from_value(written).unwrap();
+        assert_eq!(read.correction, Some(Correction::PrComments));
+    }
+
+    #[test]
+    fn a_test_review_names_its_redone_task_and_none_for_an_earlier_versions_whole_correction() {
+        let legacy = saved_by_an_earlier_version(
+            &IssueState {
+                tasks: planned_tasks(2),
+                task: 1,
+                check: Some(Check::TestReview),
+                review_round: 1,
+                ..at(running("test-review"))
+            },
+            json!("test-review"),
+            json!({"correction": "pr-comments"}),
+        );
+        assert_eq!(calls_for(&legacy)[0].task, None);
+
+        let mut s = IssueState {
+            tasks: planned_tasks(2),
+            task: 1,
+            ..at(Stage::WaitingBots)
+        };
+        for fact in [
+            Fact::BotWaitEnded { comments: true },
+            answered(&json!([apply("review-comment-1", None)])),
+            quality("stub_detected"),
+            Fact::Stubs { tasks: vec![0] },
+        ] {
+            s = step(&s, &fact, Limits::default()).0;
+        }
+        let (_, actions) = step(&s, &implemented(true), Limits::default());
+        let filed: Vec<_> = actions
+            .iter()
+            .filter_map(|a| {
+                if let Action::File(f) = a {
+                    Some((f.step, f.task))
+                } else {
+                    None
+                }
+            })
+            .collect();
+        assert_eq!(filed, vec![(Step::TestReview, Some(0))]);
+    }
+
+    #[test]
+    fn a_round_design_correction_saved_by_an_earlier_version_returns_to_the_rechecks_after_redesign()
+     {
+        let state = IssueState {
+            check: Some(Check::DesignSync),
+            review_round: 1,
+            round: Round {
+                number: 1,
+                correcting: [Review::CodeReview { unit: 1 }].into(),
+                ..Round::default()
+            },
+            ..at(running("design-sync"))
+        };
+        let saved =
+            saved_by_an_earlier_version(&state, json!("document"), json!("return-to-round"));
+        drive(
+            saved,
+            vec![
+                (
+                    Fact::Stuck {
+                        step: Step::DesignSync,
+                        unit: None,
+                    },
+                    vec!["exception"],
+                ),
+                (
+                    done("exception", json!({"action": "redesign", "note": "n"})),
+                    vec!["design"],
+                ),
+                (
+                    revised("design", &json!([apply("C001", None)])),
+                    vec!["commit after design-sync", "code-review/1"],
+                ),
+            ],
+            Limits::default(),
+        );
+    }
+
+    // AC: GH-52 (correction-under-way design AC4): the round's corrected Design Doc passes its
+    //     design review and design sync before the round's rechecks, also when the lead sends a
+    //     blocked design review back to the author.
+    #[test]
+    fn a_round_design_review_blocked_on_its_first_run_reviews_the_redesign_before_the_rechecks() {
+        let state = IssueState {
+            correction: Some(Correction::Round),
+            round: Round {
+                number: 1,
+                correcting: [Review::CodeReview { unit: 1 }].into(),
+                ..Round::default()
+            },
+            ..at(running("design"))
+        };
+        drive(
+            state,
+            vec![
+                (
+                    revised("design", &json!([apply("C001", None)])),
+                    vec!["design-review"],
+                ),
+                (
+                    Fact::Stuck {
+                        step: Step::DesignReview,
+                        unit: None,
+                    },
+                    vec!["exception"],
+                ),
+                (
+                    done("exception", json!({"action": "redesign", "note": "n"})),
+                    vec!["design"],
+                ),
+                (revised("design", &json!([])), vec!["design-review"]),
+                (doc_pass("design-review"), vec!["design-sync"]),
+                (
+                    synced("SKIPPED"),
+                    vec!["commit after design-sync", "code-review/1"],
+                ),
+            ],
+            Limits::default(),
+        );
+    }
+
+    #[test]
+    fn a_design_sync_sent_back_to_the_author_after_corrected_review_findings_is_not_reviewed_again()
+    {
+        drive(
+            at(running("design")),
+            vec![
+                (document("design"), vec!["design-review"]),
+                (doc_issues("design-review"), vec!["design"]),
+                (
+                    revised("design", &json!([apply("I001", None)])),
+                    vec!["design-review"],
+                ),
+                (
+                    doc_reconciled("design-review", "resolved"),
+                    vec!["design-sync"],
+                ),
+                (
+                    Fact::Stuck {
+                        step: Step::DesignSync,
+                        unit: None,
+                    },
+                    vec!["exception"],
+                ),
+                (
+                    done("exception", json!({"action": "redesign", "note": "n"})),
+                    vec!["design"],
+                ),
+                (
+                    revised("design", &json!([apply("C001", None)])),
+                    vec!["commit after design-sync", "test-design"],
+                ),
+            ],
+            Limits::default(),
+        );
+    }
+
+    #[test]
+    fn a_redesign_keeps_a_design_review_correction_under_way_and_restarts_a_first_review() {
+        let blocked = || Fact::Stuck {
+            step: Step::DesignReview,
+            unit: None,
+        };
+        let redesign = || done("exception", json!({"action": "redesign", "note": "n"}));
+        // The recheck could not run: the author's judgment goes on from the findings it had, so
+        // declining them all clears the design review.
+        drive(
+            at(running("design")),
+            vec![
+                (document("design"), vec!["design-review"]),
+                (doc_issues("design-review"), vec!["design"]),
+                (
+                    revised("design", &json!([apply("I001", None)])),
+                    vec!["design-review"],
+                ),
+                (blocked(), vec!["exception"]),
+                (redesign(), vec!["design"]),
+                (
+                    revised(
+                        "design",
+                        &json!([{"id": "I001", "disposition": "decline", "reason": "r"}]),
+                    ),
+                    vec!["design-sync"],
+                ),
+            ],
+            Limits::default(),
+        );
+        // The first review could not run: the author starts over, and the design is reviewed.
+        let s = drive(
+            at(running("design")),
+            vec![
+                (document("design"), vec!["design-review"]),
+                (blocked(), vec!["exception"]),
+                (redesign(), vec!["design"]),
+            ],
+            Limits::default(),
+        );
+        assert_eq!(s.check, None);
+        drive(
+            s,
+            vec![(document("design"), vec!["design-review"])],
+            Limits::default(),
+        );
     }
 
     #[test]
@@ -2949,7 +3470,7 @@ mod tests {
     #[test]
     fn rounds_have_no_limit_unless_the_owner_sets_one() {
         let corrected = IssueState {
-            origin: Some(Origin::Round),
+            correction: Some(Correction::Round),
             round: Round {
                 number: 2,
                 correcting: [Review::CodeReview { unit: 1 }].into(),
@@ -2989,7 +3510,7 @@ mod tests {
             ),
         ] {
             let corrected = IssueState {
-                origin: Some(Origin::Round),
+                correction: Some(Correction::Round),
                 round: Round {
                     number: 2,
                     correcting: correcting.into_iter().collect(),
@@ -3059,9 +3580,8 @@ mod tests {
     #[test]
     fn a_new_plan_after_a_failed_review_round_goes_through_its_own_checks_to_a_fresh_round() {
         let s = IssueState {
-            origin: Some(Origin::Round),
+            correction: Some(Correction::Round),
             check: Some(Check::DesignReview),
-            after: Some(After::ReturnToRound),
             round: Round {
                 number: 3,
                 ..Round::default()
@@ -3201,7 +3721,7 @@ mod tests {
     #[test]
     fn a_rerun_check_that_could_not_run_goes_to_the_lead_who_may_retry_the_check() {
         let s = IssueState {
-            origin: Some(Origin::Round),
+            correction: Some(Correction::Round),
             round: Round {
                 number: 2,
                 rerun_check: true,

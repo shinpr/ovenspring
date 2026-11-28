@@ -21,6 +21,7 @@ import type {
   Scale,
   Step,
   TrackerKind,
+  Upcoming,
 } from '../api/types.gen.ts'
 
 export const PHASE: Record<Phase, string> = {
@@ -472,11 +473,7 @@ const NEXT: Partial<Record<Activity, string>> = {
   'checking-the-design': 'the test plan, the work plan and its tasks.',
   planning: 'its review, then the tasks.',
   'reviewing-the-plan': 'the plan split into tasks.',
-  implementing: 'the remaining tasks, then the quality checks.',
-  'reviewing-tests': 'the remaining tasks, then the quality checks.',
-  'quality-checks': 'the code review and security review.',
   'reviews-running': 'the executor judges what the reviews find.',
-  'applying-findings': 'the quality checks, then the reviews check again.',
   rechecking: 'the executor judges what the rechecks find, or the issue goes on to merge.',
   pushing: 'CI, the review bots and required approvals, then the merge.',
   'waiting-for-ci': 'the review bots, then the merge.',
@@ -486,8 +483,35 @@ const NEXT: Partial<Record<Activity, string>> = {
   'waiting-for-approval': 'the merge.',
 }
 
-/** What comes after the activity under way, as the line under its phase reads it. */
-export function nextInPhase(activity: Activity | null): string | undefined {
+/** What follows the running step, when the issue's state decides it. */
+const UPCOMING: Record<Upcoming, string> = {
+  'remaining-tasks': 'the remaining tasks, then the quality checks',
+  'quality-checks': 'the quality checks',
+  reviews: 'the code review and security review',
+  'quality-then-rechecks': 'the quality checks, then the reviews check again',
+  rechecks: 'the reviews check again',
+  'design-then-rechecks': 'the corrected design and its checks, then the reviews check again',
+  'quality-then-push': 'the quality checks, then the push and the replies to the comments',
+  'push-and-replies': 'the push and the replies to the comments',
+  'test-recheck': 'the test review checks the correction',
+  push: 'the push',
+  'replies-and-gate': 'the replies to the comments and the merge checks',
+  'commit-again': 'the commit again',
+  'push-again': 'the push again',
+}
+
+/**
+ * What comes after the activity under way, as the line under its phase reads it: what the issue's
+ * state says follows, both ways when it depends on whether a correction is applied, or else what
+ * follows the activity itself.
+ */
+export function nextInPhase(position: Position): string | undefined {
+  const { next, activity } = position
+  if (next !== null) {
+    return next.ifApplied === null
+      ? `${UPCOMING[next.follows]}.`
+      : `${UPCOMING[next.ifApplied]}, if a correction is applied; otherwise ${UPCOMING[next.follows]}.`
+  }
   return activity === null ? undefined : NEXT[activity]
 }
 

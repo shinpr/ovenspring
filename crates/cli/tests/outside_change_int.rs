@@ -27,7 +27,7 @@ use support::recording::{RecordingChannel, RecordingTracker};
 use support::scripts::{
     always_passing, filed_steps, quality_pass, requiring_test, stage, straight,
 };
-use support::{Env, daemon, git, run_until, services};
+use support::{Env, daemon, git, push_as_person, run_until, services};
 
 const CONFIG: &str = r#"
 [repo]
@@ -44,33 +44,6 @@ fn merges(gh: &FakeGitHub) -> Vec<String> {
 
 fn pr_of(d: &ovenspring_daemon::Daemon, key: &str) -> u64 {
     d.issue(key).unwrap().unwrap().flow.pr.unwrap()
-}
-
-/// A person commits `path` on `branch` from the main checkout and pushes it to `origin`.
-fn push_as_person(env: &Env, branch: &str, path: &str, content: &str) -> String {
-    git(&env.repo, &["fetch", "-q", "origin", branch]);
-    git(&env.repo, &["checkout", "-q", "-B", "person", "FETCH_HEAD"]);
-    std::fs::create_dir_all(env.repo.join(path).parent().unwrap()).unwrap();
-    std::fs::write(env.repo.join(path), content).unwrap();
-    git(&env.repo, &["add", path]);
-    git(
-        &env.repo,
-        &[
-            "-c",
-            "user.name=dev",
-            "-c",
-            "user.email=dev@example.com",
-            "commit",
-            "-q",
-            "-m",
-            "A person's change",
-        ],
-    );
-    git(
-        &env.repo,
-        &["push", "-q", "origin", &format!("HEAD:refs/heads/{branch}")],
-    );
-    git(&env.repo, &["rev-parse", "HEAD"])
 }
 
 fn requiring_one_approval(env: &Env) -> FakeGitHub {

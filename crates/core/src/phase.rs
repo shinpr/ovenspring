@@ -4,9 +4,12 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-use crate::flow::{After, Cause, CommitPoint, IssueState, Origin, Stage};
+use crate::flow::{
+    Cause, CommitPoint, Correction, IssueState, JudgmentRoute, QualityRoute, Stage, TaskRoute,
+    judgment_route, quality_route, task_route,
+};
 use crate::output::Scale;
-use crate::step::Step;
+use crate::step::{Check, Step};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, TS)]
 #[serde(rename_all = "kebab-case")]
@@ -73,6 +76,43 @@ pub enum Activity {
     CheckingMerge,
     /// GitHub still stops the merge for a rule the factory cannot see.
     BlockedOnGitHub,
+}
+
+/// What follows the running step, as the owner reads it after "Next:".
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "kebab-case")]
+pub enum Upcoming {
+    RemainingTasks,
+    QualityChecks,
+    Reviews,
+    QualityThenRechecks,
+    Rechecks,
+    DesignThenRechecks,
+    QualityThenPush,
+    PushAndReplies,
+    TestRecheck,
+    Push,
+    RepliesAndGate,
+    CommitAgain,
+    PushAgain,
+}
+
+/// What follows the running step once its work holds; for a judgment of findings whose applied
+/// correction leads somewhere else, also what follows if one is applied.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct Following {
+    pub follows: Upcoming,
+    pub if_applied: Option<Upcoming>,
+}
+
+impl Following {
+    fn to(follows: Upcoming) -> Following {
+        Following {
+            follows,
+            if_applied: None,
+        }
+    }
 }
 
 impl Step {
@@ -154,10 +194,21 @@ impl Step {
     }
 }
 
+impl Correction {
+    /// The phase every step run inside this correction belongs to.
+    pub fn phase(self) -> Phase {
+        match self {
+            Correction::Round => Phase::Review,
+            Correction::PrComments => Phase::Merge,
+        }
+    }
+}
+
 impl IssueState {
     /// The phase the issue is in; none while it waits to start and once it has ended. A
-    /// correction belongs to the phase of the check whose findings it answers, and a stop or a
-    /// problem keeps the phase it happened in.
+    /// correction raised after the build keeps its phase for every step inside it, a correction
+    /// of a check belongs to the phase of that check, and a stop or a problem keeps the phase it
+    /// happened in.
     pub fn phase(&self) -> Option<Phase> {
         self.phase_at(&self.stage)
     }
@@ -189,42 +240,27 @@ impl IssueState {
         }
     }
 
-    /// The phase a step runs in, given what the issue is correcting.
+    /// The phase a step runs in, given what the issue is correcting: a step run inside a
+    /// correction raised after the build belongs to that correction's phase; otherwise a step
+    /// has its own phase, or the phase of the check whose findings it answers.
     fn phase_of(&self, step: Step) -> Phase {
-        // The Design Doc corrected for the review round and its checks before the round goes on,
-        // and the implementation a round correction left incomplete.
-        let round_correction =
-            self.origin == Some(Origin::Round) || self.after == Some(After::ReturnToRound);
-        if round_correction
-            && matches!(
-                step,
-                Step::Design | Step::DesignReview | Step::DesignSync | Step::Implement
-            )
-        {
-            return Phase::Review;
-        }
         if step == Step::Quality {
-            return match self.refused {
-                Some((CommitPoint::Push, _)) => Phase::Merge,
-                Some((after, _)) if after != CommitPoint::Quality => after
-                    .step()
-                    .map_or(Phase::Merge, |step| self.phase_of(step)),
-                _ => self.correction_phase().unwrap_or(Phase::Build),
-            };
+            match self.refused {
+                Some((CommitPoint::Push, _)) => return Phase::Merge,
+                Some((after, _)) if after != CommitPoint::Quality => {
+                    return after
+                        .step()
+                        .map_or(Phase::Merge, |step| self.phase_of(step));
+                }
+                _ => {}
+            }
+        }
+        if let Some(correction) = self.correction {
+            return correction.phase();
         }
         step.own_phase()
-            .or_else(|| self.correction_phase())
+            .or_else(|| self.check.and_then(|check| check.step().own_phase()))
             .unwrap_or(Phase::Build)
-    }
-
-    /// The phase of the check whose findings are being answered.
-    fn correction_phase(&self) -> Option<Phase> {
-        match self.origin? {
-            Origin::Document => self.check.and_then(|c| c.step().own_phase()),
-            Origin::TestReview => Some(Phase::Build),
-            Origin::Round => Some(Phase::Review),
-            Origin::PrComments => Some(Phase::Merge),
-        }
     }
 
     /// The phase the issue stopped in: the state it returns to, or what the lead is finding a
@@ -269,6 +305,99 @@ impl IssueState {
         }
     }
 
+    /// What follows the running step once its work holds, read from the routes the flow applies;
+    /// none where the step alone decides what follows (the dashboard words its activity).
+    pub fn following(&self) -> Option<Following> {
+        let Stage::Running { step } = self.stage else {
+            return None;
+        };
+        if step == Step::Implement {
+            return Some(Following::to(self.after_tasks()));
+        }
+        if step == Step::Quality {
+            return Some(Following::to(self.after_quality()));
+        }
+        if step == Step::ReviewResponse || step.document().is_some() {
+            let follows = self.after_judgment(judgment_route(self, false)?)?;
+            let applied = self.after_judgment(judgment_route(self, true)?)?;
+            return Some(Following {
+                follows,
+                if_applied: (applied != follows).then_some(applied),
+            });
+        }
+        step.check()
+            .and_then(|check| self.after_check(check, false))
+            .map(Following::to)
+    }
+
+    /// What follows the current task: the remaining tasks, or the quality run.
+    fn after_tasks(&self) -> Upcoming {
+        match task_route(self) {
+            TaskRoute::Implement(_) => Upcoming::RemainingTasks,
+            TaskRoute::Quality => match quality_route(self) {
+                QualityRoute::Round => Upcoming::QualityChecks,
+                QualityRoute::Rechecks | QualityRoute::Design => Upcoming::QualityThenRechecks,
+                QualityRoute::Push => Upcoming::QualityThenPush,
+            },
+        }
+    }
+
+    /// What follows a passing quality run: the commit or push it corrected, or what follows the
+    /// commit.
+    fn after_quality(&self) -> Upcoming {
+        match self.refused {
+            Some((CommitPoint::Push, _)) => return Upcoming::PushAgain,
+            Some((after, _)) if after != CommitPoint::Quality => return Upcoming::CommitAgain,
+            _ => {}
+        }
+        match quality_route(self) {
+            QualityRoute::Round => Upcoming::Reviews,
+            QualityRoute::Rechecks => Upcoming::Rechecks,
+            QualityRoute::Design => Upcoming::DesignThenRechecks,
+            QualityRoute::Push => Upcoming::PushAndReplies,
+        }
+    }
+
+    fn after_judgment(&self, route: JudgmentRoute) -> Option<Upcoming> {
+        match route {
+            JudgmentRoute::Recheck(check) => self.after_check(check, true),
+            JudgmentRoute::Cleared(check) => self.after_check(check, false),
+            JudgmentRoute::Quality => Some(match quality_route(self) {
+                QualityRoute::Push => Upcoming::QualityThenPush,
+                QualityRoute::Round | QualityRoute::Rechecks | QualityRoute::Design => {
+                    Upcoming::QualityThenRechecks
+                }
+            }),
+            JudgmentRoute::DesignChecks => Some(Upcoming::DesignThenRechecks),
+            JudgmentRoute::Rechecks => Some(Upcoming::Rechecks),
+            JudgmentRoute::Converged => Some(Upcoming::Push),
+            JudgmentRoute::Answer => Some(Upcoming::RepliesAndGate),
+        }
+    }
+
+    /// What follows `check` once it rechecks a correction, or once it is clear. Outside a round,
+    /// a document's checks lead on to its own next step, which the activity already words.
+    fn after_check(&self, check: Check, recheck: bool) -> Option<Upcoming> {
+        let in_round = self.correction == Some(Correction::Round);
+        match check {
+            Check::TestReview if recheck => Some(Upcoming::TestRecheck),
+            Check::TestReview => Some(self.after_tasks()),
+            // A design review checks again, or the design sync follows it: either way the
+            // design's checks run before the round's.
+            Check::DesignReview | Check::DesignVerify if in_round => {
+                Some(Upcoming::DesignThenRechecks)
+            }
+            Check::DesignSync if in_round => Some(Upcoming::Rechecks),
+            Check::DesignReview
+            | Check::DesignVerify
+            | Check::DesignSync
+            | Check::PrdReview
+            | Check::UiSpecReview
+            | Check::AdrReview
+            | Check::PlanReview => None,
+        }
+    }
+
     /// The reviews whose findings remain while the lead takes an unsettled review loop: for a
     /// review round, those it would recheck (the ones under correction, else the ones that
     /// maintained an applied finding), code review before security review; for a check, the
@@ -305,7 +434,6 @@ impl IssueState {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::step::Check;
 
     fn at(stage: Stage) -> IssueState {
         IssueState {
@@ -335,7 +463,6 @@ mod tests {
     #[test]
     fn a_correction_takes_the_phase_of_the_check_it_answers() {
         let document = IssueState {
-            origin: Some(Origin::Document),
             check: Some(Check::PrdReview),
             ..at(Stage::running(Step::ReviewResponse))
         };
@@ -346,33 +473,32 @@ mod tests {
         };
         assert_eq!(design_check.phase(), Some(Phase::Design));
         let tests = IssueState {
-            origin: Some(Origin::TestReview),
             check: Some(Check::TestReview),
             ..at(Stage::running(Step::ReviewResponse))
         };
         assert_eq!(tests.phase(), Some(Phase::Build));
         let round = IssueState {
-            origin: Some(Origin::Round),
+            correction: Some(Correction::Round),
             ..at(Stage::running(Step::ReviewResponse))
         };
         assert_eq!(round.phase(), Some(Phase::Review));
         let round_quality = IssueState {
-            origin: Some(Origin::Round),
+            correction: Some(Correction::Round),
             ..at(Stage::running(Step::Quality))
         };
         assert_eq!(round_quality.phase(), Some(Phase::Review));
         let round_design = IssueState {
-            origin: Some(Origin::Round),
+            correction: Some(Correction::Round),
             ..at(Stage::running(Step::Design))
         };
         assert_eq!(round_design.phase(), Some(Phase::Review));
         let round_implement = IssueState {
-            origin: Some(Origin::Round),
+            correction: Some(Correction::Round),
             ..at(Stage::running(Step::Implement))
         };
         assert_eq!(round_implement.phase(), Some(Phase::Review));
         let comments = IssueState {
-            origin: Some(Origin::PrComments),
+            correction: Some(Correction::PrComments),
             ..at(Stage::running(Step::ReviewResponse))
         };
         assert_eq!(comments.phase(), Some(Phase::Merge));
@@ -381,6 +507,24 @@ mod tests {
             ..at(Stage::running(Step::Quality))
         };
         assert_eq!(refused_push.phase(), Some(Phase::Merge));
+    }
+
+    #[test]
+    fn a_task_redone_for_pull_request_comments_and_its_test_review_run_in_merge() {
+        for step in [Step::Implement, Step::TestReview, Step::ReviewResponse] {
+            let redone = IssueState {
+                correction: Some(Correction::PrComments),
+                check: (step != Step::Implement).then_some(Check::TestReview),
+                redoing: true,
+                ..at(Stage::running(step))
+            };
+            assert_eq!(redone.phase(), Some(Phase::Merge), "{step}");
+        }
+        let built = IssueState {
+            check: Some(Check::TestReview),
+            ..at(Stage::running(Step::TestReview))
+        };
+        assert_eq!(built.phase(), Some(Phase::Build));
     }
 
     #[test]
@@ -453,6 +597,187 @@ mod tests {
         };
         assert_eq!(planned.task_of(), Some((2, 2)));
         assert_eq!(at(Stage::running(Step::Implement)).task_of(), None);
+    }
+
+    fn two_tasks_at(step: Step) -> IssueState {
+        IssueState {
+            tasks: vec![
+                crate::flow::PlannedTask { path: "a".into() },
+                crate::flow::PlannedTask { path: "b".into() },
+            ],
+            task: 1,
+            ..at(Stage::running(step))
+        }
+    }
+
+    #[test]
+    fn following_the_last_task_s_test_review_are_the_quality_checks_alone() {
+        let last = IssueState {
+            check: Some(Check::TestReview),
+            ..two_tasks_at(Step::TestReview)
+        };
+        assert_eq!(
+            last.following(),
+            Some(Following::to(Upcoming::QualityChecks))
+        );
+        let first = IssueState {
+            task: 0,
+            ..last.clone()
+        };
+        assert_eq!(
+            first.following(),
+            Some(Following::to(Upcoming::RemainingTasks))
+        );
+    }
+
+    #[test]
+    fn following_a_comment_correction_s_redone_tasks_are_the_remaining_tasks_then_the_push() {
+        let pending = IssueState {
+            correction: Some(Correction::PrComments),
+            redo: vec![0],
+            redoing: true,
+            ..two_tasks_at(Step::Implement)
+        };
+        assert_eq!(
+            pending.following(),
+            Some(Following::to(Upcoming::RemainingTasks))
+        );
+        let last = IssueState {
+            redo: vec![],
+            ..pending.clone()
+        };
+        assert_eq!(
+            last.following(),
+            Some(Following::to(Upcoming::QualityThenPush))
+        );
+        let last_reviewed = IssueState {
+            check: Some(Check::TestReview),
+            stage: Stage::running(Step::TestReview),
+            ..last.clone()
+        };
+        assert_eq!(
+            last_reviewed.following(),
+            Some(Following::to(Upcoming::QualityThenPush))
+        );
+        let quality = IssueState {
+            redoing: false,
+            stage: Stage::running(Step::Quality),
+            ..last
+        };
+        assert_eq!(
+            quality.following(),
+            Some(Following::to(Upcoming::PushAndReplies))
+        );
+    }
+
+    #[test]
+    fn following_a_judgment_names_what_an_applied_correction_leads_to() {
+        let comments = IssueState {
+            correction: Some(Correction::PrComments),
+            ..at(Stage::running(Step::ReviewResponse))
+        };
+        assert_eq!(
+            comments.following(),
+            Some(Following {
+                follows: Upcoming::RepliesAndGate,
+                if_applied: Some(Upcoming::QualityThenPush),
+            })
+        );
+        let tests = IssueState {
+            check: Some(Check::TestReview),
+            ..two_tasks_at(Step::ReviewResponse)
+        };
+        assert_eq!(
+            tests.following(),
+            Some(Following {
+                follows: Upcoming::QualityChecks,
+                if_applied: Some(Upcoming::TestRecheck),
+            })
+        );
+        let round = IssueState {
+            correction: Some(Correction::Round),
+            ..at(Stage::running(Step::ReviewResponse))
+        };
+        assert_eq!(
+            round.following(),
+            Some(Following {
+                follows: Upcoming::Push,
+                if_applied: Some(Upcoming::QualityThenRechecks),
+            })
+        );
+    }
+
+    #[test]
+    fn following_the_round_s_design_correction_are_its_checks_then_the_rechecks() {
+        let author = IssueState {
+            correction: Some(Correction::Round),
+            ..at(Stage::running(Step::Design))
+        };
+        assert_eq!(
+            author.following(),
+            Some(Following {
+                follows: Upcoming::Rechecks,
+                if_applied: Some(Upcoming::DesignThenRechecks),
+            })
+        );
+        let reviewed = IssueState {
+            check: Some(Check::DesignReview),
+            ..author.clone()
+        };
+        assert_eq!(
+            reviewed.following(),
+            Some(Following::to(Upcoming::DesignThenRechecks))
+        );
+        let synced = IssueState {
+            check: Some(Check::DesignSync),
+            ..author.clone()
+        };
+        assert_eq!(synced.following(), Some(Following::to(Upcoming::Rechecks)));
+        let sync_running = IssueState {
+            check: Some(Check::DesignSync),
+            stage: Stage::running(Step::DesignSync),
+            ..author
+        };
+        assert_eq!(
+            sync_running.following(),
+            Some(Following::to(Upcoming::Rechecks))
+        );
+    }
+
+    #[test]
+    fn following_quality_are_the_reviews_or_the_refused_commit_again() {
+        let built = at(Stage::running(Step::Quality));
+        assert_eq!(built.following(), Some(Following::to(Upcoming::Reviews)));
+        let round = IssueState {
+            correction: Some(Correction::Round),
+            ..built.clone()
+        };
+        assert_eq!(round.following(), Some(Following::to(Upcoming::Rechecks)));
+        let push = IssueState {
+            refused: Some((CommitPoint::Push, 1)),
+            ..built.clone()
+        };
+        assert_eq!(push.following(), Some(Following::to(Upcoming::PushAgain)));
+        let commit = IssueState {
+            refused: Some((CommitPoint::FixCi, 1)),
+            ..built
+        };
+        assert_eq!(
+            commit.following(),
+            Some(Following::to(Upcoming::CommitAgain))
+        );
+    }
+
+    #[test]
+    fn nothing_following_is_named_where_the_activity_decides_or_outside_a_running_step() {
+        let document = IssueState {
+            check: Some(Check::PrdReview),
+            ..at(Stage::running(Step::Prd))
+        };
+        assert_eq!(document.following(), None);
+        assert_eq!(at(Stage::running(Step::Design)).following(), None);
+        assert_eq!(at(Stage::running(Step::CodeReview)).following(), None);
+        assert_eq!(at(Stage::Ci).following(), None);
     }
 
     #[test]

@@ -21,6 +21,7 @@ const place: Position = {
   phase: null,
   activity: null,
   task: null,
+  next: null,
   problem: null,
   onHold: false,
   since: null,
@@ -40,6 +41,7 @@ const issues: IssueRow[] = [
   row('ACME-141', 'Search products by their attributes', {
     phase: 'review',
     activity: 'applying-findings',
+    next: { follows: 'push', ifApplied: 'quality-then-rechecks' },
     since: '2026-11-21T14:17:00Z',
   }),
   row('ACME-142', 'Results page for attribute search', { section: 'you', phase: 'design' }),

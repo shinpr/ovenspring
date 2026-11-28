@@ -369,6 +369,7 @@ const inProgress: Position = {
   phase: 'design',
   activity: null,
   task: null,
+  next: null,
   problem: null,
   onHold: false,
   since: '2026-11-21T14:12:00Z',

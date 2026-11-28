@@ -188,7 +188,7 @@ impl Daemon {
         let record = self.record_of(key)?;
         let worktree = self.worktree_of(key);
         let branch = record.branch();
-        if !self.bring_in(&worktree, &branch)? {
+        if !self.merged_into(key, || self.bring_in(&worktree, &branch))? {
             self.event(&json!({"event": "push-conflict", "issue": key}))?;
             return Ok(Some(Fact::PushConflict));
         }
