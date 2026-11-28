@@ -42,7 +42,7 @@ Each issue contains one material proof gap and the smallest correction that rest
 
 ### 1. Review Basis Selection
 
-Read each of `changedTestFiles` as the change left it: as `diffHead` holds it (`git show <diffHead>:<path>`), or from the worktree when `diffHead` is absent. A test absent there was deleted by the change: judge the deletion from the test as `diffBase` holds it (`git show <diffBase>:<path>`). A test absent from `diffBase` was added by the change. Select the first basis covering every test: the planned claim from the `skeleton` (when available), task verification, then explicit `prompt-claims`; the status is `blocked` when the inputs or a complete basis are unavailable.
+Read each of `changedTestFiles` as the change left it: as `diffHead` holds it (`git show <diffHead>:<path>`), or from the worktree when `diffHead` is absent. If a test existed in `diffBase` and is absent from a supplied `diffHead`, review its deletion using the version in `diffBase`. A test absent from `diffBase` was added by the change. Select the first basis covering every test: the planned claim from the `skeleton` (when available), task verification, then explicit `prompt-claims`; the status is `blocked` when the inputs or a complete basis are unavailable.
 
 #### 1-1. Select Review Path
 
