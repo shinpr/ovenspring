@@ -1841,6 +1841,10 @@ fn the_version_answer_offers_a_newer_release_then_a_restart_once_it_is_installed
 // @dependency: dashboard server, `events::page`, store
 /// A year of `events.jsonl` at about 360 lines a day.
 const YEAR_OF_LINES: usize = 130_000;
+/// How much longer the unoptimized build `cargo test` makes takes to serve the page than the
+/// release build the owner runs: every line at `from=0` took 0.18 s in release and 2.0 s
+/// unoptimized on one machine, and 5.1 s unoptimized on a shared CI runner.
+const UNOPTIMIZED_ALLOWANCE: u32 = if cfg!(debug_assertions) { 4 } else { 1 };
 
 #[test]
 fn the_events_page_answers_within_a_poll_over_a_year_of_lines() {
@@ -1876,8 +1880,8 @@ fn the_events_page_answers_within_a_poll_over_a_year_of_lines() {
         );
         assert_eq!(answer.status, 200, "{path}");
         assert!(
-            took < std::time::Duration::from_secs(5),
-            "{path} took {took:?}, longer than the page's poll"
+            took < std::time::Duration::from_secs(5) * UNOPTIMIZED_ALLOWANCE,
+            "{path} took {took:?}, longer than the page's poll (x{UNOPTIMIZED_ALLOWANCE} unoptimized)"
         );
     }
 }
