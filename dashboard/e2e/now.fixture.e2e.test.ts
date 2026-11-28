@@ -179,9 +179,11 @@ test('an unsettled review reads as the lead addressing its feedback, and follows
 //     <duration>" without naming the reviewer and without "follow". The owner: "Until it starts,
 //     clicking Follow should open nothing. Combine the two pending-run browser cases."
 // Behavior: the launches hold, newest first, a running design review, an ended exception run and
-//     the finished design review -> follow the row -> wait until its launches are parsed and the
-//     follow's continuation has run -> open ACME-141's run, a later request -> open the issue.
-// Observable result: no request for any of the three runs' details; the issue page names no one.
+//     the finished design review -> follow the row, whose launches answer late -> open ACME-141's
+//     run meanwhile -> wait until the row's launches are parsed and the follow's continuation has
+//     run -> close -> open the issue.
+// Observable result: ACME-141's run stays open through the row's late answer; no request for any
+//     of the three runs' details; the issue page names no one.
 // @dependency: dashboard app (Shell, Now, Glance, Issue, RunPanel, API client), fixture API
 test("before the lead's run starts, an unsettled review follows no run and names no one", async ({
   page,
@@ -190,6 +192,7 @@ test("before the lead's run starts, an unsettled review follows no run and names
     overview: addressingFeedback,
     issue: addressing,
     launches: [...runs, ...notStartedRuns],
+    delay: { '/launches?issue=ACME-148': 1000 },
   })
   // No network event marks when the follow has acted on its answer, which is parsed in the page:
   // record each parsed answer's URL from a timer, which runs after the parse's continuations.
@@ -206,14 +209,14 @@ test("before the lead's run starts, an unsettled review follows no run and names
   await page.goto('/')
 
   await page.getByRole('button', { name: 'Addressing design review feedback' }).click()
+  await page.getByRole('button', { name: 'Judging findings' }).click()
+  const run = page.getByRole('dialog')
+  const heading = run.getByRole('heading', { level: 2 })
+  await expect(heading).toHaveText('Executor is judging the 4 findings')
   await page.waitForFunction(() =>
     window.parsed?.some((url) => url.endsWith('/launches?issue=ACME-148'))
   )
-  await page.getByRole('button', { name: 'Judging findings' }).click()
-  const run = page.getByRole('dialog')
-  await expect(run.getByRole('heading', { level: 2 })).toHaveText(
-    'Executor is judging the 4 findings'
-  )
+  await expect(heading).toHaveText('Executor is judging the 4 findings')
   const opened = sent.map((r) => r.path)
   for (const row of notStartedRuns) {
     expect(opened).not.toContain(`/launches/${row.id}`)

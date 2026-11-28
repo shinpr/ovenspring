@@ -4,7 +4,6 @@ import {
   activityWords,
   errorName,
   eventSentence,
-  failure,
   plain,
   runSentence,
   statusRun,
@@ -395,19 +394,6 @@ describe('activityWords for reviews whose findings the lead addresses', () => {
     [['code-review', 'security-review'], 'Addressing code and security review feedback'],
   ])('%j reads "%s"', (feedback, words) => {
     expect(activityWords(unsettled(feedback))).toBe(words)
-  })
-})
-
-describe('failure', () => {
-  it('is none for reviews whose findings remain', () => {
-    expect(failure(unsettled(['design-review']))).toBeNull()
-  })
-
-  it('is the cause of a step that could not finish', () => {
-    expect(failure({ ...inProgress, problem: { cause: 'step', step: 'design-review' } })).toEqual({
-      cause: 'step',
-      step: 'design-review',
-    })
   })
 })
 

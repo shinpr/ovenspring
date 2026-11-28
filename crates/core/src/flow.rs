@@ -2980,7 +2980,11 @@ mod tests {
         for (correcting, feedback) in [
             (vec![Review::SecurityReview], vec!["security-review"]),
             (
-                vec![Review::CodeReview { unit: 1 }, Review::SecurityReview],
+                vec![
+                    Review::CodeReview { unit: 1 },
+                    Review::CodeReview { unit: 2 },
+                    Review::SecurityReview,
+                ],
                 vec!["code-review", "security-review"],
             ),
         ] {
