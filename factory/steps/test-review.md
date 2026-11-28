@@ -43,7 +43,7 @@ Each issue contains one material proof gap and the smallest correction that rest
 
 ### 1. Review Basis Selection
 
-Confirm every changed path differs between `diffBase` and `diffHead` (`git diff --quiet <diffBase> <diffHead> -- <path>` exits 1). A path absent from `diffHead` was deleted by the change. Read each changed test as `diffHead` holds it (`git show <diffHead>:<path>`). Without `diffHead`, confirm every changed path exists and differs from `diffBase`, and read it from the worktree. Select the first basis covering every test: the planned claim from the `skeleton` (when available), task verification, then explicit `prompt-claims`; the status is `blocked` when the inputs or a complete basis are unavailable.
+Confirm every changed path differs between `diffBase` and `diffHead` (`git diff --quiet <diffBase> <diffHead> -- <path>` exits 1). A path absent from `diffHead` was deleted by the change: judge the deletion from the diff and the test as `diffBase` holds it (`git show <diffBase>:<path>`). Read each other changed test as `diffHead` holds it (`git show <diffHead>:<path>`). Without `diffHead`, confirm every changed path exists and differs from `diffBase`, and read it from the worktree. Select the first basis covering every test: the planned claim from the `skeleton` (when available), task verification, then explicit `prompt-claims`; the status is `blocked` when the inputs or a complete basis are unavailable.
 
 #### 1-1. Select Review Path
 
@@ -116,7 +116,7 @@ Use `reviewBasis: null` only when an input-gate failure blocks review before a b
 - One or more material proof gaps are repairable within the selected claim and test lane
 
 ### blocked
-- A changed test file, `diffBase`, or `diffHead` when given is unavailable
+- `diffBase`, or `diffHead` when given, is unavailable; without `diffHead`, a changed test file is missing from the worktree
 - `changedTestFiles` is empty
 - Skeletons, task verification, and prompt claims provide no complete review basis
 

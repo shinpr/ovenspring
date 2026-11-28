@@ -1369,7 +1369,10 @@ pub(crate) fn judgment_route(s: &IssueState, applied: bool) -> Option<JudgmentRo
 
 /// Applies the route of the receiver's judgment.
 fn judged(s: &mut IssueState, dispositions: &[FindingDisposition], limits: Limits) -> Vec<Action> {
-    let Some(route) = judgment_route(s, output::applies(dispositions)) else {
+    // A receiver that judged none of the open check's findings was handed none: the check's run
+    // could not report (a blocked first review the lead sent back), so its review is still owed.
+    let unreported = s.check.is_some() && dispositions.is_empty();
+    let Some(route) = judgment_route(s, unreported || output::applies(dispositions)) else {
         return vec![];
     };
     match route {
@@ -2893,6 +2896,49 @@ mod tests {
                 ),
                 (
                     revised("design", &json!([apply("C001", None)])),
+                    vec!["commit after design-sync", "code-review/1"],
+                ),
+            ],
+            Limits::default(),
+        );
+    }
+
+    // AC: GH-52 (correction-under-way design AC4): the round's corrected Design Doc passes its
+    //     design review and design sync before the round's rechecks, also when the lead sends a
+    //     blocked design review back to the author.
+    #[test]
+    fn a_round_design_review_blocked_on_its_first_run_reviews_the_redesign_before_the_rechecks() {
+        let state = IssueState {
+            correction: Some(Correction::Round),
+            round: Round {
+                number: 1,
+                correcting: [Review::CodeReview { unit: 1 }].into(),
+                ..Round::default()
+            },
+            ..at(running("design"))
+        };
+        drive(
+            state,
+            vec![
+                (
+                    revised("design", &json!([apply("C001", None)])),
+                    vec!["design-review"],
+                ),
+                (
+                    Fact::Stuck {
+                        step: Step::DesignReview,
+                        unit: None,
+                    },
+                    vec!["exception"],
+                ),
+                (
+                    done("exception", json!({"action": "redesign", "note": "n"})),
+                    vec!["design"],
+                ),
+                (revised("design", &json!([])), vec!["design-review"]),
+                (doc_pass("design-review"), vec!["design-sync"]),
+                (
+                    synced("SKIPPED"),
                     vec!["commit after design-sync", "code-review/1"],
                 ),
             ],

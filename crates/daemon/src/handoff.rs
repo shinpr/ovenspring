@@ -710,18 +710,13 @@ impl Ctx<'_> {
     }
 }
 
-/// The files the last task changed: test-review picks the integration and E2E tests among them by
-/// the repository's own conventions, which no fixed file name pattern covers.
-/// A task is measured from the tree before it; a change with no task files, from `diff_base`.
 /// The trees a test review compares: the recorded change's start and end, or, for a change an
-/// earlier version launched, the last two recorded trees (`fallback` before the only one).
+/// earlier version launched, the last two recorded trees (`fallback` before the only one). A
+/// change whose end could not be recorded gives none: the recorded trees would describe an
+/// earlier executor's work.
 fn recorded_change(record: &IssueRecord, fallback: &str) -> Option<(String, String)> {
-    if let Some(Change {
-        before,
-        after: Some(after),
-    }) = &record.change
-    {
-        return Some((before.clone(), after.clone()));
+    if let Some(Change { before, after }) = &record.change {
+        return after.clone().map(|after| (before.clone(), after));
     }
     match record.trees.as_slice() {
         [.., (_, before), (_, after)] => Some((before.clone(), after.clone())),
@@ -749,8 +744,8 @@ mod tests {
     use ovenspring_core::output::Review;
     use serde_json::json;
 
-    use super::handed;
-    use crate::issues::IssueRecord;
+    use super::{handed, recorded_change};
+    use crate::issues::{Change, IssueRecord};
 
     /// A round's findings as `review-response` receives them: one entry per finding of each
     /// review, an ID two reviews both use counted for each, and an applied finding a re-review
@@ -802,5 +797,23 @@ mod tests {
             ]
             .map(|(k, id)| (k.to_owned(), id.to_owned()))
         );
+    }
+
+    // Behavior: the earlier task's change ended, the next executor's change opened, and its end
+    //     could not be recorded -> its test review is given no trees, not the earlier task's.
+    #[test]
+    fn an_open_change_gives_no_trees_and_a_record_without_one_falls_back_to_the_last_two() {
+        let mut record = IssueRecord::new("ACME-1", "Export orders", vec![]);
+        record.trees = vec![(Some(0), "t0".into()), (Some(0), "t1".into())];
+        assert_eq!(
+            recorded_change(&record, "base"),
+            Some(("t0".to_owned(), "t1".to_owned()))
+        );
+
+        record.change = Some(Change {
+            before: "t1".into(),
+            after: None,
+        });
+        assert_eq!(recorded_change(&record, "base"), None);
     }
 }

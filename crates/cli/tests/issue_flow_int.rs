@@ -2480,7 +2480,37 @@ fn the_reply_names_the_commit_that_applied_the_comment_after_a_refused_push() {
 //     FakeGitHub
 #[test]
 fn a_retried_tasks_test_review_lists_both_attempts_and_not_what_was_merged_between_them() {
-    const A: &str = "src/ACME-160-refunds.ts";
+    assert_a_retry_lists_both_attempts(&json!(
+        {"wait": true, "status": "blocked", "change": {"path": RETRIED_A, "content": "refunds\n"},
+         "output": {"status": "blocked", "taskName": "refunds", "changeSummary": "Started the refunds",
+                    "remainingWork": ["the refund test"], "evidence": ["the test fixture is missing"],
+                    "runnableCheck": {"result": "skipped", "reason": "no fixture"}}}
+    ));
+}
+
+// AC: GH-52 (correction-under-way design AC6), as above, for an attempt whose item is done.
+// Behavior: as above, but the first redone `implement` finishes its item with an
+//     `escalation_needed` result -> the lead retries -> the `test-review` item still names A and B,
+//     and not P.
+// @lane: integration
+// @dependency: daemon, flow, handoff, real git (bare `origin` with a pushed commit), fake agent,
+//     FakeGitHub
+#[test]
+fn a_test_review_after_a_retried_escalation_lists_both_attempts() {
+    assert_a_retry_lists_both_attempts(&json!(
+        {"wait": true, "change": {"path": RETRIED_A, "content": "refunds\n"},
+         "output": {"status": "escalation_needed", "reason": "the refund rule is undecided",
+                    "taskName": "refunds", "evidence": ["the issue names no refund rule"],
+                    "requiredDecision": "which refund rule applies"}}
+    ));
+}
+
+const RETRIED_A: &str = "src/ACME-160-refunds.ts";
+
+/// The retry scenario above, with `first_attempt` as the redone `implement`'s first run, which
+/// edits `RETRIED_A` and does not complete.
+fn assert_a_retry_lists_both_attempts(first_attempt: &Value) {
+    const A: &str = RETRIED_A;
     const B: &str = "tests/ACME-160_int.rs";
     const P: &str = "docs/ACME-160-person.md";
     let env = Env::new();
@@ -2491,10 +2521,7 @@ fn a_retried_tasks_test_review_lists_both_attempts_and_not_what_was_merged_betwe
         "implement@ACME-160".into(),
         json!([
             support::scripts::implement_run("src/ACME-160.ts"),
-            {"wait": true, "status": "blocked", "change": {"path": A, "content": "refunds\n"},
-             "output": {"status": "blocked", "taskName": "refunds", "changeSummary": "Started the refunds",
-                        "remainingWork": ["the refund test"], "evidence": ["the test fixture is missing"],
-                        "runnableCheck": {"result": "skipped", "reason": "no fixture"}}},
+            first_attempt,
             {"change": {"path": B, "content": "asserts refunds\n"},
              "output": {"status": "completed", "taskName": "refunds", "changeSummary": "Test the refunds",
                         "testsAdded": [B], "requiresTestReview": true, "newTestsPassed": true}}

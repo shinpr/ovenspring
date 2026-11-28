@@ -993,8 +993,11 @@ impl Daemon {
                 self.update_issue(key, |r| {
                     r.summaries.extend(e.change_summary.iter().cloned());
                     // A correction's tree too, so a test review after it is given what it changed.
+                    // An incomplete result keeps the change open: its retry continues the change.
                     if let Some(tree) = tree {
-                        if let Some(change) = r.change.as_mut() {
+                        if let Some(change) = r.change.as_mut()
+                            && e.status == ExecutorStatus::Completed
+                        {
                             change.after = Some(tree.clone());
                         }
                         r.trees.push((task, tree));
@@ -1108,7 +1111,9 @@ impl Daemon {
             return Ok(());
         }
         let Some(before) = self.tree_of(key) else {
-            return Ok(()); // The test review falls back to the recorded trees.
+            // An earlier change's endpoints would describe another executor's work: the test
+            // review falls back to the recorded trees.
+            return self.update_issue(key, |r| r.change = None).map(drop);
         };
         self.update_issue(key, |r| {
             r.change = Some(Change {
@@ -1516,9 +1521,16 @@ impl TreeIndex {
         tree
     }
 
-    /// The worktree's tree: every file `git add -A` would take.
+    /// The worktree's tree: what `git add -A` takes into a copy of the worktree's own index, so a
+    /// tracked path an ignore rule matches stays in the tree, as Git keeps it tracked.
     fn tree(&self) -> Option<String> {
         self.written(|| {
+            let own = self
+                .worktree
+                .join(git(&self.worktree, &["rev-parse", "--git-path", "index"]).ok()?);
+            if own.exists() {
+                fs::copy(own, &self.index).ok()?;
+            }
             self.git(&["add", "-A"], "")?;
             self.git(&["write-tree"], "")
         })
@@ -1590,5 +1602,35 @@ mod tests {
             ["added", "edited", "keep", "removed"]
         );
         assert!(!trees.index.exists());
+    }
+    // Behavior: a change adds an ignore rule matching tracked tests and edits one of them -> the
+    //     trees around it list the rule and the edited test, and not the untouched tracked test.
+    #[test]
+    fn a_tracked_path_an_ignore_rule_matches_stays_in_the_worktrees_tree() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo = dir.path().join("repo");
+        crate::worktree::git(dir.path(), &["init", "-q", repo.to_str().unwrap()]).unwrap();
+        fs::create_dir(repo.join("tests")).unwrap();
+        for file in ["tests/untouched_int.rs", "tests/edited_int.rs"] {
+            fs::write(repo.join(file), "start\n").unwrap();
+        }
+        crate::worktree::git(&repo, &["add", "-A"]).unwrap();
+        let trees = TreeIndex {
+            worktree: repo.clone(),
+            index: dir.path().join("trees.index"),
+        };
+        let before = trees.tree().unwrap();
+
+        fs::write(repo.join(".gitignore"), "tests/*_int.rs\n").unwrap();
+        fs::write(repo.join("tests/edited_int.rs"), "edited\n").unwrap();
+        let after = trees.tree().unwrap();
+
+        let listed =
+            crate::worktree::git(&repo, &["diff-tree", "-r", "--name-only", &before, &after])
+                .unwrap();
+        assert_eq!(
+            listed.lines().collect::<Vec<_>>(),
+            [".gitignore", "tests/edited_int.rs"]
+        );
     }
 }
