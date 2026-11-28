@@ -2571,13 +2571,57 @@ fn a_test_review_after_a_retried_escalation_lists_both_attempts() {
     ));
 }
 
+// AC: GH-52 (correction-under-way design AC6), as above, when the merge's trees cannot be written.
+// Behavior: as the blocked retry above, but no tree can be written while the lead's `exception`
+//     launch merges P; the trees are writable again before the retry completes -> the
+//     `test-review` item has no `diffHead` and no `changedFiles`, rather than a pair whose start
+//     predates the merge and so lists P.
+// @lane: integration
+// @dependency: daemon, flow, handoff, real git (bare `origin` with a pushed commit), fake agent,
+//     FakeGitHub
+#[test]
+fn a_retried_change_whose_merge_could_not_be_recorded_is_given_no_trees() {
+    retried_test_review(
+        &json!(
+            {"wait": true, "status": "blocked", "change": {"path": RETRIED_A, "content": "refunds\n"},
+             "output": {"status": "blocked", "taskName": "refunds", "changeSummary": "Started the refunds",
+                        "remainingWork": ["the refund test"], "evidence": ["the test fixture is missing"],
+                        "runnableCheck": {"result": "skipped", "reason": "no fixture"}}}
+        ),
+        true,
+        |text, _| {
+            for absent in ["diffHead: ", "changedFiles: "] {
+                assert!(!text.contains(&format!("\n{absent}")), "{text}");
+            }
+        },
+    );
+}
+
 const RETRIED_A: &str = "src/ACME-160-refunds.ts";
 
-/// The retry scenario above, with `first_attempt` as the redone `implement`'s first run, which
-/// edits `RETRIED_A` and does not complete.
+/// `RETRIED_A` and `RETRIED_B`, and not `PUSHED`, are what a retried change's test review lists.
 fn assert_a_retry_lists_both_attempts(first_attempt: &Value) {
-    const A: &str = RETRIED_A;
-    const B: &str = "tests/ACME-160_int.rs";
+    retried_test_review(first_attempt, false, |text, worktree| {
+        assert_eq!(
+            reviewed_change(text, worktree),
+            [RETRIED_A, RETRIED_B],
+            "{text}"
+        );
+    });
+}
+
+const RETRIED_B: &str = "tests/ACME-160_int.rs";
+
+/// The retry scenario above, with `first_attempt` as the redone `implement`'s first run, which
+/// edits `RETRIED_A` and does not complete; a person pushes `P` before the lead's `exception`
+/// launch merges it. With `trees_fail_around_the_merge`, no tree can be written from the first
+/// attempt's end until the lead's launch is placed. `check` is given the running `test-review`
+/// item's text and the worktree.
+fn retried_test_review(
+    first_attempt: &Value,
+    trees_fail_around_the_merge: bool,
+    check: impl FnOnce(&str, &std::path::Path),
+) {
     const P: &str = "docs/ACME-160-person.md";
     let env = Env::new();
     let Value::Object(mut script) = stub_repair_with_a_test_review_script() else {
@@ -2588,9 +2632,9 @@ fn assert_a_retry_lists_both_attempts(first_attempt: &Value) {
         json!([
             support::scripts::implement_run("src/ACME-160.ts"),
             first_attempt,
-            {"change": {"path": B, "content": "asserts refunds\n"},
+            {"change": {"path": RETRIED_B, "content": "asserts refunds\n"},
              "output": {"status": "completed", "taskName": "refunds", "changeSummary": "Test the refunds",
-                        "testsAdded": [B], "requiresTestReview": true, "newTestsPassed": true}}
+                        "testsAdded": [RETRIED_B], "requiresTestReview": true, "newTestsPassed": true}}
         ]),
     );
     script.insert(
@@ -2618,6 +2662,12 @@ fn assert_a_retry_lists_both_attempts(first_attempt: &Value) {
     run_until(&mut d, 60, |_| {}, |_| implement_launches() == 2);
 
     let pushed = push_as_person(&env, "ovenspring/ACME-160", P, "a person's note\n");
+    let trees = env.state().join("trees");
+    if trees_fail_around_the_merge {
+        // A file where the trees' index directory belongs: every tree fails until it is removed.
+        std::fs::remove_dir_all(&trees).unwrap();
+        std::fs::write(&trees, "").unwrap();
+    }
     let root = env.fake_bin.parent().unwrap().to_path_buf();
     std::fs::write(root.join("release-ACME-160-implement"), "").unwrap();
     run_until(
@@ -2630,6 +2680,10 @@ fn assert_a_retry_lists_both_attempts(first_attempt: &Value) {
     // Fails when the lead runs on a branch without the pushed commit.
     git(&worktree, &["merge-base", "--is-ancestor", &pushed, "HEAD"]);
 
+    if trees_fail_around_the_merge {
+        // The trees are writable again before the retry, so its end is recorded.
+        std::fs::remove_file(&trees).unwrap();
+    }
     std::fs::write(root.join("release-ACME-160-exception"), "").unwrap();
     run_until(
         &mut d,
@@ -2637,8 +2691,7 @@ fn assert_a_retry_lists_both_attempts(first_attempt: &Value) {
         |_| {},
         |d| stage(d, "ACME-160") == Stage::running(Step::TestReview),
     );
-    let text = active_item(&d, Step::TestReview);
-    assert_eq!(reviewed_change(&text, &worktree), [A, B], "{text}");
+    check(&active_item(&d, Step::TestReview), &worktree);
 }
 
 /// ACME-160's comment correction whose `quality` finds a stub: the redone `implement` changes a

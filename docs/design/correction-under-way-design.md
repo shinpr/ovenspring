@@ -220,10 +220,10 @@ implement(task i, requiresTestReview, correction None) ─► check(TestReview):
          └► recheck: review_round = 2 ─► review_scope: round > 1 ─► prior_feedback
                └► clear ─► check_cleared ─► task_route ─► implement(i+1) ─► check(TestReview): round 1 ─► no previous review
 
-merged_into(key, merge) (bring_in_pushed for every agent launch, push) ─► open change ─► pre = tree_of, merge, post = tree_of ─► before = moved_start(before, pre, post) when pre ≠ post
-launch(implement | review-response) ─► place_for ─► change = { before: tree_of, after: None } when no change is open
-after_done(implement | review-response) ─► change = Ended { trees: before.zip(tree_of) }; trees.push(tree) as today
-test_review handoff ─► change ─► diffBase = before, diffHead = after, changedFiles = diff-tree(before, after)
+merged_into(key, merge) (bring_in_pushed for every agent launch, push) ─► open change ─► pre = tree_of, merge, post = tree_of ─► before = moved_start(before, pre, post) when pre ≠ post; None when pre, post or moved_start is unrecorded
+launch(implement | review-response) ─► place_for ─► change = Open { before: tree_of } when no change is open
+after_done(implement | review-response, completed) ─► change = Ended { trees: before.zip(tree_of) }; trees.push(tree) as today
+test_review handoff ─► Ended { trees: Some((before, after)) } ─► diffBase = before, diffHead = after, changedFiles = diff-tree(before, after)
 ```
 
 ### Integration Points List
@@ -270,8 +270,8 @@ test_review handoff ─► change ─► diffBase = before, diffHead = after, ch
 - **Interface**:
   - `IssueRecord.change: Option<Change>` (`serde(default)`), `Change::Open { before: Option<String> }` while the executor runs and `Change::Ended { trees: Option<(String, String)> }` once it completed. A tree that could not be recorded is `None`, so a change is never mistaken for a record without one.
   - In `lib.rs:launch`, for an `implement` or `review-response` item of an issue: when `change` is not `Open`, set `change = Open { before: tree_of(key) }` after `place_for`; when `tree_of` fails, `before` is `None`, so neither an earlier change's endpoints nor the older-record fallback is attached to this executor's work. An open change (a retried or refiled executor) is kept as it is.
-  - `issues.rs:merged_into(key, merge: impl FnOnce() -> Result<bool, DaemonError>) -> Result<bool, DaemonError>` runs every merge into an issue's worktree: `bring_in_pushed`'s `merge_from_origin` call, for every agent launch on the issue (the lead's `exception` included), and `push`'s `bring_in` call. When the issue's `change` is open, it records `pre = tree_of(key)`, runs `merge`, and records `post = tree_of(key)`. When both are recorded and differ, `before` becomes `moved_start(before, pre, post)`, and the record is saved. Otherwise, and when no change is open, it only runs `merge`. It returns `merge`'s result. The agreements branch's `push_agreements` (`sprint.rs:732`) merges into no issue worktree and keeps calling `bring_in` directly.
-  - `issues.rs:moved_start(before, pre, post) -> Option<String>`: in a temporary index (as `tree_of` uses), `git read-tree <post>`. Then the old mode and blob of each entry of `git diff-tree -r --no-renames <before> <pre>` go to `git update-index --index-info` (mode 0 removes the path), and `git write-tree` gives the result. On a Git failure it returns `None` and `before` is kept.
+  - `issues.rs:merged_into(key, merge: impl FnOnce() -> Result<bool, DaemonError>) -> Result<bool, DaemonError>` runs every merge into an issue's worktree: `bring_in_pushed`'s `merge_from_origin` call, for every agent launch on the issue (the lead's `exception` included), and `push`'s `bring_in` call. When the issue's `change` is open, it records `pre = tree_of(key)`, runs `merge`, and records `post = tree_of(key)`. When both are recorded and differ, `before` becomes `moved_start(before, pre, post)`, and the record is saved. When `pre` or `post` is not recorded, or `moved_start` fails, `before` becomes `None`: the old start would list what the merge brought in as the change's own, so the test review is given no trees. When both are recorded and equal, and when no change is open or its `before` is already `None`, it only runs `merge`. It returns `merge`'s result. The agreements branch's `push_agreements` (`sprint.rs:732`) merges into no issue worktree and keeps calling `bring_in` directly.
+  - `issues.rs:moved_start(before, pre, post) -> Option<String>`: in a temporary index (as `tree_of` uses), `git read-tree <post>`. Then the old mode and blob of each entry of `git diff-tree -r --no-renames <before> <pre>` go to `git update-index --index-info` (mode 0 removes the path), and `git write-tree` gives the result. On a Git failure it returns `None`.
   - `after_done` (Implement, ReviewResponse) ends an open change with its start and the tree it already records for `trees` (`trees: None` when either is missing), only when the executor's output status is `completed`: a `blocked` or `escalation_needed` result in a done item goes to the lead like a blocked item, and its retry continues the change. `planned` clears `change` when it resets `trees`.
   - `tree_of` runs `git add -A` into a copy of the worktree's own index (`git rev-parse --git-path index`), so a tracked path an ignore rule matches stays in both trees, as Git keeps it tracked.
   - `handoff.rs:recorded_change(record, fallback_base) -> Option<(String, String)>` returns `(before, after)` and replaces `changed_files`. An open change (its end not recorded) gives `None`, not the fallback, whose trees would describe an earlier executor's work; the test review then has no `changedFiles` and blocks.
@@ -401,11 +401,12 @@ Invariants:
 
 ```yaml
 Contract: IssueRecord.change (daemon issue record)
-Type: null | {"before": "<tree id>", "after": null | "<tree id>"}
-Written: before — at an implement or review-response launch, after place_for, when no change is open; moved by moved_start in merged_into when a merge into the worktree changed it while the change is open; after — in after_done of that step; cleared by planned
+Type: null | {"open": {"before": null | "<tree id>"}} | {"ended": {"trees": null | ["<before tree id>", "<after tree id>"]}}
+  (serde's externally tagged form of `Change`; a record written before this change has no `change` key, read as null)
+Written: open — at an implement or review-response launch, after place_for, when no change is open; its before moved by moved_start in merged_into when a merge into the worktree changed it while the change is open; ended — in after_done of that step, when it completed; cleared by planned
 Invariants:
-  - before is the worktree when the open change's first executor launch was placed, plus what every later merge into the worktree brought in while the change was open
-  - after, when set, is the worktree when that executor's step ended
+  - open.before is the worktree when the open change's first executor launch was placed, plus what every later merge into the worktree brought in while the change was open; null when that tree, or a tree around such a merge, or the moved start could not be recorded
+  - ended.trees is open.before and the worktree when that executor's step completed; null when either is unrecorded
 ```
 
 #### `test-review` item inputs
@@ -436,7 +437,7 @@ Output:
 | `origin` | saved record → `IssueState` | transformed | `"round"`/`"pr-comments"`/`"document"`/`"test-review"` | `round`/`pr-comments` → `correction`; others dropped (the inner correction is in `check`) | read only |
 | `after` | saved record → `IssueState` | transformed | `"next-task"`, `"return-to-round"`, `{"correction":"round"\|"pr-comments"}` | `return-to-round` → `correction = round`; `{"correction":x}` → `correction = x`; `next-task` dropped | read only; takes precedence over `origin` |
 | `correction` | `IssueState` ↔ saved record | new | `null`/`"round"`/`"pr-comments"` | serde | written and read |
-| `change` | daemon ↔ issue record | new | `{"before": "<40-hex>", "after": "<40-hex>" \| null}` or absent | serde, default `None` | written at launch, in merged_into and in after_done |
+| `change` | daemon ↔ issue record | new | `{"open": {"before": "<40-hex>" \| null}}`, `{"ended": {"trees": ["<40-hex>", "<40-hex>"] \| null}}`, `null`, or absent | serde, default `None` | written at launch, in merged_into and in after_done |
 | `diffBase` | daemon → test-review item | transformed | `diffBase: <40-hex tree id>` (commit sha / `origin/<base>` only in the fallback) | the reviewer passes it to `git diff` | `factory/steps/test-review.md` |
 | `diffHead` | daemon → test-review item | new | `diffHead: <40-hex tree id>` | the reviewer passes it to `git diff` and `git show` | `factory/steps/test-review.md` |
 | `taskFile` | daemon → test-review item | preserved (now filled) | `taskFile: <absolute task path>` | read as a path | from `filing.task` (`test_review_task()`) |

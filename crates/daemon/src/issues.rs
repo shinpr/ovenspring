@@ -1122,7 +1122,8 @@ impl Daemon {
 
     /// Runs `merge`, a merge from the branch into the issue's worktree. While a change is open,
     /// what the merge brought in is moved into the change's start, so it is not listed as the
-    /// change's own.
+    /// change's own. When the trees around the merge or the moved start cannot be recorded, the
+    /// change loses its start: the old one would list what the merge brought in.
     pub(crate) fn merged_into(
         &self,
         key: &str,
@@ -1137,22 +1138,14 @@ impl Daemon {
         let pre = self.tree_of(key);
         let merged = merge()?;
         let post = self.tree_of(key);
-        let (Some(pre), Some(post)) = (pre, post) else {
-            return Ok(merged);
+        let before = match (pre, post) {
+            (Some(pre), Some(post)) if pre == post => return Ok(merged),
+            (Some(pre), Some(post)) => self
+                .tree_index(key)
+                .and_then(|trees| trees.moved_start(&start, &pre, &post)),
+            _ => None,
         };
-        if pre == post {
-            return Ok(merged);
-        }
-        let moved = self
-            .tree_index(key)
-            .and_then(|trees| trees.moved_start(&start, &pre, &post));
-        if let Some(moved) = moved {
-            self.update_issue(key, |r| {
-                r.change = Some(Change::Open {
-                    before: Some(moved),
-                });
-            })?;
-        }
+        self.update_issue(key, |r| r.change = Some(Change::Open { before }))?;
         Ok(merged)
     }
 
